@@ -1,0 +1,168 @@
+// ui.js -- status cards, ingestion badge, rankings tables, recent-aircraft
+// table, and the periodic refresh loop. Never uses innerHTML with API data
+// (callsigns/ICAOs are externally-sourced strings) -- always textContent.
+
+import { api } from "./api.js";
+
+const REFRESH_INTERVAL_MS = 10000;
+const INGESTION_STATE_LABELS = {
+  ok: "正常",
+  stale: "データ取得停止中",
+  error: "取得エラー",
+  no_data: "データなし",
+};
+
+let displayTimezone = "UTC";
+
+function setTimezone(tz) {
+  displayTimezone = tz;
+}
+
+function formatTime(isoString) {
+  if (!isoString) return "--";
+  try {
+    return new Date(isoString).toLocaleString("ja-JP", {
+      timeZone: displayTimezone,
+      hour12: false,
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function renderIngestionBadge(status) {
+  const badge = document.getElementById("ingestion-badge");
+  if (!badge) return;
+  badge.dataset.state = status.ingestion_state;
+  const textEl = badge.querySelector(".status-text");
+  if (textEl) {
+    textEl.textContent = INGESTION_STATE_LABELS[status.ingestion_state] || status.ingestion_state;
+  }
+}
+
+function renderStatusCards(status) {
+  const isOk = status.ingestion_state === "ok";
+  setText("card-active", isOk ? String(status.active_aircraft_count) : "--");
+  setText("card-position", isOk ? String(status.position_aircraft_count) : "--");
+  setText("card-last-fetch", formatTime(status.last_ingestion_at));
+  setText("last-update", formatTime(status.generated_at));
+
+  const footer = document.getElementById("footer-last-fetch");
+  if (footer) {
+    footer.textContent = status.last_ingestion_at
+      ? `最終取得: ${formatTime(status.last_ingestion_at)}`
+      : "";
+  }
+}
+
+function clearChildren(node) {
+  while (node.firstChild) node.removeChild(node.firstChild);
+}
+
+function addCell(row, text) {
+  const cell = document.createElement("td");
+  cell.textContent = text;
+  row.appendChild(cell);
+}
+
+function toggleTableVisibility(table, hasRows) {
+  const emptyMessage = table.parentElement.querySelector(".panel__empty");
+  table.hidden = !hasRows;
+  if (emptyMessage) emptyMessage.hidden = hasRows;
+}
+
+function renderRankingTable(tableId, entries) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  clearChildren(tbody);
+  toggleTableVisibility(table, entries.length > 0);
+
+  for (const entry of entries) {
+    const row = document.createElement("tr");
+    addCell(row, entry.callsign || entry.icao);
+    addCell(row, `${entry.distance_km.toFixed(1)} km`);
+    addCell(row, entry.altitude_ft != null ? `${Math.round(entry.altitude_ft)} ft` : "--");
+    addCell(row, formatTime(entry.observed_at));
+    tbody.appendChild(row);
+  }
+}
+
+function renderRecentAircraft(rows) {
+  const table = document.getElementById("recent-aircraft");
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  clearChildren(tbody);
+  toggleTableVisibility(table, rows.length > 0);
+
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    addCell(tr, row.callsign || row.icao);
+    addCell(tr, formatTime(row.first_seen_at));
+    addCell(tr, formatTime(row.last_seen_at));
+    tbody.appendChild(tr);
+  }
+}
+
+async function refreshStatusAndRankings() {
+  try {
+    const status = await api.getStatus();
+    renderIngestionBadge(status);
+    renderStatusCards(status);
+  } catch (err) {
+    console.error("status refresh failed", err);
+    const badge = document.getElementById("ingestion-badge");
+    if (badge) {
+      badge.dataset.state = "error";
+      const textEl = badge.querySelector(".status-text");
+      if (textEl) textEl.textContent = "APIエラー";
+    }
+  }
+
+  try {
+    const [rankings, recent] = await Promise.all([
+      api.getRankings(24, 10),
+      api.getRecentAircraft(24, 20),
+    ]);
+    renderRankingTable("ranking-farthest", rankings.farthest);
+    renderRankingTable("ranking-closest", rankings.closest);
+    renderRecentAircraft(recent);
+  } catch (err) {
+    console.error("rankings/recent refresh failed", err);
+  }
+}
+
+function startPolling() {
+  let timer = null;
+
+  const tick = async () => {
+    if (!document.hidden) {
+      await refreshStatusAndRankings();
+    }
+    timer = setTimeout(tick, REFRESH_INTERVAL_MS);
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    // Refresh immediately when the tab becomes visible again, but never
+    // poll while hidden -- avoids unnecessary background load.
+    if (!document.hidden) {
+      refreshStatusAndRankings();
+    }
+  });
+
+  tick();
+
+  return () => clearTimeout(timer);
+}
+
+export const ui = {
+  setTimezone,
+  formatTime,
+  refreshStatusAndRankings,
+  startPolling,
+};

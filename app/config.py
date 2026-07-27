@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     database_url: str
     app_bind_host: str = "127.0.0.1"
     app_port: int = 8088
-    map_style_url: str | None = None
+    # OpenFreeMap's "positron" style: free, no API key, no attribution
+    # sign-up required (PLAN.md D-2's "quick MVP" option). Overridable via
+    # MAP_STYLE_URL -- e.g. to a MapTiler style, or a self-hosted PMTiles
+    # style in a later phase -- without any code change.
+    map_style_url: str = "https://tiles.openfreemap.org/styles/positron"
     map_show_receiver_marker: bool = False
     map_receiver_marker_precision: int = 1
 

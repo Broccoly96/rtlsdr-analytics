@@ -12,7 +12,9 @@ from app.db.queries.tracks import (
 T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
-def _row(offset_seconds, lat, lon, callsign="TEST001", altitude_ft=10000.0, gs=400.0):
+def _row(
+    offset_seconds, lat, lon, callsign="TEST001", altitude_ft=10000.0, gs=400.0, distance_km=50.0
+):
     return {
         "icao": "aaaaaa",
         "callsign": callsign,
@@ -21,6 +23,7 @@ def _row(offset_seconds, lat, lon, callsign="TEST001", altitude_ft=10000.0, gs=4
         "lon": lon,
         "altitude_ft": altitude_ft,
         "ground_speed_kt": gs,
+        "distance_km": distance_km,
     }
 
 
@@ -56,6 +59,7 @@ def test_decimate_to_budget_noop_when_under_budget():
             callsign=None,
             last_altitude_ft=None,
             last_ground_speed_kt=None,
+            last_distance_km=None,
             last_observed_at=T0,
             segments=[[TrackPoint(T0, 35.0, 139.0, None)] * 5],
         )
@@ -75,6 +79,7 @@ def test_decimate_to_budget_reduces_point_count_and_keeps_last_point():
             callsign=None,
             last_altitude_ft=None,
             last_ground_speed_kt=None,
+            last_distance_km=None,
             last_observed_at=T0,
             segments=[points],
         )

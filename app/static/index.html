@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADS-B Analytics</title>
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
+>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.0.0/dist/maplibre-gl.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="app-header">
+    <div class="app-header__title">
+      <h1>ADS-B Analytics</h1>
+    </div>
+    <div class="app-header__status" id="ingestion-badge" role="status" aria-live="polite">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span class="status-text">読み込み中…</span>
+    </div>
+    <div class="app-header__updated">
+      最終更新: <time id="last-update">--</time>
+    </div>
+    <div class="app-header__period" role="group" aria-label="航跡表示期間">
+      <button type="button" data-hours="1" class="period-btn">1h</button>
+      <button type="button" data-hours="6" class="period-btn" aria-pressed="true">6h</button>
+      <button type="button" data-hours="24" class="period-btn">24h</button>
+    </div>
+  </header>
+
+  <section class="status-cards" aria-label="現在の状況">
+    <div class="card">
+      <div class="card__label">現在受信中</div>
+      <div class="card__value" id="card-active">--</div>
+    </div>
+    <div class="card">
+      <div class="card__label">位置取得中</div>
+      <div class="card__value" id="card-position">--</div>
+    </div>
+    <div class="card">
+      <div class="card__label">24時間ユニーク機数</div>
+      <div class="card__value" id="card-unique">--</div>
+    </div>
+    <div class="card">
+      <div class="card__label">最終取得成功</div>
+      <div class="card__value" id="card-last-fetch">--</div>
+    </div>
+  </section>
+
+  <section class="main-area">
+    <div class="panel panel--map">
+      <div class="panel__header" id="map-heading">航跡地図</div>
+      <div id="map" class="map-container" role="img" aria-labelledby="map-heading"></div>
+      <div id="map-error" class="panel__error" hidden></div>
+    </div>
+    <div class="panel panel--chart">
+      <div class="panel__header" id="chart-heading">交通量(24時間)</div>
+      <div id="chart" class="chart-container" role="img" aria-labelledby="chart-heading"></div>
+      <div id="chart-error" class="panel__error" hidden></div>
+    </div>
+  </section>
+
+  <section class="bottom-area" aria-label="ランキングと最近の機体">
+    <div class="panel">
+      <div class="panel__header">最遠</div>
+      <table class="ranking-table" id="ranking-farthest">
+        <caption class="sr-only">受信局から最も遠い機体</caption>
+        <thead>
+          <tr>
+            <th scope="col">機体</th>
+            <th scope="col">距離</th>
+            <th scope="col">高度</th>
+            <th scope="col">観測時刻</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="panel__empty" hidden>データがありません</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel__header">最接近</div>
+      <table class="ranking-table" id="ranking-closest">
+        <caption class="sr-only">受信局に最も近づいた機体</caption>
+        <thead>
+          <tr>
+            <th scope="col">機体</th>
+            <th scope="col">距離</th>
+            <th scope="col">高度</th>
+            <th scope="col">観測時刻</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="panel__empty" hidden>データがありません</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel__header">最近観測した機体</div>
+      <table class="ranking-table" id="recent-aircraft">
+        <caption class="sr-only">最終観測時刻が新しい機体</caption>
+        <thead>
+          <tr>
+            <th scope="col">機体</th>
+            <th scope="col">初観測</th>
+            <th scope="col">最終観測</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="panel__empty" hidden>データがありません</p>
+    </div>
+  </section>
+
+  <footer class="app-footer">
+    <span>ADS-B Analytics</span>
+    <span id="footer-last-fetch"></span>
+  </footer>
+
+</div>
+
+<script src="https://unpkg.com/echarts@6.1.0/dist/echarts.min.js"></script>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

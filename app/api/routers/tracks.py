@@ -34,6 +34,7 @@ async def get_tracks_endpoint(
                 callsign=track.callsign,
                 last_altitude_ft=track.last_altitude_ft,
                 last_ground_speed_kt=track.last_ground_speed_kt,
+                last_distance_km=track.last_distance_km,
                 last_observed_at=track.last_observed_at,
             ),
         )

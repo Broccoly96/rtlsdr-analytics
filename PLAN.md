@@ -463,15 +463,15 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### D-2. 地図スタイル
 
-- [ ] MapLibre GL JSを利用する。
-- [ ] `MAP_STYLE_URL`でstyle URLを切り替えられるようにする。
-- [ ] MapTiler等のAPIキーをコードへ埋め込まない。
-- [ ] 開発用スタイルと本番用スタイルを設定で分けられるようにする。
-- [ ] attributionを隠さない。
-- [ ] 日本語ラベル表示を確認する。
-- [ ] `localIdeographFontFamily`を適切に設定する。
-- [ ] style/tile取得失敗を検出し、地図部分だけにエラー表示する。
-- [ ] 地図失敗時もグラフとランキングを利用可能にする。
+- [x] MapLibre GL JSを利用する(v6.0.0、ESM経由でunpkgから読み込み。v6でUMDバンドルが廃止されたため`<script type="module">`+`import`を使用)。
+- [x] `MAP_STYLE_URL`でstyle URLを切り替えられるようにする(`app/config.py`→`/api/config`→`main.js`)。
+- [x] MapTiler等のAPIキーをコードへ埋め込まない(既定はOpenFreeMap、キー不要)。
+- [x] 開発用スタイルと本番用スタイルを設定で分けられるようにする(env変数のみで切替可能)。
+- [x] attributionを隠さない(`attributionControl: true`、既定表示)。
+- [!] **[未検証]** 日本語ラベル表示を確認する — このセッションにブラウザ環境がなく目視確認ができなかった。実装(`localIdeographFontFamily`設定)は完了しているが、実際の表示確認はユーザーまたは今後のセッションで要。
+- [x] `localIdeographFontFamily`を適切に設定する。
+- [x] style/tile取得失敗を検出し、地図部分だけにエラー表示する(`map.on("error")`→`#map-error`のみ表示、他パネルは独立)。
+- [x] 地図失敗時もグラフとランキングを利用可能にする(各パネルが独立してfetchするため構造的に保証。実ブラウザでの動作確認は未実施)。
 
 初期選択：
 
@@ -483,17 +483,19 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### D-3. 地図上の航跡
 
-- [ ] GeoJSON sourceとして航跡を追加する。
-- [ ] 高度に応じて航跡色を変える。
-- [ ] 不明高度は灰色にする。
-- [ ] 航跡へ適度な透明度を設定する。
-- [ ] 選択中の航跡を太く表示する。
-- [ ] ホバーまたはクリックで機体情報を表示する。
-- [ ] callsign、ICAO、高度、速度、最終観測、距離を表示する。
-- [ ] 長い空白を跨いだ直線を描かない。
-- [ ] 受信地点は初期状態で精密表示しない。
-- [ ] 自動ズーム時も自宅位置を過度に強調しない。
-- [ ] 点数が多い場合にブラウザーを固めない。
+- [x] GeoJSON sourceとして航跡を追加する。
+- [x] 高度に応じて航跡色を変える。
+- [x] 不明高度は灰色にする。
+- [x] 航跡へ適度な透明度を設定する(opacity 0.75)。
+- [x] 選択中の航跡を太く表示する(クリックでICAOを選択、`setPaintProperty`でその機体のみ`line-width`を4に)。
+- [x] ホバーまたはクリックで機体情報を表示する(ホバーでpopup表示、クリックで選択状態切替)。
+- [x] callsign、ICAO、高度、速度、最終観測、距離を表示する(popupに全項目。距離はAPI側`/api/tracks`のレスポンスに`last_distance_km`を追加して対応 — 実装中に発見した抜け漏れ)。
+- [x] 長い空白を跨いだ直線を描かない(サーバー側`app/db/queries/tracks.py`でセグメント分割済み、GeoJSONの`MultiLineString`として提供)。
+- [x] 受信地点は初期状態で精密表示しない(受信局マーカー自体を未実装 — APIが受信局座標を一切返さないため、精密表示のリスクなし)。
+- [x] 自動ズーム時も自宅位置を過度に強調しない(自宅マーカー・自動ズーム機能自体が存在しないため該当なし)。
+- [x] 点数が多い場合にブラウザーを固めない(サーバー側で最大100機・10,000点に制限・間引き済み)。
+
+**[未検証]** 上記のうち視覚的な確認(色分けの見やすさ、ポップアップの表示、クリック選択の動作)はこのセッションのブラウザ環境がないため未実施。curlでのAPI応答構造確認と静的アセットの配信確認のみ実施。
 
 高度色の初期案：
 
@@ -535,52 +537,54 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 - 最接近ランキング
 - 最近観測した機体
 
-- [ ] 読み込み中skeletonを実装する。
-- [ ] データなし表示を実装する。
-- [ ] API異常表示を実装する。
-- [ ] stale表示を実装する。
-- [ ] 最終更新を定期更新する。
-- [ ] ブラウザータブ非表示時に過剰なpollをしない。
+- [!] **[簡略化]** 読み込み中skeletonを実装する — 専用skeleton UIは作らず、初期値`"--"`表示 + データ到着後に置き換える方式にした。視覚的な洗練度は低いが「読み込み中と分かる」最低要件は満たす。凝ったskeleton化は必要になれば追加。
+- [x] データなし表示を実装する(`ingestion_state: "no_data"`、テーブル空表示は`.panel__empty`)。
+- [x] API異常表示を実装する(ingestion badgeが"APIエラー"表示、コンソールにも記録)。
+- [x] stale表示を実装する(badge色・テキストで"データ取得停止中"、カード数値は"--")。
+- [x] 最終更新を定期更新する(10秒間隔でstatus/rankings、30秒間隔でtraffic/tracks)。
+- [x] ブラウザータブ非表示時に過剰なpollをしない(`document.hidden`チェック、非表示中はpollを止め、復帰時に即時更新)。
 
 ### D-5. ECharts
 
-- [ ] UTCデータを指定タイムゾーンで表示する。
-- [ ] activeとpositionを区別して描画する。
-- [ ] tooltipへ時刻と値を表示する。
-- [ ] 欠測をゼロと誤認させない。
-- [ ] 1h、6h、24hの表示切替を検討する。
-- [ ] ウィンドウサイズ変更時にresizeする。
-- [ ] グラフ描画失敗が画面全体を壊さない。
+- [x] UTCデータを指定タイムゾーンで表示する(`Intl`の`timeZone`オプションで`DISPLAY_TIMEZONE`を反映)。
+- [x] activeとpositionを区別して描画する(2系列、色分け+凡例)。
+- [x] tooltipへ時刻と値を表示する。
+- [!] **[範囲限定]** 欠測をゼロと誤認させない — `/api/traffic`は全バケットを0埋めして返す設計のため(Milestone C)、「収集停止による欠測」と「実際に0機」をチャート上で視覚的に区別する仕組みは未実装。ingestion_stateバッジ側で収集停止は別途分かるため実害は小さいが、正式な区別はしていないと記録する。
+- [x] 1h、6h、24hの表示切替を検討する(ヘッダーの期間ボタンで実装 — ただし現状は航跡地図の期間切替のみに連動しており、交通量グラフ自体は常時24h固定。グラフ側の期間切替は次回改善候補)。
+- [x] ウィンドウサイズ変更時にresizeする(`window.resize`→`chart.resize()`)。
+- [x] グラフ描画失敗が画面全体を壊さない(`try/catch`+`#chart-error`、他パネルは独立)。
 
 ### D-6. レスポンシブ・アクセシビリティ
 
-- [ ] 1440px前後のデスクトップで確認する。
-- [ ] 768px前後のタブレットで確認する。
-- [ ] 375px前後のスマートフォンで確認する。
-- [ ] キーボードで主要操作ができる。
-- [ ] フォーカス表示が見える。
-- [ ] 状態を色だけで表現しない。
-- [ ] 表に見出しと適切なラベルを付ける。
-- [ ] `prefers-reduced-motion`へ対応する。
+- [!] **[未検証]** 1440px前後のデスクトップで確認する — CSSのブレークポイント(900px, 480px)は実装済みだが、実ブラウザでの目視確認はこのセッションでは実施できていない。
+- [!] **[未検証]** 768px前後のタブレットで確認する — 同上。
+- [!] **[未検証]** 375px前後のスマートフォンで確認する — 同上。
+- [x] キーボードで主要操作ができる(期間切替・航跡クリックはbutton要素、focus-visible対応)。
+- [x] フォーカス表示が見える(`:focus-visible`に2pxアウトライン、CSS変数`--accent`)。
+- [x] 状態を色だけで表現しない(ingestion badgeは色+テキストラベルを常に併記)。
+- [x] 表に見出しと適切なラベルを付ける(`<th scope="col">`、`<caption class="sr-only">`)。
+- [x] `prefers-reduced-motion`へ対応する(アニメーション・トランジションを0.01msに短縮)。
 
 ### D-7. フロントエンド方針
 
 初期計画どおり、不要なSPAフレームワークは追加しない。既存構成を確認し、FastAPIから静的ファイルまたはテンプレートを配信する。
 
-- [ ] JavaScriptをAPI、map、chart、UIの責務に分ける。
-- [ ] npmを使う場合はlockfileをコミットする。
-- [ ] CDN依存を採用する場合はバージョン固定とCSPを検討する。
-- [ ] 任意HTMLをAPIデータから挿入しない。
-- [ ] callsignなど外部入力を安全にテキスト表示する。
+- [x] JavaScriptをAPI、map、chart、UIの責務に分ける(`app/static/js/{api,map,chart,ui,main}.js`)。
+- [x] npmは使用しない(ビルドステップなし、CDN直読み込みのみ — lockfileの論点は該当なし)。
+- [x] CDN依存を採用する場合はバージョン固定とCSPを検討する(`maplibre-gl@6.0.0`、`echarts@6.1.0`を完全ピン留め、`<meta http-equiv="Content-Security-Policy">`でscript-src/style-src/connect-src等を制限。ただしMAP_STYLE_URLが動的なため`img-src`/`connect-src`は`https:`全体を許可 — 任意の地図プロバイダに対応するための妥当なトレードオフとして記録)。
+- [x] 任意HTMLをAPIデータから挿入しない(`innerHTML`は一切使用せず、`textContent`/`createElement`のみ)。
+- [x] callsignなど外部入力を安全にテキスト表示する(同上)。
 
 ### Milestone D 完了条件
 
-- [ ] 全MVP情報が1画面で確認できる。
-- [ ] MapLibreの地図がモダンで、航跡とラベルを読み分けられる。
-- [ ] 地図タイル障害時も他機能が使える。
-- [ ] PCとスマートフォンで主要情報が読める。
-- [ ] stale/異常/データなしを正常状態と誤認しない。
-- [ ] ブラウザーで重大なconsole errorがない。
+- [x] 全MVP情報が1画面で確認できる(ヘッダー/ステータスカード/地図+グラフ/ランキング+最近観測を1つの`index.html`に実装)。
+- [!] **[未検証]** MapLibreの地図がモダンで、航跡とラベルを読み分けられる — 実装(高度別配色・透明度・選択強調)は完了しているが、実際の見やすさはブラウザでの目視確認が必要。
+- [x] 地図タイル障害時も他機能が使える(構造的に各パネル独立、`map.on("error")`でmapパネルのみエラー表示)。
+- [!] **[未検証]** PCとスマートフォンで主要情報が読める — レスポンシブCSSは実装済みだが実機/実ブラウザ確認は未実施。
+- [x] stale/異常/データなしを正常状態と誤認しない(`ingestion_state`の4値をbadge・カード両方に反映、staleで数値を"--"化)。
+- [!] **[未検証]** ブラウザーで重大なconsole errorがないこと — このセッションにはブラウザ実行環境(Claude in Chrome未接続、headlessブラウザ・Node.js未導入)がなく確認できなかった。curlによるHTTP応答・Content-Type確認、および全JSファイルの読み返しによるレビューのみ実施。
+
+**総括**: バックエンド(API・DB)側は自動テストで裏付けられた完成度だが、フロントエンドの実際の見た目・操作感・console errorの有無は本セッションでは確認できていない。ユーザー側で `docker compose up -d adsb-db` → APIサーバー起動 → `http://<host>:8088/` をブラウザで開いての最終確認を推奨する。
 
 ---
 
@@ -1030,4 +1034,33 @@ backup保持=7世代
 次に行うTask: Milestone D（MapLibre/EChartsダッシュボード）
 ユーザー判断が必要な事項:
   - D-2の地図スタイル選択（公開無料スタイル / MapTiler等のAPIキースタイル / 後でセルフホスト）— §14に未決定時の既定値なし、着手前に確認が必要。
+```
+
+### セッション記録
+
+```text
+日付: 2026-07-27
+完了したMilestone/Task: Milestone D（モダンなMapLibreダッシュボード）— バックエンド側は完了、フロントエンドの目視確認は未実施
+変更した主要ファイル:
+  - app/api/routers/config.py（新規、/api/config）、app/api/schemas.py（ConfigResponse、TrackFeatureProperties.last_distance_km追加）
+  - app/api/main.py（static file mount、`/`ルート追加）
+  - app/db/queries/tracks.py（last_distance_km追加 — 実装中にpopup要件との照合で発見した抜け漏れ）
+  - app/config.py（MAP_STYLE_URLの既定値をOpenFreeMap positronに変更）
+  - app/static/index.html, app/static/css/style.css（新規）
+  - app/static/js/{api,ui,map,chart,main}.js（新規）
+  - tests/integration/test_api.py（config/tracks距離のテスト追加）、tests/unit/test_tracks_query.py（distance_km対応）
+実行したテスト: pytest（フルスイート）、ruff check/format --check
+テスト結果: 142件全green、lint/format clean
+実環境で確認したこと:
+  - 実compose db（adsb-db）にデモ用データを投入し、docker composeネットワーク上のコンテナでAPIサーバーを起動、`curl`で`/`・`/static/js/*`・`/static/css/*`・全APIエンドポイントのレスポンス(HTTPステータス・Content-Type・JSON構造)を確認
+  - `/api/config`が秘密情報(DATABASE_URL・READSB_AIRCRAFT_URL・パスワード)を一切含まないことを自動テストで確認
+  - 検証用コンテナは確認後に停止・削除、投入したデモデータもTRUNCATEで削除済み
+残課題（重要 — ユーザー確認推奨）:
+  - **ブラウザでの実際の目視確認が一切できていない**。このセッションにはClaude in Chrome連携・headlessブラウザ・Node.jsのいずれも利用できず、地図の表示・航跡の色分け・ポップアップ・グラフの描画・レスポンシブ・console errorの有無を確認する手段がなかった。コードレビューとAPI応答の構造確認のみで実装を進めた。
+  - D-5: 期間切替ボタン(1h/6h/24h)は現在航跡地図のみに連動し、交通量グラフは常に24h固定(グラフ側の期間切替は未実装)。
+  - D-5: `/api/traffic`のゼロ埋めバケットと「収集停止による欠測」をチャート上で視覚的に区別する仕組みは未実装(ingestion_stateバッジ側での判別に依存)。
+  - Milestone E（保持期限）でingestion_statusテーブルの保持ポリシーが依然未定義（継続）。
+次に行うTask: ユーザーによるブラウザでの動作確認 → 問題なければMilestone E（保持・バックアップ・運用）
+ユーザー判断が必要な事項:
+  - `docker compose up -d adsb-db`起動後、APIサーバーを何らかの方法で起動し `http://<host>:8088/` をブラウザで開いて、地図・グラフ・レスポンシブ・console errorを確認していただきたい。問題があれば次セッションで修正する。
 ```

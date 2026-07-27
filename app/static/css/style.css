@@ -1,0 +1,287 @@
+/* Design tokens (PLAN.md D-1). Dark theme by default; not intended as an
+   air-traffic-control mimic -- a readable analytics dashboard. */
+:root {
+  --bg: #08111f;
+  --surface: #101b2d;
+  --surface-raised: #162338;
+  --border: #263750;
+  --text: #e8f0fa;
+  --text-muted: #8fa3bd;
+  --accent: #22d3ee;
+  --accent-2: #60a5fa;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+
+  --radius: 10px;
+  --gap: 16px;
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums; /* stable digit width for counters */
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+a,
+button {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  padding: var(--gap);
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* --- header ------------------------------------------------------------ */
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.app-header__title h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.app-header__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* Status is never color-only: the dot is paired with .status-text, and
+   the text itself always names the state explicitly. */
+.app-header__status[data-state="ok"] .status-dot {
+  background: var(--success);
+}
+.app-header__status[data-state="stale"] .status-dot,
+.app-header__status[data-state="no_data"] .status-dot {
+  background: var(--warning);
+}
+.app-header__status[data-state="error"] .status-dot {
+  background: var(--danger);
+}
+
+.app-header__updated {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.app-header__period {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.period-btn {
+  padding: 6px 12px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.period-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- status cards -------------------------------------------------------- */
+
+.status-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gap);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.card__label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+}
+
+.card__value {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+/* --- main area (map + chart) -------------------------------------------- */
+
+.main-area {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: var(--gap);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  position: relative;
+}
+
+.panel__header {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.map-container,
+.chart-container {
+  width: 100%;
+  height: 420px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.panel__error {
+  position: absolute;
+  inset: 40px 12px 12px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: rgba(8, 17, 31, 0.85);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  color: var(--danger);
+  padding: 16px;
+}
+
+/* --- bottom area (rankings / recent) ------------------------------------ */
+
+.bottom-area {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap);
+}
+
+.ranking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ranking-table th,
+.ranking-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ranking-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.panel__empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 8px;
+}
+
+/* --- footer --------------------------------------------------------------- */
+
+.app-footer {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 4px 4px 16px;
+}
+
+/* --- responsive breakpoints (D-6) ---------------------------------------- */
+
+@media (max-width: 900px) {
+  .status-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .main-area {
+    grid-template-columns: 1fr;
+  }
+  .bottom-area {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .status-cards {
+    grid-template-columns: 1fr;
+  }
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .app-header__period {
+    margin-left: 0;
+  }
+  .map-container,
+  .chart-container {
+    height: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

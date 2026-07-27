@@ -37,6 +37,7 @@ class AircraftTrack:
     callsign: str | None
     last_altitude_ft: float | None
     last_ground_speed_kt: float | None
+    last_distance_km: float | None
     last_observed_at: datetime
     segments: list[list[TrackPoint]]
 
@@ -56,7 +57,7 @@ async def get_tracks(pool: asyncpg.Pool, hours: int) -> list[AircraftTrack]:
 
     rows = await pool.fetch(
         """
-        SELECT icao, callsign, observed_at, lat, lon, altitude_ft, ground_speed_kt
+        SELECT icao, callsign, observed_at, lat, lon, altitude_ft, ground_speed_kt, distance_km
         FROM observations
         WHERE icao = ANY($1::text[]) AND observed_at >= $2
         ORDER BY icao, observed_at
@@ -105,6 +106,7 @@ def _build_track(icao: str, rows: list) -> AircraftTrack:
         callsign=last_row["callsign"],
         last_altitude_ft=last_row["altitude_ft"],
         last_ground_speed_kt=last_row["ground_speed_kt"],
+        last_distance_km=last_row["distance_km"],
         last_observed_at=last_row["observed_at"],
         segments=segments,
     )

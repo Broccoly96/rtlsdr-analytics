@@ -299,6 +299,7 @@ async def test_tracks_returns_linestring_for_seeded_aircraft(
     assert len(body["features"]) == 1
     feature = body["features"][0]
     assert feature["properties"]["icao"] == "aaaaaa"
+    assert feature["properties"]["last_distance_km"] == 50.0
     assert feature["geometry"]["type"] == "MultiLineString"
     assert len(feature["geometry"]["coordinates"][0]) == 3
 
@@ -326,6 +327,22 @@ async def test_recent_aircraft_returns_seeded_row(postgres_url, client: AsyncCli
     assert "aaaaaa" in icaos
 
 
+# --- config -----------------------------------------------------------------
+
+
+async def test_config_exposes_no_secrets(client: AsyncClient) -> None:
+    response = await client.get("/api/config")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["map_style_url"].startswith("https://")
+    assert body["display_timezone"] == "Asia/Tokyo"
+    assert "database_url" not in body
+    assert "readsb_aircraft_url" not in body
+    body_text = response.text
+    assert "changeme" not in body_text
+    assert "127.0.0.1/tar1090" not in body_text
+
+
 # --- openapi --------------------------------------------------------------
 
 
@@ -341,4 +358,5 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/tracks",
         "/api/rankings",
         "/api/aircraft/recent",
+        "/api/config",
     }

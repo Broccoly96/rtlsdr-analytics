@@ -14,6 +14,13 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class ConfigResponse(BaseModel):
+    map_style_url: str
+    map_show_receiver_marker: bool
+    map_receiver_marker_precision: int
+    display_timezone: str
+
+
 class LiveResponse(BaseModel):
     status: Literal["ok"] = "ok"
 
@@ -78,6 +85,7 @@ class TrackFeatureProperties(BaseModel):
     callsign: str | None
     last_altitude_ft: float | None
     last_ground_speed_kt: float | None
+    last_distance_km: float | None
     last_observed_at: datetime
 
 

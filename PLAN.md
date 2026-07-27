@@ -291,14 +291,14 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### C-1. API構成
 
-- [ ] FastAPIアプリのfactoryまたは明確なentry pointを作る。
-- [ ] 起動時に設定を検証する。
-- [ ] DB接続をdependencyとして注入する。
-- [ ] API用のread repositoryを作る。
-- [ ] collectorのwrite StoreとAPIのread queryを密結合させない。
-- [ ] 例外を秘密情報のない統一JSONへ変換する。
-- [ ] OpenAPI上でレスポンス型を確認できるようにする。
-- [ ] CORSは不要なら有効化しない。
+- [x] FastAPIアプリのfactoryまたは明確なentry pointを作る(`app/api/main.py:create_app()`。副作用のない純粋なfactoryとし、uvicorn向けの実体は`app/api/asgi.py`に分離、テストからは任意のSettingsで安全にimportできる)。
+- [x] 起動時に設定を検証する(`Settings()`が`create_app()`内で構築され、既存の検証ロジックがそのまま効く)。
+- [x] DB接続をdependencyとして注入する(`app/api/dependencies.py:get_pool`、lifespanでpool生成・close)。
+- [x] API用のread repositoryを作る(`app/db/queries/{status,traffic,tracks,rankings,aircraft}.py`)。
+- [x] collectorのwrite StoreとAPIのread queryを密結合させない(collectorの`PostgresStore`とAPIの`app/db/queries/`は別々のpoolを持ち、互いを参照しない)。
+- [x] 例外を秘密情報のない統一JSONへ変換する(`app/api/errors.py`、DBエラー/タイムアウト/バリデーションエラー/未処理例外を`{"error","detail"}`の統一形式へ変換、詳細は常にサーバー側ログのみ)。
+- [x] OpenAPI上でレスポンス型を確認できるようにする(全エンドポイントに`response_model`を指定、GeoJSONも含めpydanticモデル化)。
+- [x] CORSは不要なので有効化していない。
 
 ### C-2. Health API
 
@@ -314,10 +314,10 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 - 最終成功が閾値より古ければ503を返す。
 - 応答に秘密情報やreadsb URLを含めない。
 
-- [ ] liveの正常・異常テスト
-- [ ] readyのDB停止テスト
-- [ ] readyのデータstaleテスト
-- [ ] 復旧後にreadyが200へ戻るテスト
+- [x] liveの正常・異常テスト(liveは常に200。プロセスが応答不能な状態は原理的にテスト不可のため対象外)
+- [x] **[範囲限定]** readyのDB停止テスト: 「データ未取得」と「直近ingestionが失敗」は`test_ready_fails_with_no_data`/`test_ready_fails_on_ingestion_failure`でカバー。ただし「起動後にDBが落ちる」シナリオは未テスト — `asyncpg.create_pool(min_size=1)`は起動時に即座に接続確立を試みるため、DB不通時はAPI起動自体が失敗する(DB→migration→API起動の順序を前提とするアーキテクチャでは意図した挙動)。実行中のDB停止試験はMilestone F(F-5障害試験)のモック/テストDBを使った試験で正式に扱う。
+- [x] readyのデータstaleテスト(`test_ready_fails_on_stale_data`)
+- [x] 復旧後にreadyが200へ戻るテスト(`test_ready_recovers_after_a_fresh_success_follows_a_failure`)
 
 ### C-3. Status API
 
@@ -331,9 +331,9 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 - `data_age_seconds`
 - `display_timezone`
 
-- [ ] データがまだない状態を正常に表現する。
-- [ ] staleデータを正常表示しない。
-- [ ] 現在受信中の定義をcollectorと一致させる。
+- [x] データがまだない状態を正常に表現する(`ingestion_state: "no_data"`)。
+- [x] staleデータを正常表示しない(stale/error/no_dataの全状態でcount系を0に強制、`test_status_stale_zeroes_counts`)。
+- [x] 現在受信中の定義をcollectorと一致させる(`app/collector/normalize.py`の`RECEIVED_MAX_SEEN_SECONDS`/`POSITION_ACQUIRED_MAX_SEEN_POS_SECONDS`をそのままimportして使用)。
 
 ### C-4. Traffic API
 
@@ -346,10 +346,10 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 - `position_aircraft_count`
 - 可能なら期間ユニーク機体数も返す。
 
-- [ ] 1時間、24時間、168時間
-- [ ] 範囲外入力
-- [ ] データなし
-- [ ] UTCと表示タイムゾーン境界
+- [x] 1時間、24時間、168時間(`test_traffic_bounds_1_and_168`)
+- [x] 範囲外入力(`test_traffic_out_of_range_hours_rejected`、422)
+- [x] データなし(`test_traffic_default_window_with_no_data`、全バケット0埋め)
+- [x] UTCと表示タイムゾーン境界(DBは全てUTC/`TIMESTAMPTZ`で保持、タイムゾーン変換は表示側=Milestone Dの責務。バケット境界は分単位で厳密に生成)
 
 ### C-5. Tracks API
 
@@ -392,10 +392,10 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### C-8. クエリ性能
 
-- [ ] 代表データ量を生成する。
-- [ ] traffic、tracks、rankingsの実行計画を確認する。
-- [ ] N+1 queryがないことを確認する。
-- [ ] APIのタイムアウトを設定する。
+- [x] 代表データ量を生成する(実`adsb-db`に合成データを投入: aircraft 2,000件、observations 33,710件、traffic_minute 43,200件=30日分)。
+- [x] traffic、tracks、rankingsの実行計画を確認する(`EXPLAIN`で全てIndex/Bitmap Index Scanを使用、Seq Scanなしを確認)。
+- [x] N+1 queryがないことを確認する(tracksは対象機体の抽出→観測点取得を2クエリのみで完結、機体ごとのループクエリなし)。
+- [x] APIのタイムアウトを設定する(`app/db/queries/*.py`の全クエリに`timeout=5.0`)。
 
 初期目標：
 
@@ -405,13 +405,25 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 同一LAN・通常負荷での目安とし、サーバー性能に応じて実測値を記録する。
 
+**実測結果**(上記の代表データ量、このホスト上のdocker composeネットワーク経由):
+- `GET /health/live`: 0.5ms
+- `GET /health/ready`: 1.6ms
+- `GET /api/status`: 2.1ms
+- `GET /api/traffic?hours=24`: 36.5ms(168KB)
+- `GET /api/traffic?hours=168`: 257.0ms(1.18MB — レスポンスサイズが大きいため、Milestone Dでの表示方法や将来的な間引き・圧縮を検討課題として記録)
+- `GET /api/rankings?hours=24&limit=10`: 6.0ms
+- `GET /api/tracks?hours=6`: 3.3ms
+- `GET /api/aircraft/recent`: 2.8ms
+
+全て目標値を大幅に下回る。
+
 ### Milestone C 完了条件
 
-- [ ] 全APIがOpenAPIと一致する。
-- [ ] 入力値上限が機能する。
-- [ ] DB・データ未取得・stale状態を区別できる。
-- [ ] 代表データ量で性能目標を満たすか、実測と改善案が記録されている。
-- [ ] APIの自動テストが通る。
+- [x] 全APIがOpenAPIと一致する(`test_openapi_lists_all_endpoints`)。
+- [x] 入力値上限が機能する(hours/limit/offsetの範囲外入力が全エンドポイントで422)。
+- [x] DB・データ未取得・stale状態を区別できる(`ingestion_state`: ok/stale/error/no_dataの4値、`/health/ready`とセットで確認)。
+- [x] 代表データ量で性能目標を満たすか、実測と改善案が記録されている(上記実測結果を参照。traffic hours=168のレスポンスサイズのみ改善候補として記録)。
+- [x] APIの自動テストが通る(統合テスト23件・ユニットテスト5件、全green)。
 
 ---
 
@@ -992,4 +1004,30 @@ backup保持=7世代
   - この開発ホストではDocker経由のポートフォワード直後の接続でSSLネゴシエーションがリセットされる既知の癖がある（本番のcompose内部ネットワーク通信には影響なし）。tests/contract/pg_container.pyでsslmode=disable指定とリトライで回避済み。
 次に行うTask: Milestone C（FastAPI: health/status/traffic/tracks/rankings API）
 ユーザー判断が必要な事項: なし（Milestone C着手に必要な決定事項は現時点でなし）
+```
+
+### セッション記録
+
+```text
+日付: 2026-07-27
+完了したMilestone/Task: Milestone C（FastAPIと分析クエリ）
+変更した主要ファイル:
+  - app/db/queries/{status,traffic,tracks,rankings,aircraft}.py（新規、read repository）
+  - app/api/{main,asgi,dependencies,errors,schemas}.py（新規）
+  - app/api/routers/{health,status,traffic,tracks,rankings,aircraft}.py（新規）
+  - tests/integration/test_api.py（新規、23件）、tests/unit/test_tracks_query.py（新規、5件）
+実行したテスト: pytest（フルスイート）、ruff check/format --check
+テスト結果: 141件全green、lint/format clean
+実環境で確認したこと:
+  - 実compose db（adsb-db）に代表データ量（aircraft 2,000 / observations 33,710 / traffic_minute 43,200、30日分相当）を投入し、docker composeネットワーク経由で全エンドポイントを実測（本文参照、全て目標値を大幅に下回る）
+  - EXPLAINでtraffic/tracks/rankings/statusの主要クエリが全てIndex ScanまたはBitmap Index Scanを使用しSeq Scanがないことを確認
+  - OpenAPIスキーマに全7エンドポイントが正しく登録されていることを確認
+  - 使い捨てPostgresコンテナ上でhealth/status/traffic/tracks/rankings/aircraft/recentの統合テスト23件（DB空・stale・成功/失敗の全ingestion_state、境界値の422、GeoJSON形状、ランキングの機体重複排除など）
+残課題:
+  - `/health/ready`の「実行中にDBが落ちる」シナリオは未テスト（`asyncpg.create_pool(min_size=1)`が起動時に即座に接続を試みるため、DB不通時はAPI起動自体が失敗する — アーキテクチャ上意図した挙動だが、真の「稼働中のDB停止」試験はMilestone F（F-5障害試験）でモック/テストDBを使って正式に行う）。
+  - `GET /api/traffic?hours=168`のレスポンスが1.18MBと大きい（1分粒度×10,080バケットをそのまま返すため）。応答時間は目標内(257ms)だが、Milestone Dでのフロントエンド表示方法や将来的な粗い粒度への切替を検討課題として記録。
+  - Milestone E（保持期限）でingestion_statusテーブルの保持ポリシーが依然未定義（Milestone Bのセッション記録から継続）。
+次に行うTask: Milestone D（MapLibre/EChartsダッシュボード）
+ユーザー判断が必要な事項:
+  - D-2の地図スタイル選択（公開無料スタイル / MapTiler等のAPIキースタイル / 後でセルフホスト）— §14に未決定時の既定値なし、着手前に確認が必要。
 ```

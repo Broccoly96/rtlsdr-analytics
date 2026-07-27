@@ -1,0 +1,24 @@
+# Secrets / local config
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Generated Phase 0 reports (contain point-in-time host data)
+reports/*.md
+reports/*.json
+!reports/environment-report.example.md
+
+# DB backups
+backups/*.dump
+
+# Docker
+*.log

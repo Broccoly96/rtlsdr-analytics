@@ -1,0 +1,26 @@
+{
+  "now": 1700000000.0,
+  "messages": 220000,
+  "aircraft": [
+    {
+      "hex": "fffff1",
+      "flight": "TEST011 ",
+      "alt_baro": 33000,
+      "lat": 95.0,
+      "lon": 139.6,
+      "seen": 0.5,
+      "seen_pos": 0.5,
+      "messages": 100
+    },
+    {
+      "hex": "fffff2",
+      "flight": "TEST012 ",
+      "alt_baro": 33000,
+      "lat": 35.6,
+      "lon": 185.0,
+      "seen": 0.5,
+      "seen_pos": 0.5,
+      "messages": 100
+    }
+  ]
+}

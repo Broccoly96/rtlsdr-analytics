@@ -1,0 +1,89 @@
+"""Application configuration, validated eagerly at startup.
+
+All environment variables are validated when Settings() is constructed so
+misconfiguration fails fast with a clear message instead of surfacing as a
+confusing runtime error later (PLAN.md SS6.3).
+"""
+
+from __future__ import annotations
+
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
+
+    readsb_aircraft_url: str
+    receiver_lat: float
+    receiver_lon: float
+    display_timezone: str = "Asia/Tokyo"
+    poll_interval_seconds: float = 5.0
+    track_sample_seconds: float = 30.0
+    raw_retention_days: int = 30
+    database_url: str
+    app_bind_host: str = "127.0.0.1"
+    app_port: int = 8088
+    map_style_url: str | None = None
+    map_show_receiver_marker: bool = False
+    map_receiver_marker_precision: int = 1
+
+    @field_validator("readsb_aircraft_url")
+    @classmethod
+    def _validate_readsb_url(cls, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("READSB_AIRCRAFT_URL must start with http:// or https://")
+        return value
+
+    @field_validator("receiver_lat")
+    @classmethod
+    def _validate_lat(cls, value: float) -> float:
+        if not -90.0 <= value <= 90.0:
+            raise ValueError("RECEIVER_LAT must be between -90 and 90")
+        return value
+
+    @field_validator("receiver_lon")
+    @classmethod
+    def _validate_lon(cls, value: float) -> float:
+        if not -180.0 <= value <= 180.0:
+            raise ValueError("RECEIVER_LON must be between -180 and 180")
+        return value
+
+    @field_validator("display_timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"DISPLAY_TIMEZONE {value!r} is not a known IANA timezone") from exc
+        return value
+
+    @field_validator("poll_interval_seconds", "track_sample_seconds")
+    @classmethod
+    def _validate_positive_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("must be a positive number of seconds")
+        return value
+
+    @field_validator("raw_retention_days")
+    @classmethod
+    def _validate_retention(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("RAW_RETENTION_DAYS must be a positive integer")
+        return value
+
+    @field_validator("database_url")
+    @classmethod
+    def _validate_database_url(cls, value: str) -> str:
+        if not value.startswith(("postgres://", "postgresql://")):
+            raise ValueError("DATABASE_URL must be a postgres:// or postgresql:// URL")
+        return value
+
+    @field_validator("app_port")
+    @classmethod
+    def _validate_port(cls, value: int) -> int:
+        if not 1 <= value <= 65535:
+            raise ValueError("APP_PORT must be between 1 and 65535")
+        return value

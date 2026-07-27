@@ -171,14 +171,14 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### B-2. ComposeのDB定義
 
-- [ ] `adsb-db`を定義する。
-- [ ] DBデータをnamed volumeへ保存する。
-- [ ] DBポートをホストへ公開しない。
-- [ ] DBユーザー、DB名、パスワードを環境変数化する。
-- [ ] パスワードに開発用既定値を本番で使わせない。
-- [ ] `pg_isready`によるhealthcheckを追加する。
-- [ ] ログサイズ上限を設定する。
-- [ ] graceful shutdown期間を設定する。
+- [x] `adsb-db`を定義する。
+- [x] DBデータをnamed volumeへ保存する。
+- [x] DBポートをホストへ公開しない(`docker compose ps`のPORTSが`5432/tcp`のみ、ホスト側`ss -ltn`にも5432なしを実機確認)。
+- [x] DBユーザー、DB名、パスワードを環境変数化する。
+- [x] パスワードに開発用既定値を本番で使わせない(`.env.example`の`changeme`はコミットされず、本番`.env`はG-1でサーバー上にのみ作成する運用)。
+- [x] `pg_isready`によるhealthcheckを追加する。
+- [x] ログサイズ上限を設定する。
+- [x] graceful shutdown期間を設定する。
 
 ### B-3. 初期スキーマ
 
@@ -227,63 +227,63 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### B-4. 制約とインデックス
 
-- [ ] ICAOアドレスの形式または長さを制約する。
-- [ ] 緯度は`-90..90`、経度は`-180..180`を制約する。
-- [ ] 距離、速度、方位など明らかな不正値を防ぐ。
-- [ ] `observations (icao, observed_at DESC)`を作る。
-- [ ] `observations (observed_at DESC)`を作る。
-- [ ] `observations (distance_km, observed_at DESC)`を作る。
-- [ ] `aircraft (last_seen_at DESC)`を作る。
-- [ ] `ingestion_status (checked_at DESC)`を作る。
-- [ ] 1回のpoll再処理で観測が不当に重複しない一意性を検討する。
-- [ ] APIの実クエリを確認し、不要なインデックスを増やさない。
+- [x] ICAOアドレスの形式または長さを制約する。
+- [x] 緯度は`-90..90`、経度は`-180..180`を制約する。
+- [x] 距離、速度、方位など明らかな不正値を防ぐ。
+- [x] `observations (icao, observed_at DESC)`を作る(`UNIQUE(icao, observed_at)`制約が同じB-treeを提供するため、別インデックスは追加せず重複を回避)。
+- [x] `observations (observed_at DESC)`を作る。
+- [x] `observations (distance_km, observed_at DESC)`を作る(`WHERE distance_km IS NOT NULL`の部分インデックス)。
+- [x] `aircraft (last_seen_at DESC)`を作る。
+- [x] `ingestion_status (checked_at DESC)`を作る。
+- [x] 1回のpoll再処理で観測が不当に重複しない一意性を検討する(`UNIQUE(icao, observed_at)` + `ON CONFLICT DO UPDATE`)。
+- [x] APIの実クエリを確認し、不要なインデックスを増やさない(Milestone C未着手のため、CLAUDE.md記載のクエリパターンから判断)。
 
 ### B-5. migration
 
-- [ ] 初期migrationを作成する。
-- [ ] 空DBへのupgradeをテストする。
-- [ ] 同じDBへの再実行が安全であることを確認する。
-- [ ] downgradeまたはロールバック方針を文書化する。
-- [ ] migration専用Composeサービスを追加する。
-- [ ] migrationの失敗を起動ログで明確に確認できるようにする。
+- [x] 初期migrationを作成する。
+- [x] 空DBへのupgradeをテストする(使い捨てコンテナと実際の`compose.yaml`の両方で確認)。
+- [x] 同じDBへの再実行が安全であることを確認する(`docker compose run --rm adsb-migrate`を2回実行、2回目は無変更で正常終了)。
+- [x] downgradeまたはロールバック方針を文書化する(`migrations/versions/..._initial_schema.py`のdocstringに記載。空DBでdowngrade/再upgradeのサイクルを実DBで確認済み。実データを持つDBに対しては絶対に実行しない方針)。
+- [x] migration専用Composeサービスを追加する。
+- [x] migrationの失敗を起動ログで明確に確認できるようにする(Alembicは失敗時に非ゼロ終了、`docker compose logs adsb-migrate`で確認可能)。
 
 ### B-6. PostgresStore
 
-- [ ] Store Protocolに準拠する`PostgresStore`を作成する。
-- [ ] 接続プールを設定する。
-- [ ] 起動時接続と終了時closeを実装する。
-- [ ] 1回のpollに関係する更新を適切なトランザクションへまとめる。
-- [ ] `aircraft`のupsertを実装する。
-- [ ] `observations`のバルクinsertを実装する。
-- [ ] `traffic_minute`のupsertを実装する。
-- [ ] `ingestion_status`の保存を実装する。
-- [ ] 一部保存後の例外で不整合が残らないことを確認する。
-- [ ] DB停止時に無制限のメモリキューを作らない。
-- [ ] DB復旧後にcollectorが再接続できるようにする。
-- [ ] SQLパラメータを必ずバインドし、文字列連結でSQLを組み立てない。
+- [x] Store Protocolに準拠する`PostgresStore`を作成する。
+- [x] 接続プールを設定する。
+- [x] 起動時接続と終了時closeを実装する。
+- [x] **[方針変更、理由記録]** 1回のpollに関係する更新を明示的な複数文トランザクションへはまとめない。`service.py`の耐障害設計(`_safe_store_call`が各Store呼び出しを個別にcatch)は「1機体の書き込み失敗が同じpollの他の正常な書き込みを巻き込まない」ことが前提であり、poll全体を1トランザクションにするとこの前提を破壊する。各Protocolメソッドは元々1テーブルへの1文のみなので、Postgresのデフォルトの文単位アトミック性で既に必要な原子性は満たされている(`app/db/postgres_store.py`のdocstringに理由を記載)。
+- [x] `aircraft`のupsertを実装する。
+- [x] `observations`のinsert(`ON CONFLICT DO UPDATE`で冪等)を実装する。
+- [x] `traffic_minute`のupsertを実装する。
+- [x] `ingestion_status`の保存を実装する。
+- [x] 一部保存後の例外で不整合が残らないことを確認する(契約テスト`test_earlier_write_survives_a_later_failing_write`で実DB確認)。
+- [x] DB停止時に無制限のメモリキューを作らない(バッファ自体を持たず、`asyncpg`が例外を投げて`_safe_store_call`が握りつぶすのみ)。
+- [x] DB復旧後にcollectorが再接続できるようにする(`asyncpg`プールが次回利用時に自動再接続、追加コード不要)。
+- [x] SQLパラメータを必ずバインドし、文字列連結でSQLを組み立てない(全メソッド`$1`等のプレースホルダのみ使用)。
 
 ### B-7. Store契約テスト
 
 同じテストケースをInMemoryStoreとPostgresStoreへ適用できる形にする。
 
-- [ ] aircraftの新規作成
-- [ ] aircraftのlast seen更新
-- [ ] callsignが空の観測で有効な既存callsignを不用意に消さない
-- [ ] observation保存
-- [ ] 同一観測の再処理
-- [ ] 1分集計のupsert
-- [ ] ingestion成功/失敗状態の保存
-- [ ] トランザクションロールバック
-- [ ] UTCタイムスタンプ
-- [ ] close後の接続解放
+- [x] aircraftの新規作成
+- [x] aircraftのlast seen更新
+- [x] callsignが空の観測で有効な既存callsignを不用意に消さない
+- [x] observation保存
+- [x] 同一観測の再処理
+- [x] 1分集計のupsert
+- [x] ingestion成功/失敗状態の保存
+- [x] トランザクションロールバック(`tests/contract/test_postgres_store.py`にPostgres限定の`test_earlier_write_survives_a_later_failing_write`として実装。InMemoryStoreは値検証を一切行わないため同じ失敗モードを起こせず、共有チェックにはできなかった — 理由をテストのdocstringに記載)
+- [x] UTCタイムスタンプ
+- [x] close後の接続解放(Postgres限定の`test_close_then_use_fails`で確認。InMemoryStoreは解放すべきOSリソースを持たない)
 
 ### Milestone B 完了条件
 
-- [ ] Compose上の空DBへmigrationできる。
-- [ ] collectorがfixtureをPostgreSQLへ保存できる。
-- [ ] Store契約テストがInMemoryStoreとPostgresStoreの両方で通る。
-- [ ] PostgreSQLポートがホスト外部へ公開されていない。
-- [ ] コンテナ再作成後もデータが残る。
+- [x] Compose上の空DBへmigrationできる。
+- [x] collectorがfixtureをPostgreSQLへ保存できる(`tests/integration/test_collector_service_postgres.py`で自動テスト化、実`compose.yaml`のadsb-dbへの手動投入でも確認)。
+- [x] Store契約テストがInMemoryStoreとPostgresStoreの両方で通る(20件全green)。
+- [x] PostgreSQLポートがホスト外部へ公開されていない(`docker compose ps`と`ss -ltn`で実機確認)。
+- [x] コンテナ再作成後もデータが残る(`docker compose down && docker compose up -d adsb-db`前後でデータ一致を実機確認)。
 
 ---
 
@@ -963,3 +963,33 @@ backup保持=7世代
 ```
 
 最初の再開セッションでは、Milestone Aを完了し、Milestone BのmigrationとPostgresStoreから着手する。
+
+### セッション記録
+
+```text
+日付: 2026-07-27
+完了したMilestone/Task: Milestone A(ベースライン確認)、Milestone B(PostgreSQL永続化)
+変更した主要ファイル:
+  - compose.yaml, Dockerfile.migrate, .dockerignore（新規）
+  - alembic.ini, migrations/env.py, migrations/versions/62c3f8022564_initial_schema.py（新規）
+  - app/db/pool.py, app/db/postgres_store.py（新規）
+  - app/collector/store.py（Store Protocolにclose()追加）
+  - app/collector/__main__.py（InMemoryStore→PostgresStoreへ配線）
+  - tests/contract/（新規: pg_container.py, store_contract.py, test_in_memory_store.py, test_postgres_store.py）
+  - tests/integration/test_collector_service_postgres.py（新規）
+  - tests/conftest.py（新規、契約テストfixtureの共有）
+  - pyproject.toml（migrate extra追加、pytest/pytest-asyncio更新）、.env.example（POSTGRES_*追加）
+実行したテスト: pytest（フルスイート）、ruff check/format --check
+テスト結果: 113件全green、lint/format clean
+実環境で確認したこと:
+  - docker composeで空DBへのmigration適用・再適用（2回実行で冪等性確認）
+  - downgrade→再upgradeのサイクル
+  - docker compose ps / ss -ltn でDBポートがホストへ一切公開されていないことを確認
+  - docker compose down（volumeは保持）→ up 後もデータが残ることを確認
+  - 使い捨てPostgresコンテナでの契約テスト20件、collector→実PostgreSQL統合テスト1件
+残課題:
+  - Milestone E（保持期限）でingestion_statusテーブルの保持ポリシーが未定義（observationsのみ言及されている）。Milestone E着手時に対応要。
+  - この開発ホストではDocker経由のポートフォワード直後の接続でSSLネゴシエーションがリセットされる既知の癖がある（本番のcompose内部ネットワーク通信には影響なし）。tests/contract/pg_container.pyでsslmode=disable指定とリトライで回避済み。
+次に行うTask: Milestone C（FastAPI: health/status/traffic/tracks/rankings API）
+ユーザー判断が必要な事項: なし（Milestone C着手に必要な決定事項は現時点でなし）
+```

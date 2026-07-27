@@ -1,0 +1,14 @@
+# Minimal, short-lived image that only runs Alembic migrations against
+# PostgreSQL. Deliberately does NOT install the app package or its base
+# dependencies (fastapi, uvicorn, ...) -- migrations/env.py and the
+# migration scripts only ever import alembic/sqlalchemy, never `app`.
+FROM python:3.12-slim
+
+WORKDIR /migrations
+COPY alembic.ini ./
+COPY migrations ./migrations
+
+RUN pip install --no-cache-dir "alembic==1.18.5" "sqlalchemy==2.0.51" "asyncpg==0.31.0"
+
+ENTRYPOINT ["alembic"]
+CMD ["upgrade", "head"]

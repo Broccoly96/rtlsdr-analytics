@@ -13,10 +13,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+migrate = [
+    "sqlalchemy==2.0.51",
+    "alembic==1.18.5",
+]
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.8.3",
+    "adsb-analytics[migrate]",
 ]
 
 [tool.ruff]

@@ -37,6 +37,8 @@ class Store(Protocol):
 
     async def record_ingestion_status(self, status: IngestionStatus) -> None: ...
 
+    async def close(self) -> None: ...
+
 
 @dataclass
 class _AircraftRecord:
@@ -75,3 +77,6 @@ class InMemoryStore:
         self.ingestion_status_log.append(status)
         if len(self.ingestion_status_log) > MAX_INGESTION_STATUS_HISTORY:
             del self.ingestion_status_log[:-MAX_INGESTION_STATUS_HISTORY]
+
+    async def close(self) -> None:
+        pass  # no resources to release

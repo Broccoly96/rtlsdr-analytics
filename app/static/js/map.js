@@ -2,7 +2,21 @@
 // only inside the map panel; the rest of the dashboard (chart, rankings)
 // keeps working regardless (PLAN.md D-3/D-4).
 
-import maplibregl from "https://unpkg.com/maplibre-gl@6.0.0/dist/maplibre-gl.mjs";
+// maplibre-gl@6's ESM bundle has no default export (only named exports:
+// Map, Popup, Marker, ...) -- a default import silently binds to
+// `undefined` at the language level, but since a *static* default import
+// of a non-existent binding is a module-linking SyntaxError, it actually
+// fails the entire import graph (this file, and anything that imports it)
+// before any code runs at all. A namespace import matches what the module
+// actually exports.
+//
+// Vendored locally under vendor/maplibre-gl/ (maplibre-gl.mjs +
+// maplibre-gl-shared.mjs + maplibre-gl-worker.mjs, all relatively
+// referenced from this one entrypoint) rather than fetched from a CDN, so
+// the map doesn't depend on the *client browser's* network being able to
+// reach unpkg.com -- only on it reaching this app's own origin, which it
+// obviously already can.
+import * as maplibregl from "./vendor/maplibre-gl/maplibre-gl.mjs";
 
 import { api } from "./api.js";
 
@@ -50,6 +64,28 @@ function hideMapError() {
   if (errorEl) errorEl.hidden = true;
 }
 
+// MapLibre GL JS requires WebGL; some environments (remote desktops/VMs
+// without GPU passthrough, WebGL disabled via browser flags, very old
+// browsers) don't have it. Detecting this up front turns an otherwise
+// silent blank map into an immediate, specific, on-page explanation.
+function isWebGLAvailable() {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext("webgl2") || canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function describeError(err) {
+  if (err && typeof err.message === "string" && err.message) return err.message;
+  if (typeof err === "string") return err;
+  return "詳細不明のエラー";
+}
+
 function tracksToLineFeatures(tracksGeoJSON) {
   // Split each aircraft's MultiLineString into individual LineString
   // features so each segment can be colored via a simple data-driven
@@ -84,11 +120,20 @@ function tracksToLineFeatures(tracksGeoJSON) {
   return { type: "FeatureCollection", features };
 }
 
+const LOAD_TIMEOUT_MS = 10000;
+
 export function createTrackMap({ containerId, styleUrl }) {
   let map;
   let popup;
   let ready = false;
   let selectedIcao = null;
+
+  if (!isWebGLAvailable()) {
+    showMapError(
+      "このブラウザ/環境ではWebGLが利用できないため地図を表示できません(グラフ・ランキングは利用できます)。リモートデスクトップ/VM環境やWebGL無効化設定が原因のことがあります。"
+    );
+    return { setTracks: () => {}, resize: () => {} };
+  }
 
   try {
     map = new maplibregl.Map({
@@ -103,16 +148,30 @@ export function createTrackMap({ containerId, styleUrl }) {
     });
   } catch (err) {
     console.error("map init failed", err);
-    showMapError("地図の初期化に失敗しました。グラフ・ランキングは利用できます。");
+    showMapError(`地図の初期化に失敗しました: ${describeError(err)}(グラフ・ランキングは利用できます)`);
     return { setTracks: () => {}, resize: () => {} };
   }
 
+  // If `load` never fires (e.g. the style URL or one of its referenced
+  // tile/sprite/glyph hosts is unreachable from this browser but was
+  // reachable from wherever the app was tested from), the map would
+  // otherwise sit silently blank forever with no error shown at all.
+  const loadTimeoutId = setTimeout(() => {
+    if (!ready) {
+      showMapError(
+        `地図の読み込みがタイムアウトしました(${LOAD_TIMEOUT_MS / 1000}秒)。スタイルURL(${styleUrl})への通信を確認してください。グラフ・ランキングは利用できます。`
+      );
+    }
+  }, LOAD_TIMEOUT_MS);
+
   map.on("error", (event) => {
+    const detail = describeError(event && event.error);
     console.error("map error", event && event.error);
-    showMapError("地図データの取得に失敗しました。グラフ・ランキングは利用できます。");
+    showMapError(`地図データの取得に失敗しました: ${detail}(グラフ・ランキングは利用できます)`);
   });
 
   map.on("load", () => {
+    clearTimeout(loadTimeoutId);
     hideMapError();
     ready = true;
 

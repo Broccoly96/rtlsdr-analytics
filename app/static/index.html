@@ -6,10 +6,10 @@
 <title>ADS-B Analytics</title>
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
 >
 <link rel="stylesheet" href="/static/css/style.css">
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.0.0/dist/maplibre-gl.css">
+<link rel="stylesheet" href="/static/js/vendor/maplibre-gl/maplibre-gl.css">
 </head>
 <body>
 <div class="app">
@@ -17,6 +17,7 @@
   <header class="app-header">
     <div class="app-header__title">
       <h1>ADS-B Analytics</h1>
+      <span class="app-header__version" id="app-version"></span>
     </div>
     <div class="app-header__status" id="ingestion-badge" role="status" aria-live="polite">
       <span class="status-dot" aria-hidden="true"></span>
@@ -123,7 +124,7 @@
 
 </div>
 
-<script src="https://unpkg.com/echarts@6.1.0/dist/echarts.min.js"></script>
+<script src="/static/js/vendor/echarts/echarts.min.js"></script>
 <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

@@ -336,6 +336,7 @@ async def test_config_exposes_no_secrets(client: AsyncClient) -> None:
     body = response.json()
     assert body["map_style_url"].startswith("https://")
     assert body["display_timezone"] == "Asia/Tokyo"
+    assert body["version"] not in (None, "", "unknown")
     assert "database_url" not in body
     assert "readsb_aircraft_url" not in body
     body_text = response.text

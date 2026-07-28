@@ -19,6 +19,8 @@ class ConfigResponse(BaseModel):
     map_show_receiver_marker: bool
     map_receiver_marker_precision: int
     display_timezone: str
+    version: str
+    git_revision: str | None
 
 
 class LiveResponse(BaseModel):

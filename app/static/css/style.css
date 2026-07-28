@@ -73,10 +73,22 @@ button {
   border-radius: var(--radius);
 }
 
+.app-header__title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .app-header__title h1 {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
+}
+
+.app-header__version {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
 }
 
 .app-header__status {

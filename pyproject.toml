@@ -1,6 +1,6 @@
 [project]
 name = "adsb-analytics"
-version = "0.3.0"
+version = "0.3.1"
 description = "Personal ADS-B history and analytics dashboard built on top of readsb."
 requires-python = ">=3.12"
 dependencies = [
@@ -21,6 +21,7 @@ dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.8.3",
+    "playwright==1.61.0",
     "adsb-analytics[migrate]",
 ]
 

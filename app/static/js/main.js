@@ -14,6 +14,22 @@ import { api } from "./api.js";
 import { ui } from "./ui.js";
 import { createTrafficChart, refreshTraffic, setTimezone as setChartTimezone } from "./chart.js";
 
+// CSP violations (e.g. a browser extension or local policy blocking a
+// same-origin script/style/connect target) don't throw a catchable JS error
+// and don't show up in showMapLoadError's try/catch -- they only appear as a
+// browser-generated console line, invisible without devtools. Surface them
+// on-page too, since "map fails to load but the server serves everything
+// correctly" was hard to diagnose without asking the user to open devtools.
+document.addEventListener("securitypolicyviolation", (event) => {
+  const detail = `CSPにより読み込みがブロックされました: ${event.blockedURI}(directive: ${event.violatedDirective})`;
+  console.error(detail, event);
+  const errorEl = document.getElementById("map-error");
+  if (errorEl && errorEl.hidden) {
+    errorEl.textContent = `${detail} -- ブラウザの拡張機能やセキュリティソフトが関与している可能性があります。`;
+    errorEl.hidden = false;
+  }
+});
+
 const TRAFFIC_WINDOW_HOURS = 24;
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const DEFAULT_CONFIG = {
@@ -47,6 +63,21 @@ function showMapLoadError(err) {
 }
 
 async function loadMapModule() {
+  // A plain fetch() isn't subject to ES module linking-graph error wrapping
+  // the way import() is, so on failure it gives a much more specific reason
+  // (HTTP status, network error) than import()'s generic "Failed to fetch
+  // dynamically imported module" message.
+  try {
+    const res = await fetch("./map.js");
+    if (!res.ok) {
+      showMapLoadError(new Error(`map.jsの取得に失敗しました (HTTP ${res.status})`));
+      return null;
+    }
+  } catch (err) {
+    showMapLoadError(new Error(`map.jsへのネットワーク接続に失敗しました: ${err && err.message ? err.message : err}`));
+    return null;
+  }
+
   try {
     return await import("./map.js");
   } catch (err) {

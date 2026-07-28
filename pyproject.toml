@@ -1,6 +1,6 @@
 [project]
 name = "adsb-analytics"
-version = "0.5.0"
+version = "0.5.1"
 description = "Personal ADS-B history and analytics dashboard built on top of readsb."
 requires-python = ">=3.12"
 dependencies = [

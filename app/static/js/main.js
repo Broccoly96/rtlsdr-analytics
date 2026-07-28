@@ -40,7 +40,8 @@ function showMapLoadError(err) {
   console.error("failed to load map module", err);
   const errorEl = document.getElementById("map-error");
   if (errorEl) {
-    errorEl.textContent = "地図モジュールの読み込みに失敗しました。他の情報は利用できます。";
+    const detail = err && err.message ? err.message : String(err);
+    errorEl.textContent = `地図モジュールの読み込みに失敗しました: ${detail}(他の情報は利用できます)`;
     errorEl.hidden = false;
   }
 }

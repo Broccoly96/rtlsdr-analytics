@@ -1,8 +1,12 @@
-# adsb-db + adsb-migrate only (Milestone B scope). adsb-collector/adsb-api
-# are added in Milestone F once they're containerized.
-#
 # adsb-db never publishes a port to the host -- it is reachable only on the
 # internal Docker network. Never add a `ports:` mapping to it.
+#
+# adsb-collector reaches the host's readsb (bound to 0.0.0.0:80, confirmed
+# read-only via `ss -ltn`) through host.docker.internal, added explicitly
+# via extra_hosts since this is Docker Engine on Linux, not Docker Desktop
+# (which provides that hostname automatically). READSB_AIRCRAFT_URL in
+# .env must point at host.docker.internal, not 127.0.0.1 -- from inside a
+# container, 127.0.0.1 means the container itself.
 
 services:
   adsb-db:
@@ -36,6 +40,55 @@ services:
       adsb-db:
         condition: service_healthy
     restart: "no"
+
+  adsb-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python3", "-m", "app.collector"]
+    env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      adsb-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  adsb-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.api.asgi:app", "--host", "0.0.0.0", "--port", "8088"]
+    env_file: .env
+    ports:
+      - "${APP_BIND_HOST}:${APP_PORT}:8088"
+    depends_on:
+      adsb-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/health/live', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   adsb-db-data:

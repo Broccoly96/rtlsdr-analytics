@@ -651,55 +651,52 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### F-1. イメージ
 
-- [ ] x86-64でビルドできる。
-- [ ] Pythonベースイメージを固定する。
-- [ ] multi-stage buildまたは不要ファイル除外でサイズを抑える。
-- [ ] `.dockerignore`を用意する。
-- [ ] 非rootユーザーでcollector/APIを実行する。
-- [ ] healthcheckに不要な大型ツールを追加しない。
-- [ ] イメージに`.env`や実データを含めない。
+- [x] x86-64でビルドできる(このホストで実ビルド・実起動確認済み)。
+- [x] Pythonベースイメージを固定する(`python:3.12-slim`)。
+- [!] **[未実施]** multi-stage buildまたは不要ファイル除外でサイズを抑える — 現状シングルステージビルドのみ。動作優先で後回しにした最適化課題として記録。
+- [x] `.dockerignore`を用意する(Milestone Bで作成済み、そのまま流用)。
+- [x] 非rootユーザーでcollector/APIを実行する(`USER appuser`、uid 1000)。
+- [x] healthcheckに不要な大型ツールを追加しない(curlではなくPython標準ライブラリの`urllib`を使用)。
+- [x] イメージに`.env`や実データを含めない(`.dockerignore`で`.env`除外、ビルド時にデータは一切含まれない)。
 
 ### F-2. Compose
 
-- [ ] `adsb-db`
-- [ ] `adsb-migrate`
-- [ ] `adsb-collector`
-- [ ] `adsb-api`
-- [ ] named volume
-- [ ] internal network
-- [ ] APIだけのポート公開
-- [ ] restart policy
-- [ ] healthcheck
-- [ ] ログ上限
-- [ ] graceful shutdown
+- [x] `adsb-db`(Milestone Bで実装済み)
+- [x] `adsb-migrate`(Milestone Bで実装済み)
+- [x] `adsb-collector`(新規)
+- [x] `adsb-api`(新規)
+- [x] named volume(`adsb-db-data`、Milestone Bから継続)
+- [x] internal network(compose既定ネットワーク、`adsb-db`はポート非公開のまま)
+- [x] APIだけのポート公開(`adsb-api`のみ`ports:`を持つ)
+- [x] restart policy(`unless-stopped`をcollector/apiに設定)
+- [!] **[部分実施]** healthcheck — `adsb-api`は`/health/live`ベースのhealthcheckを実装。`adsb-collector`はHTTPエンドポイントを持たないため未実装(ログ監視やingestion_statusテーブルベースの外形監視は将来課題)。
+- [x] ログ上限(`json-file`、max-size 10m/max-file 3をcollector/apiにも設定)
+- [x] graceful shutdown(`stop_grace_period`設定、collectorは`SIGTERM`で`service.stop()`が呼ばれ現在のpollを完了させてから終了)
 
 collectorは1インスタンスだけ起動する。将来APIを複数化してもcollectorが重複起動しないよう責務を分ける。
 
 ### F-3. readsbへのコンテナ内疎通
 
-- [ ] Phase 0で確認済みのURLをコンテナ内から取得できるか確認する。
-- [ ] `127.0.0.1`がホストではなくコンテナ自身を指す点を考慮する。
-- [ ] `host.docker.internal`、host gateway、LAN IP等を環境に合わせて検証する。
-- [ ] readsbがホストloopbackにしかbindしていない場合、勝手にbind先を変更しない。
-- [ ] 疎通できない場合は以下を比較してユーザーへ提示する。
-  - readsb既存HTTP公開範囲の最小変更
-  - collectorのネットワーク方式変更
-  - localhost限定の安全な中継
-- [ ] 採用経路がreadsbをインターネットへ公開しないことを確認する。
+- [x] Phase 0で確認済みのURL(`http://127.0.0.1/tar1090/data/aircraft.json`相当)をコンテナ内から取得できるか確認する — `host.docker.internal`経由で実際に200 OKを確認済み。
+- [x] `127.0.0.1`がホストではなくコンテナ自身を指す点を考慮する — `.env`のコメントに明記、`READSB_AIRCRAFT_URL`は`host.docker.internal`を指すよう設定。
+- [x] `host.docker.internal`、host gateway、LAN IP等を環境に合わせて検証する — Docker EngineはDocker Desktopと違い`host.docker.internal`を自動提供しないため、`compose.yaml`の`extra_hosts: host.docker.internal:host-gateway`で明示的に追加。実機で疎通確認済み。
+- [x] readsbがホストloopbackにしかbindしていない場合、勝手にbind先を変更しない — 読み取り専用`ss -ltn`でreadsbのWebサーバーが既に`0.0.0.0:80`にbindされていることを確認済みのため、bind先変更は不要だった(変更していない)。
+- [ ] 疎通できない場合の比較検討(readsb公開範囲の最小変更/collectorのネットワーク方式変更/localhost限定の中継) — 疎通に問題がなかったため未実施(該当なし)。
+- [x] 採用経路がreadsbをインターネットへ公開しないことを確認する — `host.docker.internal`はDocker内部のみで完結し、readsb側の公開範囲(ホストのLAN/Tailscale)を一切変更していない。
 
 ### F-4. 結合テスト
 
-- [ ] 空DBから全サービスを起動する。
-- [ ] migrationが一度だけ成功する。
-- [ ] fixtureサーバーからcollectorが取得する。
-- [ ] DBへデータが保存される。
-- [ ] 全APIがデータを返す。
-- [ ] Web UIが表示される。
-- [ ] Compose再起動後もデータが残る。
+- [x] 空DBから全サービスを起動する — 実機で`docker compose up`により`adsb-db`→`adsb-migrate`→`adsb-collector`/`adsb-api`の順で起動確認済み。
+- [x] migrationが一度だけ成功する — `adsb-migrate`は`restart: "no"`かつ`service_completed_successfully`条件で1回のみ実行。
+- [!] **[代替実施]** fixtureサーバーからcollectorが取得する — 本項目はfixtureサーバーを想定しているが、実際には本番の実readsbから取得する構成で検証した(ユーザー判断により仮環境デバッグより実環境構築を優先)。fixtureサーバーを使った再現可能な自動テストはまだない。
+- [x] DBへデータが保存される — 実データで確認済み(12機のaircraft、23件のobservations、ingestion_statusが約5秒おきに成功記録)。
+- [x] 全APIがデータを返す — `/api/status`等がDBの実データを反映して応答することを確認済み。
+- [!] **[部分実施]** Web UIが表示される — ステータスバッジ・数値・バージョン表示は動作確認済みだが、地図(MapLibre)の表示は未解決のバグが残っている(下記参照)。
+- [ ] Compose再起動後もデータが残る — named volumeを使っているため理論上は永続化されるはずだが、実際に`docker compose down`(volumeを保持したまま)→`up`しなおしてデータ保持を確認する手順はまだ実施していない。
 
 ### F-5. 障害試験
 
-本番readsbではなくモックとテストDBで行う。
+本番readsbではなくモックとテストDBで行う。**このMilestoneでは未実施。** 実環境構築を優先した結果、本セクションの自動化されたモック障害試験(readsb停止/DB停止/不正JSON/地図障害)はまだ着手していない。Milestone C/DのユニットテストレベルではDB接続失敗時の`/health/ready`挙動など一部関連ロジックはカバーされているが、Compose環境全体を使った意図的な障害注入試験ではない。
 
 #### readsb停止
 
@@ -730,12 +727,16 @@ collectorは1インスタンスだけ起動する。将来APIを複数化して�
 - [ ] tile失敗
 - [ ] 地図以外の機能が継続する。
 
+既知の未解決バグ: ブラウザで地図モジュールの動的import自体が失敗するケースを確認済み(`Failed to fetch dynamically imported module: .../static/js/map.js`)。原因はMapLibre本体のvendoring・キャッシュ制御修正後も再現しており未特定。実環境(本Compose構成)で再現するか、次回ユーザーによるブラウザ確認が必要。
+
 ### Milestone F 完了条件
 
-- [ ] Composeだけで空環境から再現できる。
-- [ ] 正常、停止、復旧シナリオが自動または再現可能な手順で確認済み。
-- [ ] readsbへの接続経路が安全。
-- [ ] DBとreadsbを外部公開していない。
+- [!] **[部分達成]** Composeだけで空環境から再現できる — サービス構成・起動順序は実機確認済みだが、fixtureサーバーを使った完全に独立・再現可能な自動化はまだない(F-4参照)。
+- [ ] 正常、停止、復旧シナリオが自動または再現可能な手順で確認済み — F-5未着手のため未達成。
+- [x] readsbへの接続経路が安全 — `host.docker.internal`経由のDocker内部限定、readsb側の公開範囲は変更していない(F-3参照)。
+- [x] DBとreadsbを外部公開していない — `adsb-db`は`ports:`なし、readsbはこのアプリからの変更なし(既存のLAN/Tailscale公開範囲のまま)。
+
+**総評: Milestone Fは部分完了。** 実データでのエンドツーエンド疎通(collector→DB→API)は実環境で確認できたが、(1)地図表示バグが未解決、(2)モックを使った意図的な障害試験(F-5)が未着手、(3)fixtureサーバーベースの結合テスト自動化が未着手、の3点が残課題。
 
 ---
 

@@ -684,14 +684,16 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### E-1. 保持期限
 
-- [ ] `RAW_RETENTION_DAYS`を設定可能にする。
-- [ ] 既定30日より古いobservationsを削除する。
-- [ ] 削除は小さなbatchで行う。
-- [ ] 1分集計を削除対象に含めない。
-- [ ] 削除件数と所要時間をログへ出す。
-- [ ] 同時実行を防止する。
-- [ ] 保持処理のdry-runを用意する。
-- [ ] 境界時刻をUTCでテストする。
+- [x] `RAW_RETENTION_DAYS`を設定可能にする(既存`Settings.raw_retention_days`をそのまま使用)。
+- [x] 既定30日より古いobservationsを削除する(`app/retention.py:delete_old_observations`)。
+- [x] 削除は小さなbatchで行う(既定1000件ずつ、`id IN (SELECT ... LIMIT $2)`パターン)。
+- [x] 1分集計を削除対象に含めない(`traffic_minute`には一切触れない設計。契約テスト`test_traffic_minute_rows_are_never_touched`で確認)。
+- [x] 削除件数と所要時間をログへ出す(バッチ毎・完了時にINFOログ)。
+- [x] 同時実行を防止する(`pg_try_advisory_lock`。契約テスト`test_concurrent_run_skips_when_advisory_lock_held`で確認)。
+- [x] 保持処理のdry-runを用意する(`--dry-run`、削除せずCOUNTのみ)。
+- [x] 境界時刻をUTCでテストする(`tests/unit/test_retention.py`)。
+
+常駐実行用に`adsb-retention`Composeサービス(`python -m app.retention --loop`、既定24時間毎)を追加し、実際に`compose.yaml`へ組み込んで起動・ログ出力を実機確認済み。
 
 ### E-2. DB状態確認
 
@@ -706,8 +708,10 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 - 30日後の推定容量
 - 最終ingestion成功時刻
 
-- [ ] コマンドをREADMEへ記載する。
-- [ ] 秘密情報を出力しない。
+- [x] コマンドをREADMEへ記載する(`scripts/db_status.py`、README「DB status」節)。
+- [x] 秘密情報を出力しない(DATABASE_URLや接続情報は一切出力しない。`test_render_report_contains_no_secrets_and_key_fields`で確認)。
+
+実データ(observations 1,529件、DB総サイズ8.3MB)に対して実機実行し、正しい集計値が出力されることを確認済み(2026-07-28)。
 
 ### E-3. バックアップ
 

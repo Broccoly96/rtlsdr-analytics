@@ -39,6 +39,29 @@ docker compose logs -f adsb-api
 docker compose logs -f adsb-db
 ```
 
+## DB status
+
+```bash
+docker compose run --rm adsb-api python3 scripts/db_status.py
+```
+
+Read-only report: total/per-table DB size, observation row count and time
+range, growth in the last 24h, estimated daily growth and projected size at
+30 days, and the last ingestion result. Prints only aggregate numbers, never
+a connection string or row-level data.
+
+## Retention
+
+`RAW_RETENTION_DAYS` (default 30) is enforced continuously by the
+`adsb-retention` service, which deletes old `observations` rows in small
+batches (`traffic_minute` aggregates are kept indefinitely). Check its
+status with `docker compose logs adsb-retention`. To check what a run
+would delete without deleting anything:
+
+```bash
+docker compose run --rm adsb-retention python3 -m app.retention --dry-run
+```
+
 ## Backup and restore
 
 ```bash

@@ -11,7 +11,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -50,5 +50,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     async def dashboard() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.middleware("http")
+    async def no_cache_for_dashboard_assets(request: Request, call_next):
+        # This dashboard is small, low-traffic, and actively iterated on --
+        # a stale cached copy of index.html/JS/CSS silently showing an old
+        # build (with no visible sign anything is wrong) is a worse outcome
+        # than the browser re-fetching a few hundred KB on every load.
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     return app

@@ -66,9 +66,13 @@ async function loadMapModule() {
   // A plain fetch() isn't subject to ES module linking-graph error wrapping
   // the way import() is, so on failure it gives a much more specific reason
   // (HTTP status, network error) than import()'s generic "Failed to fetch
-  // dynamically imported module" message.
+  // dynamically imported module" message. NOTE: unlike import()'s specifier,
+  // fetch() resolves a relative URL against the *document's* base URL, not
+  // this module's URL -- import.meta.url must be passed explicitly as the
+  // base or "./map.js" would resolve to the site root instead of this
+  // module's own directory.
   try {
-    const res = await fetch("./map.js");
+    const res = await fetch(new URL("./map.js", import.meta.url));
     if (!res.ok) {
       showMapLoadError(new Error(`map.jsの取得に失敗しました (HTTP ${res.status})`));
       return null;

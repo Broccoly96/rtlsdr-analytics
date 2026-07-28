@@ -729,19 +729,21 @@ migration失敗時にcollectorやAPIが古いスキーマで起動し続けな�
 
 ### E-4. ログ
 
-- [ ] JSONまたは一貫した構造化ログを使用する。
-- [ ] 正常pollごとの過剰ログを避ける。
-- [ ] 接続失敗と回復を記録する。
-- [ ] 不正データ除外件数を記録する。
-- [ ] Dockerログの`max-size`と`max-file`を設定する。
-- [ ] パスワード、完全な接続URL、レスポンス本文をログへ出さない。
+- [x] JSONまたは一貫した構造化ログを使用する(`%(asctime)s %(levelname)s %(name)s %(message)s`をcollector/retention/APIの3サービス全てに統一。**今回の点検でAPI(`app/api/asgi.py`)だけ`logging.basicConfig`未設定だったことを発見・修正**し、他2サービスと書式が揃っていなかった不整合を解消した)。
+- [x] 正常pollごとの過剰ログを避ける(成功pollは`ingestion_status`保存以外に定型ログを出さない設計を確認、変更なし)。
+- [x] 接続失敗と回復を記録する(失敗は既存の`logger.warning("readsb fetch failed")`。**今回の点検で「回復」側のログが存在しないことを発見**、backoff明けの初回成功pollで`"readsb fetch recovered after backoff"`を出すよう追加。実機ログでは未発火(このセッション中に本物の障害が起きていないため)だが、`test_readsb_outage_backs_off_without_crashing_and_recovers`で自動テスト済み)。
+- [x] 不正データ除外件数を記録する(**今回の点検で`normalize_poll`が計算する`excluded_reasons`が呼び出し側で一切ログされず捨てられていたことを発見**、`CollectorService.poll_once`に`logger.info`を追加。実機ログで`poll excluded 7 record(s): {'stale': 7}`のように実際に出力されることを確認済み(2026-07-28))。
+- [x] Dockerログの`max-size`と`max-file`を設定する(Milestone Fで全サービスに`json-file`/10m/3設定済み)。
+- [x] パスワード、完全な接続URL、レスポンス本文をログへ出さない(既存コードを点検、`database_url`や生レスポンスボディをログ出力する箇所は皆無であることを確認)。
 
 ### Milestone E 完了条件
 
-- [ ] 保持期限処理がテストデータで機能する。
-- [ ] DB増加量を確認できる。
-- [ ] backupと別DBへのrestoreが成功する。
-- [ ] ログが容量無制限に増えない。
+- [x] 保持期限処理がテストデータで機能する(契約テスト5件、実DBに対する境界・batch・dry-run・同時実行防止を確認)。
+- [x] DB増加量を確認できる(`scripts/db_status.py`、実データ8.3MB/1,529件で実行確認)。
+- [x] backupと別DBへのrestoreが成功する(`scripts/backup.sh`→`scripts/restore_test.sh`を実データで1往復確認)。
+- [x] ログが容量無制限に増えない(全サービスDockerログ`max-size 10m`/`max-file 3`)。
+
+**Milestone E完了。** 2026-07-28。
 
 ---
 

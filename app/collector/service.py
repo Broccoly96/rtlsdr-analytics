@@ -94,9 +94,17 @@ class CollectorService:
             return interval
 
         latency_ms = (time.monotonic() - start) * 1000
+        if self._backoff_seconds > BACKOFF_INITIAL_SECONDS:
+            logger.info("readsb fetch recovered after backoff")
         self._backoff_seconds = BACKOFF_INITIAL_SECONDS  # reset cadence on recovery
 
         result = normalize_poll(payload, polled_at, self._receiver_lat, self._receiver_lon)
+        if result.excluded_reasons:
+            logger.info(
+                "poll excluded %d record(s): %s",
+                sum(result.excluded_reasons.values()),
+                result.excluded_reasons,
+            )
         await self._store_observations(result.observations, polled_at)
         self._forget_dropped_aircraft({o.icao for o in result.observations})
 

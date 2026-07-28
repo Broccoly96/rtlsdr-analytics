@@ -788,11 +788,11 @@ collectorは1インスタンスだけ起動する。将来APIを複数化して�
 
 - [x] 空DBから全サービスを起動する — 実機で`docker compose up`により`adsb-db`→`adsb-migrate`→`adsb-collector`/`adsb-api`の順で起動確認済み。
 - [x] migrationが一度だけ成功する — `adsb-migrate`は`restart: "no"`かつ`service_completed_successfully`条件で1回のみ実行。
-- [!] **[代替実施]** fixtureサーバーからcollectorが取得する — 本項目はfixtureサーバーを想定しているが、実際には本番の実readsbから取得する構成で検証した(ユーザー判断により仮環境デバッグより実環境構築を優先)。fixtureサーバーを使った再現可能な自動テストはまだない。
-- [x] DBへデータが保存される — 実データで確認済み(12機のaircraft、23件のobservations、ingestion_statusが約5秒おきに成功記録)。
+- [x] fixtureサーバーからcollectorが取得する — 実readsbでの検証(本番同等環境)に加え、`tests/integration/test_end_to_end.py`で「空DB→migration→collector(fixtureペイロード、httpx.MockTransportで実ネットワーク呼び出しなし)→実FastAPIアプリで読み取り」までを1本の自動テストとして追加した。位置ありの機体・位置なし(ground)の機体の両方が正しく`/api/status`・`/api/aircraft/recent`・`/api/tracks`に反映されることを確認。
+- [x] DBへデータが保存される — 実データで確認済み(現在1,900件超のobservations、ingestion_statusが約5秒おきに成功記録)。
 - [x] 全APIがデータを返す — `/api/status`等がDBの実データを反映して応答することを確認済み。
-- [!] **[部分実施]** Web UIが表示される — ステータスバッジ・数値・バージョン表示は動作確認済みだが、地図(MapLibre)の表示は未解決のバグが残っている(下記参照)。
-- [ ] Compose再起動後もデータが残る — named volumeを使っているため理論上は永続化されるはずだが、実際に`docker compose down`(volumeを保持したまま)→`up`しなおしてデータ保持を確認する手順はまだ実施していない。
+- [!] **[部分実施]** Web UIが表示される — ステータスバッジ・数値・バージョン表示は動作確認済み。地図はPlaywright(実Chromiumエンジン)による自動検証では問題なく表示されることを確認したが、ユーザーの実ブラウザでの再現待ち(詳細はMilestone D完了条件・下記「地図障害」参照)。
+- [x] Compose再起動後もデータが残る — 実機で`docker compose restart adsb-db`を実行し、`scripts/db_status.py`で再起動前後の最古観測時刻(`oldest`)が変化していないこと、かつ再起動後もcollectorが正常に書き込みを継続していることを確認済み(2026-07-28)。
 
 ### F-5. 障害試験
 

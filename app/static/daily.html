@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今日の空 - ADS-B Analytics</title>
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
+>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+
+  <nav class="app-nav" aria-label="ページ">
+    <a href="/">ダッシュボード</a>
+    <a href="/static/receiver.html">受信性能</a>
+    <a href="/static/daily.html" aria-current="page">今日の空</a>
+    <a href="/static/history.html">機体履歴</a>
+  </nav>
+
+  <header class="app-header">
+    <div class="app-header__title">
+      <h1>今日の空</h1>
+      <span class="app-header__version" id="app-version"></span>
+    </div>
+    <div class="app-header__updated">
+      対象日: <time id="summary-day">--</time>
+    </div>
+  </header>
+
+  <section class="status-cards" aria-label="今日の状況">
+    <div class="card">
+      <div class="card__label">ユニーク機数</div>
+      <div class="card__value" id="card-unique">--</div>
+    </div>
+    <div class="card">
+      <div class="card__label">最大同時受信数</div>
+      <div class="card__value" id="card-concurrent">--</div>
+    </div>
+    <div class="card">
+      <div class="card__label">メッセージ数</div>
+      <div class="card__value" id="card-messages">--</div>
+    </div>
+    <div class="card">
+      <div class="card__label">位置取得最大数</div>
+      <div class="card__value" id="card-position-max">--</div>
+    </div>
+  </section>
+
+  <p class="traffic-deltas" id="daily-deltas" aria-live="polite"></p>
+
+  <section class="bottom-area" aria-label="今日のランキング">
+    <div class="panel">
+      <div class="panel__header">最遠</div>
+      <div class="daily-highlight" id="highlight-farthest">--</div>
+    </div>
+    <div class="panel">
+      <div class="panel__header">最接近</div>
+      <div class="daily-highlight" id="highlight-closest">--</div>
+    </div>
+    <div class="panel">
+      <div class="panel__header">最多観測</div>
+      <div class="daily-highlight" id="highlight-most-observed">--</div>
+    </div>
+  </section>
+
+  <footer class="app-footer">
+    <span>ADS-B Analytics</span>
+  </footer>
+
+</div>
+
+<script type="module" src="/static/js/daily.js"></script>
+</body>
+</html>

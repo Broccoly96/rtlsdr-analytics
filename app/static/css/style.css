@@ -249,6 +249,21 @@ button {
   gap: 12px;
 }
 
+.daily-highlight {
+  padding: 8px 4px;
+}
+
+.daily-highlight__icao {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.daily-highlight__meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
 .traffic-delta.delta-up {
   color: var(--success);
 }

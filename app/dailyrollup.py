@@ -30,8 +30,9 @@ import asyncpg
 
 from app.config import Settings
 from app.db.pool import close_pool, create_pool
-from app.db.queries.period import compute_daily_summary
+from app.db.queries.period import compute_daily_summary, get_traffic_day
 from app.domain.daytime import day_bounds_utc, yesterday_in_tz
+from app.notify import send_daily_notification
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +250,11 @@ async def _run_loop(settings: Settings, *, hour: int, minute: int) -> None:
 
             target_day = yesterday_in_tz(settings.display_timezone)
             try:
-                await run_rollup(pool, day=target_day, tz_name=settings.display_timezone)
+                result = await run_rollup(pool, day=target_day, tz_name=settings.display_timezone)
+                if result.traffic_day_written:
+                    summary = await get_traffic_day(pool, target_day)
+                    if summary is not None:
+                        await send_daily_notification(settings, summary)
             except Exception:
                 logger.exception("dailyrollup: run failed, will retry next cycle")
     finally:

@@ -70,6 +70,41 @@ def test_settings_rejects_out_of_range_port(monkeypatch):
         Settings()
 
 
+def test_settings_notify_webhook_disabled_by_default(monkeypatch):
+    _set_env(monkeypatch)
+    settings = Settings()
+    assert settings.notify_webhook_enabled is False
+    assert settings.notify_webhook_url is None
+
+
+def test_settings_rejects_notify_enabled_without_url(monkeypatch):
+    _set_env(monkeypatch, {"NOTIFY_WEBHOOK_ENABLED": "true"})
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_rejects_bad_notify_webhook_url(monkeypatch):
+    _set_env(
+        monkeypatch,
+        {"NOTIFY_WEBHOOK_ENABLED": "true", "NOTIFY_WEBHOOK_URL": "not-a-url"},
+    )
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_accepts_valid_notify_webhook_config(monkeypatch):
+    _set_env(
+        monkeypatch,
+        {
+            "NOTIFY_WEBHOOK_ENABLED": "true",
+            "NOTIFY_WEBHOOK_URL": "https://hooks.example.invalid/webhook",
+        },
+    )
+    settings = Settings()
+    assert settings.notify_webhook_enabled is True
+    assert settings.notify_webhook_url == "https://hooks.example.invalid/webhook"
+
+
 def test_settings_missing_required_field_raises(monkeypatch):
     for key in BASE_ENV:
         monkeypatch.delenv(key, raising=False)

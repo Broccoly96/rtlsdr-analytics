@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     map_style_url: str = "https://tiles.openfreemap.org/styles/positron"
     map_show_receiver_marker: bool = False
     map_receiver_marker_precision: int = 1
+    # Opt-in Slack/Discord-compatible daily-summary webhook (app/notify.py),
+    # sent once per day from app/dailyrollup.py. Disabled by default, and
+    # absence of NOTIFY_WEBHOOK_URL must never fail startup on its own --
+    # only enabling without a URL configured is an actual misconfiguration.
+    notify_webhook_enabled: bool = False
+    notify_webhook_url: str | None = None
 
     @field_validator("readsb_aircraft_url")
     @classmethod
@@ -91,3 +97,16 @@ class Settings(BaseSettings):
         if not 1 <= value <= 65535:
             raise ValueError("APP_PORT must be between 1 and 65535")
         return value
+
+    @field_validator("notify_webhook_url")
+    @classmethod
+    def _validate_notify_webhook_url(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith(("http://", "https://")):
+            raise ValueError("NOTIFY_WEBHOOK_URL must start with http:// or https://")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_notify_webhook_enabled_has_url(self) -> Settings:
+        if self.notify_webhook_enabled and not self.notify_webhook_url:
+            raise ValueError("NOTIFY_WEBHOOK_URL must be set when NOTIFY_WEBHOOK_ENABLED is true")
+        return self

@@ -1458,15 +1458,43 @@ backup保持=7世代
 
 ### Milestone N：2E 今日の空 + webhook通知（Milestone L依存）
 
-- [ ] `app/static/daily.html` + `app/static/js/daily.js`を新規作成する(今日のライブサマリー、前日・先週同曜日との比較、最遠・最接近・最多観測)。navに追加する。
-- [ ] webhook通知(オプトイン、Slack/Discord互換): 環境変数`NOTIFY_WEBHOOK_URL`・`NOTIFY_WEBHOOK_ENABLED`(既定無効、未設定でも起動失敗しない)。`app/notify.py`を新規作成し、Slack互換の`{"text": "..."}`ペイロードで前日分`DailyTrafficSummary`を要約(座標・秘密情報は含めない)、`httpx`で短いタイムアウト付きPOST、失敗時はログのみで継続。`app/dailyrollup.py`の前日ロールアップ完了直後にトリガーする。
-- [ ] `.env.example`に新規環境変数をオプトインとして記載する。
-- [ ] テスト: `tests/unit/test_notify.py`(ペイロード形状、既定無効、失敗しても例外を投げないこと、モックHTTPトランスポート使用、実webhookは呼ばない)。
+- [x] `app/static/daily.html` + `app/static/js/daily.js`を新規作成した(今日のライブサマリー、前日・先週同曜日との比較、最遠・最接近・最多観測)。navに追加済み(H で先行追加していたリンク先を実装、これで3/4ページが揃った)。
+- [x] webhook通知(オプトイン、Slack/Discord互換): 環境変数`NOTIFY_WEBHOOK_URL`・`NOTIFY_WEBHOOK_ENABLED`(既定無効、未設定でも起動失敗しない。`app/config.py`に`model_validator`を追加し、有効化時にURL未設定なら明示的に起動失敗するようにした — 「無効なら何もしない」と「有効なのに設定不備」を区別)。`app/notify.py`を新規作成し、Slack互換の`{"text": "..."}`ペイロードで`DailyTrafficSummary`を要約(座標・秘密情報は含めない)、`httpx`で短いタイムアウト付きPOST、失敗時はログのみで継続。`app/dailyrollup.py`の`--loop`パスのみにトリガーを配線した(`--day`手動バックフィルでは発火しない — 任意の過去日を通知してしまう意図しないノイズを避けるため、plan文言の「前日ロールアップ完了直後」は毎日00:10頃の定期実行を指すと解釈)。
+- [x] `.env.example`に新規環境変数をオプトインとして記載した。
+- [x] テスト: `tests/unit/test_notify.py`(ペイロード形状・座標や秘密情報が含まれないこと・既定無効・成功時のペイロード内容・HTTPエラー応答での非送出・接続エラーでの非送出、計9件、`httpx.MockTransport`使用、実webhookは呼ばない)。`tests/unit/test_config.py`にNOTIFY_WEBHOOK系の新規バリデータのテストを4件追加。テスト総数210→223(+13)。
 
 **Milestone N 完了条件**
-- [ ] webhook無効時、ロールアップの挙動が変化しない。
-- [ ] webhook有効時、モックサーバーに対して正しい形状のペイロードが1日1回送られる。
-- [ ] ページが実データで表示される。
+- [x] webhook無効時、ロールアップの挙動が変化しない(`send_daily_notification`は`notify_webhook_enabled`チェックで即returnし、`run_rollup`本体には一切触れない)。
+- [x] webhook有効時、モックサーバーに対して正しい形状のペイロードが1日1回送られる(`test_enabled_sends_expected_payload`で`httpx.MockTransport`により送信先URL・JSON本文を検証。「1日1回」は`_run_loop`の日次スケジューリング — Milestone Lで検証済みの`next_run_at` — により保証される)。
+- [x] ページが実データで表示される(使い捨てPostgres + 実uvicorn + Playwright Chromiumで`/static/daily.html`を目視確認。ユニーク機数・最遠/最接近・前日比/先週同曜日比が実データと一致することを確認、consoleエラーなし)。
+
+### セッション記録
+
+```text
+日付: 2026-07-29
+完了したMilestone/Task: Milestone N（2E 今日の空 + webhook通知）
+変更した主要ファイル:
+  - app/config.py（notify_webhook_enabled/notify_webhook_url追加、URL形式バリデータ、有効化時のURL必須model_validator）
+  - app/notify.py（新規、build_payload/send_daily_notification。テスト用にhttpx.AsyncClientを差し替え可能な設計）
+  - app/dailyrollup.py（_run_loopのみに通知トリガーを配線、--dayバックフィルでは発火しない）
+  - app/static/daily.html・app/static/js/daily.js（新規ページ）
+  - app/static/css/style.css（.daily-highlight系スタイル追加）
+  - .env.example（NOTIFY_WEBHOOK_ENABLED/NOTIFY_WEBHOOK_URL追加）
+  - tests/unit/test_notify.py（新規、9件）
+  - tests/unit/test_config.py（NOTIFY_WEBHOOK系バリデータのテスト4件追加）
+  - PLAN.md（本セクション）
+実行したテスト: pytest（フルスイート、223件）、ruff check / ruff format --check
+テスト結果: 全green、lint/format clean
+実環境で確認したこと:
+  - `httpx.MockTransport`を使い、webhook無効時に一切HTTPリクエストが発生しないこと(呼ばれたら即失敗するモック)、有効時に送信先URL・JSON本文(`build_payload`の出力と一致)を検証、HTTPエラー応答(500)・接続エラーの両方で例外が外に漏れないことを確認。
+  - 使い捨てPostgres + 実uvicorn + Playwright Chromiumで`/static/daily.html`を目視確認。2機体(最遠310.4km・最接近4.2km)をシードし、カード表示・最遠/最接近ハイライト・前日比(-33%)/先週同曜日比(+100%)が手計算と一致することを確認。consoleエラーはゼロ(このページは地図/チャートを使わないため、他ページで出ていたWebGL関連の警告すら出ない)。
+  - 目視確認中、シードスクリプト側の不備(同一icaoに同一observed_atで複数回insert_observationを呼び、`(icao, observed_at)`のUNIQUE制約によりupsertで1行に収束してしまい、意図した「3件観測」が実際には1件だった)により最多観測の表示値が意図と異なる結果になったが、これはテストスクリプトのバグでありアプリ側のロジックの問題ではないと判断(該当ロジックはMilestone Lの`test_run_rollup_writes_expected_values`で異なるタイムスタンプの観測データを使い正しく検証済み)。
+残課題:
+  - history.htmlのみ引き続き未作成のため、navの該当1リンクは404のまま(Milestone Oで解消予定、既知)。
+  - Milestone L由来の「実adsb-dbへのmigration適用・adsb-daily-rollupデプロイ」はユーザー確認待ちのまま継続。webhookを実際に有効化して本番運用する場合も、このデプロイ後に`.env`へ`NOTIFY_WEBHOOK_ENABLED`/`NOTIFY_WEBHOOK_URL`を設定する対応が別途必要(オプトインのため未設定なら何も変わらない)。
+次に行うTask: Milestone O（2D 機体の再訪履歴）
+ユーザー判断が必要な事項: なし
+```
 
 ### Milestone O：2D 機体の再訪履歴（Milestone L依存）
 

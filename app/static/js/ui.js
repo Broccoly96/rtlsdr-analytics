@@ -45,6 +45,10 @@ function renderIngestionBadge(status) {
   }
 }
 
+function setUniqueCount(count) {
+  setText("card-unique", String(count));
+}
+
 function renderStatusCards(status) {
   const isOk = status.ingestion_state === "ok";
   setText("card-active", isOk ? String(status.active_aircraft_count) : "--");
@@ -165,4 +169,5 @@ export const ui = {
   formatTime,
   refreshStatusAndRankings,
   startPolling,
+  setUniqueCount,
 };

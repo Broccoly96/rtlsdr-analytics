@@ -1277,17 +1277,47 @@ backup保持=7世代
 
 ### Milestone J：2A クイックウィン（スキーマ変更なし）
 
-- [ ] `index.html`の未配線`#card-unique`要素に`TrafficResponse.unique_aircraft_count`(既存)を配線する(`ui.js`/`main.js`のみの変更)。
-- [ ] `app/db/queries/distribution.py`を新規作成する: `hour_of_day_unique(pool, days)`、`altitude_histogram(pool, hours, bucket_ft=1000)`、`speed_histogram(pool, hours, bucket_kt=50)`。
-- [ ] `app/api/routers/distribution.py`を新規作成する: `GET /api/distribution/hour-of-day?days=1..30`、`GET /api/distribution/altitude?hours=1..720`、`GET /api/distribution/speed?hours=1..720`。
-- [ ] CSVエクスポート: `GET /api/traffic.csv?hours=`(既存`traffic.py`のクエリ関数を再利用、標準ライブラリ`csv`+`StreamingResponse`、`Content-Disposition: attachment`)。
-- [ ] 既存ダッシュボードに新規パネル(時間帯別バーチャート、高度・速度ヒストグラム、CSVダウンロードリンク)を追加する(新規ページではなく既存トラフィックパネルの拡張)。
-- [ ] テスト: Milestone Iと同パターン。
+- [x] `index.html`の未配線`#card-unique`要素に`TrafficResponse.unique_aircraft_count`(既存)を配線した(`ui.js`に`setUniqueCount`追加、`chart.js`の`refreshTraffic`が取得済みtrafficを返すよう変更、`main.js`の`refreshTrafficAndCard`ラッパーから呼び出し)。
+- [x] `app/db/queries/distribution.py`を新規作成した: `hour_of_day_unique(pool, days)`、`altitude_histogram(pool, hours, bucket_ft=1000)`、`speed_histogram(pool, hours, bucket_kt=50)`。ヒストグラムは`traffic.py`と異なりゼロ埋めせず、存在するバケットのみ返す(連続ドメインを埋める必要がないため)。
+- [x] `app/api/routers/distribution.py`を新規作成した: `GET /api/distribution/hour-of-day?days=1..30`、`GET /api/distribution/altitude?hours=1..720`、`GET /api/distribution/speed?hours=1..720`。`app/api/main.py`に登録した。
+- [x] CSVエクスポート: `GET /api/traffic.csv?hours=1..168`(既存`traffic.py`の`get_traffic`を再利用、標準ライブラリ`csv`+`StreamingResponse`、`Content-Disposition: attachment`)。他の全エンドポイントがPydantic `response_model`でOpenAPIに現れる方針のため、ストリーミングでスキーマ化しづらいこのエンドポイントのみ`include_in_schema=False`(既存の`/`ダッシュボードルートと同じ前例)。
+- [x] 既存ダッシュボードに新規パネル(時間帯別ユニーク機数バーチャート、高度・速度ヒストグラム、CSVダウンロードリンク)を追加した(新規ページではなく既存トラフィックパネルの拡張。3パネルは新規`.distribution-area`グリッド、レスポンシブブレークポイントにも追加)。
+- [x] テスト: Milestone Iと同パターン(`tests/integration/test_api.py`に3エンドポイント+CSVの結合テスト、`test_openapi_lists_all_endpoints`更新)。純Pythonのバケット化ロジックがない(集計はSQL側で完結)ため、Milestone Iのような専用unit testファイルは追加していない。テスト総数174→181(+7)。
 
 **Milestone J 完了条件**
-- [ ] 各クエリのEXPLAIN確認。
-- [ ] CSV出力が実データで正しく開けることを確認する。
-- [ ] `make test`/`make lint`が通る。
+- [x] 各クエリのEXPLAIN確認(合成データ34,000件、`hour_of_day_unique`(7日)13.9ms、`altitude_histogram`(24h)0.6ms、`speed_histogram`(720h)11.2ms — 720hはbearing/altitude-rangeと同じ理由でSeq Scanにフォールバックするが全期間の大半を占めるための正しい選択で、インデックス追加の根拠なし)。
+- [x] CSV出力が実データで正しく開けることを確認した(Playwrightから`/api/traffic.csv?hours=24`をfetchし、`Content-Disposition: attachment`・ヘッダ行・1440件の分バケット行を確認)。
+- [x] `make test`/`make lint`が通る(181件全green、lint/format clean)。
+
+### セッション記録
+
+```text
+日付: 2026-07-29
+完了したMilestone/Task: Milestone J（2A クイックウィン）
+変更した主要ファイル:
+  - app/db/queries/distribution.py（新規、hour_of_day_unique/altitude_histogram/speed_histogram）
+  - app/api/routers/distribution.py（新規、GET /api/distribution/hour-of-day・altitude・speed）
+  - app/api/routers/traffic.py（GET /api/traffic.csv追加、include_in_schema=False）
+  - app/api/main.py（distributionルーター登録）
+  - app/api/schemas.py（HourOfDay/Histogram系レスポンス追加）
+  - app/static/js/chart.js（refreshTrafficが取得済みtraffic/nullを返すよう変更）
+  - app/static/js/ui.js（setUniqueCount追加・export）
+  - app/static/js/main.js（refreshTrafficAndCardラッパー、3つの新規チャート生成・fetch・resize配線）
+  - app/static/js/api.js（getHourOfDay/getAltitudeHistogram/getSpeedHistogram追加）
+  - app/static/index.html（CSVダウンロードリンク、distribution-areaセクション追加）
+  - app/static/css/style.css（.panel__headerをflexに、.csv-link、.distribution-area追加、レスポンシブブレークポイント更新）
+  - tests/integration/test_api.py（distribution 3エンドポイント+CSVの結合テスト、OpenAPI一覧更新）
+  - PLAN.md（本セクション）
+実行したテスト: pytest（フルスイート、181件）、ruff check / ruff format --check
+テスト結果: 全green、lint/format clean
+実環境で確認したこと:
+  - 使い捨てdocker postgresコンテナに合成データ(observations 34,000件、Milestone C-8/I と同規模)を投入し、3クエリ全てにEXPLAIN ANALYZEを実施。`hour_of_day_unique`(7日)13.9ms、`altitude_histogram`(24h)0.6ms、`speed_histogram`(720h)11.2ms。`speed_histogram`の720hはMilestone Iのbearing/altitude-rangeと同じ理由でSeq Scanにフォールバックするが、対象が全期間の大半を占めるための正しい選択であり関数インデックス追加の根拠なし。`GET /api/traffic.csv`が再利用する`get_traffic`の集計クエリ(168h)は既存のユニーク制約インデックスによるIndex Only Scanで2.0ms。
+  - 使い捨てPostgres + 実uvicorn + Playwright Chromiumでダッシュボードを目視確認。`#card-unique`が実データ(79)を表示、CSVリンクから`/api/traffic.csv?hours=24`を実際にfetchしてContent-Disposition・ヘッダ行・1440件の分バケット行を確認、時間帯別/高度/速度の3ヒストグラムパネルとも描画。consoleメッセージはソフトウェアGLレンダラのパフォーマンス警告のみ(アプリコードとは無関係、地図・チャート描画自体は正常)。地図タイル(OpenFreeMap)はこのサンドボックス環境がインターネットに出られないため白紙表示だったが、これは既知の環境制約でありコード変更とは無関係。スクリーンショットで最終確認済み(セッション内一時ファイル、コミットせず)。
+残課題:
+  - daily.html/history.htmlは引き続き未作成のため、navの該当2リンクは404のまま(Milestone N/Oで解消予定、既知)。
+次に行うTask: Milestone K（2C ヒートマップ）
+ユーザー判断が必要な事項: なし
+```
 
 ### Milestone K：2C ヒートマップ（スキーマ変更なし）
 

@@ -12,7 +12,15 @@
 
 import { api } from "./api.js";
 import { ui } from "./ui.js";
-import { createTrafficChart, refreshTraffic, setTimezone as setChartTimezone } from "./chart.js";
+import {
+  axisStyle,
+  baseChartOption,
+  CHART_COLORS,
+  createChart,
+  createTrafficChart,
+  refreshTraffic,
+  setTimezone as setChartTimezone,
+} from "./chart.js";
 
 // CSP violations (e.g. a browser extension or local policy blocking a
 // same-origin script/style/connect target) don't throw a catchable JS error
@@ -91,6 +99,73 @@ async function loadMapModule() {
   }
 }
 
+// Hour-of-day / altitude / speed panels are a statistical pattern view,
+// not something that needs 30s freshness like the traffic chart -- fetched
+// once at startup only (see main()'s single refreshDistributionPanels() call).
+function createHourOfDayChart(containerId) {
+  return createChart(containerId, "hour-of-day-chart-error", (data) => ({
+    ...baseChartOption(),
+    tooltip: { trigger: "axis" },
+    xAxis: {
+      type: "category",
+      data: data.hours.map((h) => `${h.hour}時`),
+      ...axisStyle(),
+    },
+    yAxis: { type: "value", minInterval: 1, ...axisStyle() },
+    series: [
+      {
+        type: "bar",
+        data: data.hours.map((h) => h.unique_aircraft_count),
+        itemStyle: { color: CHART_COLORS.seriesA },
+      },
+    ],
+  }));
+}
+
+function createHistogramChart(containerId, errorElId, unitLabel) {
+  return createChart(containerId, errorElId, (data) => ({
+    ...baseChartOption(),
+    tooltip: {
+      trigger: "axis",
+      formatter: (p) => {
+        const point = p[0];
+        return `${point.name}${unitLabel}: ${point.data}`;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: data.buckets.map((b) => Math.round(b.bucket_start)),
+      ...axisStyle(),
+    },
+    yAxis: { type: "value", minInterval: 1, ...axisStyle() },
+    series: [
+      {
+        type: "bar",
+        data: data.buckets.map((b) => b.count),
+        itemStyle: { color: CHART_COLORS.seriesB },
+      },
+    ],
+  }));
+}
+
+async function refreshDistributionPanels(charts) {
+  try {
+    charts.hourOfDay.setData(await api.getHourOfDay(7));
+  } catch (err) {
+    console.error("hour-of-day refresh failed", err);
+  }
+  try {
+    charts.altitudeHist.setData(await api.getAltitudeHistogram(24));
+  } catch (err) {
+    console.error("altitude histogram refresh failed", err);
+  }
+  try {
+    charts.speedHist.setData(await api.getSpeedHistogram(24));
+  } catch (err) {
+    console.error("speed histogram refresh failed", err);
+  }
+}
+
 async function main() {
   let config;
   try {
@@ -105,6 +180,11 @@ async function main() {
   setChartTimezone(config.display_timezone);
 
   const chartController = createTrafficChart("chart");
+  const distributionCharts = {
+    hourOfDay: createHourOfDayChart("hour-of-day-chart"),
+    altitudeHist: createHistogramChart("altitude-hist-chart", "altitude-hist-chart-error", "ft"),
+    speedHist: createHistogramChart("speed-hist-chart", "speed-hist-chart-error", "kt"),
+  };
   let mapController = { setTracks: () => {}, resize: () => {} };
   let currentTracksHours = 6;
 
@@ -131,16 +211,28 @@ async function main() {
   window.addEventListener("resize", () => {
     mapController.resize();
     chartController.resize();
+    distributionCharts.hourOfDay.resize();
+    distributionCharts.altitudeHist.resize();
+    distributionCharts.speedHist.resize();
   });
 
-  await Promise.all([refreshTraffic(chartController, TRAFFIC_WINDOW_HOURS), ui.refreshStatusAndRankings()]);
+  async function refreshTrafficAndCard() {
+    const traffic = await refreshTraffic(chartController, TRAFFIC_WINDOW_HOURS);
+    if (traffic) ui.setUniqueCount(traffic.unique_aircraft_count);
+  }
+
+  await Promise.all([
+    refreshTrafficAndCard(),
+    ui.refreshStatusAndRankings(),
+    refreshDistributionPanels(distributionCharts),
+  ]);
 
   ui.startPolling();
 
   setInterval(() => {
     if (!document.hidden) {
       refreshTracks(mapController, currentTracksHours);
-      refreshTraffic(chartController, TRAFFIC_WINDOW_HOURS);
+      refreshTrafficAndCard();
     }
   }, AUTO_REFRESH_INTERVAL_MS);
 }

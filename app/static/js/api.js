@@ -43,4 +43,7 @@ export const api = {
   getBearingRange: (hours) => getJSON("/api/receiver/bearing-range", { hours }),
   getAltitudeRange: (hours) => getJSON("/api/receiver/altitude-range", { hours }),
   getReception: (hours) => getJSON("/api/receiver/reception", { hours }),
+  getHourOfDay: (days) => getJSON("/api/distribution/hour-of-day", { days }),
+  getAltitudeHistogram: (hours) => getJSON("/api/distribution/altitude", { hours }),
+  getSpeedHistogram: (hours) => getJSON("/api/distribution/speed", { hours }),
 };

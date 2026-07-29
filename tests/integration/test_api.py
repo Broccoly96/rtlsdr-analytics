@@ -448,6 +448,133 @@ async def test_receiver_reception_with_seeded_minute(postgres_url, client: Async
     assert matching[0]["position_rate"] == 0.5
 
 
+# --- distribution ------------------------------------------------------------
+
+
+async def test_hour_of_day_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/distribution/hour-of-day")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["hours"]) == 24
+    assert all(h["unique_aircraft_count"] == 0 for h in body["hours"])
+
+
+async def test_altitude_histogram_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/distribution/altitude")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["buckets"] == []
+    assert body["bucket_ft"] == 1000
+
+
+async def test_speed_histogram_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/distribution/speed")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["buckets"] == []
+    assert body["bucket_kt"] == 50
+
+
+async def test_distribution_bounds_rejected(client: AsyncClient) -> None:
+    assert (
+        await client.get("/api/distribution/hour-of-day", params={"days": 0})
+    ).status_code == 422
+    assert (
+        await client.get("/api/distribution/hour-of-day", params={"days": 31})
+    ).status_code == 422
+    assert (await client.get("/api/distribution/altitude", params={"hours": 0})).status_code == 422
+    assert (
+        await client.get("/api/distribution/altitude", params={"hours": 721})
+    ).status_code == 422
+    assert (await client.get("/api/distribution/speed", params={"hours": 0})).status_code == 422
+
+
+async def test_altitude_histogram_with_seeded_data(postgres_url, client: AsyncClient) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10500.0,  # falls into the [10000, 11000) bucket
+                ground_speed_kt=250.0,  # falls into the [200, 250) bucket
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=50.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    altitude_response = await client.get("/api/distribution/altitude", params={"hours": 24})
+    altitude_body = altitude_response.json()
+    assert altitude_body["buckets"] == [{"bucket_start": 10000.0, "count": 1}]
+
+    speed_response = await client.get("/api/distribution/speed", params={"hours": 24})
+    speed_body = speed_response.json()
+    assert speed_body["buckets"] == [{"bucket_start": 250.0, "count": 1}]
+
+
+async def test_hour_of_day_with_seeded_data(postgres_url, client: AsyncClient) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    # A timestamp pinned to a specific UTC hour-of-day but anchored to
+    # "now", not a fixed calendar date: hour_of_day_unique uses a rolling
+    # "now() - days" window, so a fixed old date could fall outside it
+    # depending on when the test happens to run.
+    observed_at = datetime.now(UTC).replace(hour=5, minute=30, second=0, microsecond=0)
+    try:
+        await store.upsert_aircraft("aaaaaa", observed_at, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=observed_at,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10000.0,
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=50.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    # A wide-enough window (30 days) to reliably cover an arbitrary fixed
+    # observed_at without the test depending on "now".
+    response = await client.get("/api/distribution/hour-of-day", params={"days": 30})
+    body = response.json()
+    hour5 = next(h for h in body["hours"] if h["hour"] == 5)
+    assert hour5["unique_aircraft_count"] == 1
+
+
+# --- traffic.csv --------------------------------------------------------------
+
+
+async def test_traffic_csv_returns_csv_content(client: AsyncClient) -> None:
+    response = await client.get("/api/traffic.csv", params={"hours": 1})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment" in response.headers["content-disposition"]
+    lines = response.text.strip().splitlines()
+    assert lines[0] == "bucket_at,active_aircraft_count,position_aircraft_count,message_count_delta"
+    assert len(lines) == 1 + 60  # header + 60 zero-filled minute buckets
+
+
 # --- config -----------------------------------------------------------------
 
 
@@ -486,4 +613,7 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/receiver/bearing-range",
         "/api/receiver/altitude-range",
         "/api/receiver/reception",
+        "/api/distribution/hour-of-day",
+        "/api/distribution/altitude",
+        "/api/distribution/speed",
     }

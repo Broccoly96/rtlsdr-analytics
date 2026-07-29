@@ -171,8 +171,10 @@ export async function refreshTraffic(chartController, hours) {
   try {
     const traffic = await api.getTraffic(hours);
     chartController.setData(traffic);
+    return traffic;
   } catch (err) {
     console.error("traffic refresh failed", err);
     showError("chart-error", "交通量データの取得に失敗しました。");
+    return null;
   }
 }

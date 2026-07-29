@@ -142,3 +142,30 @@ class ReceptionBucketResponse(BaseModel):
 class ReceptionResponse(BaseModel):
     hours: int
     buckets: list[ReceptionBucketResponse]
+
+
+class HourOfDayEntryResponse(BaseModel):
+    hour: int
+    unique_aircraft_count: int
+
+
+class HourOfDayResponse(BaseModel):
+    days: int
+    hours: list[HourOfDayEntryResponse]
+
+
+class HistogramBucketResponse(BaseModel):
+    bucket_start: float
+    count: int
+
+
+class AltitudeHistogramResponse(BaseModel):
+    hours: int
+    bucket_ft: int
+    buckets: list[HistogramBucketResponse]
+
+
+class SpeedHistogramResponse(BaseModel):
+    hours: int
+    bucket_kt: int
+    buckets: list[HistogramBucketResponse]

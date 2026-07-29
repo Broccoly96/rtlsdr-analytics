@@ -232,15 +232,19 @@ async def _run_loop(settings: Settings, *, hour: int, minute: int) -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stopping.set)
 
+    logger.info(
+        "dailyrollup: loop starting, will roll up the previous day daily at %02d:%02d %s",
+        hour,
+        minute,
+        settings.display_timezone,
+    )
     pool = await create_pool(settings.database_url, min_size=1, max_size=2)
     try:
         while not stopping.is_set():
-            wait_seconds = max(
-                (
-                    next_run_at(datetime.now(UTC), settings.display_timezone, hour, minute)
-                    - datetime.now(UTC)
-                ).total_seconds(),
-                0,
+            next_run = next_run_at(datetime.now(UTC), settings.display_timezone, hour, minute)
+            wait_seconds = max((next_run - datetime.now(UTC)).total_seconds(), 0)
+            logger.info(
+                "dailyrollup: sleeping until next run at %s (%.0fs)", next_run, wait_seconds
             )
             try:
                 await asyncio.wait_for(stopping.wait(), timeout=wait_seconds)

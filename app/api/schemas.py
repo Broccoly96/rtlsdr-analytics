@@ -14,11 +14,19 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class AltitudeBandResponse(BaseModel):
+    key: str
+    label: str
+    max_ft: float | None
+    color: str
+
+
 class ConfigResponse(BaseModel):
     map_style_url: str
     map_show_receiver_marker: bool
     map_receiver_marker_precision: int
     display_timezone: str
+    altitude_bands: list[AltitudeBandResponse]
     version: str
     git_revision: str | None
 
@@ -100,3 +108,37 @@ class TrackFeature(BaseModel):
 class TracksResponse(BaseModel):
     type: Literal["FeatureCollection"] = "FeatureCollection"
     features: list[TrackFeature]
+
+
+class BearingRangeEntryResponse(BaseModel):
+    sector_index: int
+    sector_center_deg: float
+    max_distance_km: float | None
+    sample_count: int
+
+
+class BearingRangeResponse(BaseModel):
+    hours: int
+    sectors: list[BearingRangeEntryResponse]
+
+
+class AltitudeBandRangeEntryResponse(BaseModel):
+    band_key: str
+    max_distance_km: float | None
+    sample_count: int
+
+
+class AltitudeRangeResponse(BaseModel):
+    hours: int
+    bands: list[AltitudeBandRangeEntryResponse]
+
+
+class ReceptionBucketResponse(BaseModel):
+    bucket_at: datetime
+    message_count: int
+    position_rate: float | None
+
+
+class ReceptionResponse(BaseModel):
+    hours: int
+    buckets: list[ReceptionBucketResponse]

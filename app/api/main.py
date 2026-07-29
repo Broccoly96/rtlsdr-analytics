@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import register_exception_handlers
-from app.api.routers import aircraft, config, health, rankings, status, tracks, traffic
+from app.api.routers import aircraft, config, health, rankings, receiver, status, tracks, traffic
 from app.config import Settings
 from app.db.pool import close_pool, create_pool
 
@@ -44,6 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(rankings.router)
     app.include_router(aircraft.router)
     app.include_router(config.router)
+    app.include_router(receiver.router)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

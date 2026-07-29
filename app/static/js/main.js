@@ -35,6 +35,7 @@ const AUTO_REFRESH_INTERVAL_MS = 30000;
 const DEFAULT_CONFIG = {
   map_style_url: "https://tiles.openfreemap.org/styles/positron",
   display_timezone: "UTC",
+  altitude_bands: [],
   version: null,
   git_revision: null,
 };
@@ -111,6 +112,7 @@ async function main() {
   let refreshTracks = async () => {};
   if (mapModule) {
     mapModule.setTimezone(config.display_timezone);
+    mapModule.setAltitudeBands(config.altitude_bands);
     mapController = mapModule.createTrackMap({ containerId: "map", styleUrl: config.map_style_url });
     refreshTracks = mapModule.refreshTracks;
     await refreshTracks(mapController, currentTracksHours);

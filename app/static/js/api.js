@@ -40,4 +40,7 @@ export const api = {
   getTracks: (hours) => getJSON("/api/tracks", { hours }),
   getRankings: (hours, limit) => getJSON("/api/rankings", { hours, limit }),
   getRecentAircraft: (hours, limit) => getJSON("/api/aircraft/recent", { hours, limit }),
+  getBearingRange: (hours) => getJSON("/api/receiver/bearing-range", { hours }),
+  getAltitudeRange: (hours) => getJSON("/api/receiver/altitude-range", { hours }),
+  getReception: (hours) => getJSON("/api/receiver/reception", { hours }),
 };

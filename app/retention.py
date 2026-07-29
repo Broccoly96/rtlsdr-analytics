@@ -1,9 +1,12 @@
-"""Deletes observations older than RAW_RETENTION_DAYS in small batches.
+"""Deletes observations and ingestion_status rows older than
+RAW_RETENTION_DAYS in small batches.
 
 `traffic_minute` rows are never deleted here (PLAN.md SS8 E-1: minute
 aggregates are kept long-term). A Postgres advisory lock prevents two
 retention runs from overlapping (e.g. a manual `--dry-run` check during a
 scheduled run, or two `adsb-retention` containers started by mistake).
+`ingestion_status` uses its own lock key so its delete loop is independent
+of (but sequential with, in `_run_once`/`_run_loop`) the observations one.
 
 Batches are deleted one small DELETE statement at a time (default 1000 rows)
 rather than in one big transaction, matching the rest of this app's
@@ -32,18 +35,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_BATCH_SIZE = 1000
 DEFAULT_LOOP_INTERVAL_HOURS = 24.0
 
-# Arbitrary fixed key scoped to this one job; any two processes calling
-# pg_try_advisory_lock with the same key contend for the same lock.
+# Arbitrary fixed keys scoped to one job/table each; any two processes
+# calling pg_try_advisory_lock with the same key contend for the same lock.
+# Distinct keys let the two delete loops below run without contending with
+# each other (only with a second run of themselves).
 _ADVISORY_LOCK_KEY = 84372910
-
-_COUNT_SQL = "SELECT count(*) FROM observations WHERE observed_at < $1"
-_SELECT_BATCH_SQL = """
-    SELECT id FROM observations
-    WHERE observed_at < $1
-    ORDER BY observed_at
-    LIMIT $2
-"""
-_DELETE_BATCH_SQL = "DELETE FROM observations WHERE id = ANY($1::bigint[])"
+_INGESTION_STATUS_ADVISORY_LOCK_KEY = 84372911
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,23 +57,34 @@ def compute_cutoff(now: datetime, retention_days: int) -> datetime:
     return now - timedelta(days=retention_days)
 
 
-async def delete_old_observations(
+async def _delete_old_rows(
     pool: asyncpg.Pool,
     *,
+    table: str,
+    timestamp_column: str,
     cutoff: datetime,
-    batch_size: int = DEFAULT_BATCH_SIZE,
-    dry_run: bool = False,
+    batch_size: int,
+    dry_run: bool,
+    advisory_lock_key: int,
+    log_label: str,
 ) -> RetentionResult:
     start = time.monotonic()
+    count_sql = f"SELECT count(*) FROM {table} WHERE {timestamp_column} < $1"
+    select_batch_sql = (
+        f"SELECT id FROM {table} WHERE {timestamp_column} < $1 ORDER BY {timestamp_column} LIMIT $2"
+    )
+    delete_batch_sql = f"DELETE FROM {table} WHERE id = ANY($1::bigint[])"
 
     if dry_run:
-        count = await pool.fetchval(_COUNT_SQL, cutoff)
+        count = await pool.fetchval(count_sql, cutoff)
         return RetentionResult(cutoff, count, 0, time.monotonic() - start, dry_run=True)
 
     async with pool.acquire() as conn:
-        got_lock = await conn.fetchval("SELECT pg_try_advisory_lock($1)", _ADVISORY_LOCK_KEY)
+        got_lock = await conn.fetchval("SELECT pg_try_advisory_lock($1)", advisory_lock_key)
         if not got_lock:
-            logger.warning("retention: another run already holds the advisory lock, skipping")
+            logger.warning(
+                "retention: another %s run already holds the advisory lock, skipping", log_label
+            )
             return RetentionResult(
                 cutoff, 0, 0, time.monotonic() - start, dry_run=False, lock_skipped=True
             )
@@ -85,25 +93,27 @@ async def delete_old_observations(
         batch_count = 0
         try:
             while True:
-                rows = await conn.fetch(_SELECT_BATCH_SQL, cutoff, batch_size)
+                rows = await conn.fetch(select_batch_sql, cutoff, batch_size)
                 if not rows:
                     break
                 ids = [row["id"] for row in rows]
-                await conn.execute(_DELETE_BATCH_SQL, ids)
+                await conn.execute(delete_batch_sql, ids)
                 total_deleted += len(ids)
                 batch_count += 1
                 logger.info(
-                    "retention: deleted batch %d (%d rows, %d total so far)",
+                    "retention: %s deleted batch %d (%d rows, %d total so far)",
+                    log_label,
                     batch_count,
                     len(ids),
                     total_deleted,
                 )
         finally:
-            await conn.execute("SELECT pg_advisory_unlock($1)", _ADVISORY_LOCK_KEY)
+            await conn.execute("SELECT pg_advisory_unlock($1)", advisory_lock_key)
 
     elapsed = time.monotonic() - start
     logger.info(
-        "retention: complete, deleted=%d batches=%d elapsed=%.2fs cutoff=%s",
+        "retention: %s complete, deleted=%d batches=%d elapsed=%.2fs cutoff=%s",
+        log_label,
         total_deleted,
         batch_count,
         elapsed,
@@ -112,13 +122,61 @@ async def delete_old_observations(
     return RetentionResult(cutoff, total_deleted, batch_count, elapsed, dry_run=False)
 
 
-async def _run_once(settings: Settings, *, dry_run: bool, batch_size: int) -> RetentionResult:
+async def delete_old_observations(
+    pool: asyncpg.Pool,
+    *,
+    cutoff: datetime,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    dry_run: bool = False,
+) -> RetentionResult:
+    return await _delete_old_rows(
+        pool,
+        table="observations",
+        timestamp_column="observed_at",
+        cutoff=cutoff,
+        batch_size=batch_size,
+        dry_run=dry_run,
+        advisory_lock_key=_ADVISORY_LOCK_KEY,
+        log_label="observations",
+    )
+
+
+async def delete_old_ingestion_status(
+    pool: asyncpg.Pool,
+    *,
+    cutoff: datetime,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    dry_run: bool = False,
+) -> RetentionResult:
+    return await _delete_old_rows(
+        pool,
+        table="ingestion_status",
+        timestamp_column="checked_at",
+        cutoff=cutoff,
+        batch_size=batch_size,
+        dry_run=dry_run,
+        advisory_lock_key=_INGESTION_STATUS_ADVISORY_LOCK_KEY,
+        log_label="ingestion_status",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionRunResult:
+    observations: RetentionResult
+    ingestion_status: RetentionResult
+
+
+async def _run_once(settings: Settings, *, dry_run: bool, batch_size: int) -> RetentionRunResult:
     pool = await create_pool(settings.database_url, min_size=1, max_size=1)
     try:
         cutoff = compute_cutoff(datetime.now(UTC), settings.raw_retention_days)
-        return await delete_old_observations(
+        observations_result = await delete_old_observations(
             pool, cutoff=cutoff, batch_size=batch_size, dry_run=dry_run
         )
+        ingestion_status_result = await delete_old_ingestion_status(
+            pool, cutoff=cutoff, batch_size=batch_size, dry_run=dry_run
+        )
+        return RetentionRunResult(observations_result, ingestion_status_result)
     finally:
         await close_pool(pool)
 
@@ -141,17 +199,17 @@ async def _run_loop(settings: Settings, *, batch_size: int, interval_hours: floa
     logger.info("retention: loop stopped")
 
 
-def _print_result(result: RetentionResult) -> None:
+def _print_result(label: str, result: RetentionResult) -> None:
     if result.dry_run:
         print(
-            f"[dry-run] {result.deleted_count} observation(s) older than "
+            f"[dry-run] {result.deleted_count} {label} row(s) older than "
             f"{result.cutoff.isoformat()} would be deleted"
         )
     elif result.lock_skipped:
-        print("skipped: another retention run is already in progress")
+        print(f"skipped: another {label} retention run is already in progress")
     else:
         print(
-            f"deleted {result.deleted_count} observation(s) older than "
+            f"deleted {result.deleted_count} {label} row(s) older than "
             f"{result.cutoff.isoformat()} in {result.batch_count} batch(es), "
             f"{result.elapsed_seconds:.2f}s"
         )
@@ -160,7 +218,8 @@ def _print_result(result: RetentionResult) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(
-        description="Delete observations older than RAW_RETENTION_DAYS, in small batches."
+        description="Delete observations and ingestion_status rows older than "
+        "RAW_RETENTION_DAYS, in small batches."
     )
     parser.add_argument(
         "--dry-run",
@@ -191,7 +250,8 @@ def main() -> None:
         return
 
     result = asyncio.run(_run_once(settings, dry_run=args.dry_run, batch_size=args.batch_size))
-    _print_result(result)
+    _print_result("observations", result.observations)
+    _print_result("ingestion_status", result.ingestion_status)
 
 
 if __name__ == "__main__":

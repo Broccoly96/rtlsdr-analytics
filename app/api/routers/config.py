@@ -9,7 +9,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies import get_settings
-from app.api.schemas import ConfigResponse
+from app.api.schemas import AltitudeBandResponse, ConfigResponse
+from app.domain.bands import ALTITUDE_BANDS
 from app.version import get_git_revision, get_version
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -22,6 +23,10 @@ async def get_config(settings=Depends(get_settings)) -> ConfigResponse:
         map_show_receiver_marker=settings.map_show_receiver_marker,
         map_receiver_marker_precision=settings.map_receiver_marker_precision,
         display_timezone=settings.display_timezone,
+        altitude_bands=[
+            AltitudeBandResponse(key=b.key, label=b.label_ja, max_ft=b.max_ft, color=b.color)
+            for b in ALTITUDE_BANDS
+        ],
         version=get_version(),
         git_revision=get_git_revision(),
     )

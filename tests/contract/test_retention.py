@@ -6,7 +6,12 @@ import asyncpg
 import pytest
 
 from app.db.pool import close_pool, create_pool
-from app.retention import _ADVISORY_LOCK_KEY, delete_old_observations
+from app.retention import (
+    _ADVISORY_LOCK_KEY,
+    _INGESTION_STATUS_ADVISORY_LOCK_KEY,
+    delete_old_ingestion_status,
+    delete_old_observations,
+)
 
 CUTOFF = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -97,6 +102,81 @@ async def test_traffic_minute_rows_are_never_touched(pool):
 
     remaining = await pool.fetchval("SELECT count(*) FROM traffic_minute")
     assert remaining == 1
+
+
+async def _insert_ingestion_status(conn: asyncpg.Connection, checked_at: datetime) -> None:
+    await conn.execute(
+        "INSERT INTO ingestion_status (checked_at, success) VALUES ($1, true)",
+        checked_at,
+    )
+
+
+async def test_deletes_only_ingestion_status_older_than_cutoff(pool):
+    async with pool.acquire() as conn:
+        await _insert_ingestion_status(conn, CUTOFF - timedelta(days=5))
+        await _insert_ingestion_status(conn, CUTOFF - timedelta(seconds=1))
+        await _insert_ingestion_status(conn, CUTOFF + timedelta(seconds=1))
+
+    result = await delete_old_ingestion_status(pool, cutoff=CUTOFF, batch_size=1000)
+
+    assert result.deleted_count == 2
+    remaining = await pool.fetchval("SELECT count(*) FROM ingestion_status")
+    assert remaining == 1
+
+
+async def test_ingestion_status_dry_run_does_not_delete(pool):
+    async with pool.acquire() as conn:
+        await _insert_ingestion_status(conn, CUTOFF - timedelta(days=1))
+
+    result = await delete_old_ingestion_status(pool, cutoff=CUTOFF, dry_run=True)
+
+    assert result.dry_run is True
+    assert result.deleted_count == 1
+    remaining = await pool.fetchval("SELECT count(*) FROM ingestion_status")
+    assert remaining == 1
+
+
+async def test_ingestion_status_and_observations_locks_are_independent(pool):
+    """A held observations-table lock must not block an ingestion_status
+    run, and vice versa -- they use distinct advisory lock keys precisely
+    so a manual --dry-run check of one doesn't stall the other."""
+    async with pool.acquire() as conn:
+        await _insert_aircraft(conn, "abc123", CUTOFF - timedelta(days=1))
+        await _insert_observation(conn, "abc123", CUTOFF - timedelta(days=1))
+        await _insert_ingestion_status(conn, CUTOFF - timedelta(days=1))
+
+    holder = await pool.acquire()
+    try:
+        await holder.fetchval("SELECT pg_try_advisory_lock($1)", _ADVISORY_LOCK_KEY)
+
+        result = await delete_old_ingestion_status(pool, cutoff=CUTOFF)
+
+        assert result.lock_skipped is False
+        assert result.deleted_count == 1
+    finally:
+        await holder.execute("SELECT pg_advisory_unlock($1)", _ADVISORY_LOCK_KEY)
+        await pool.release(holder)
+
+
+async def test_ingestion_status_concurrent_run_skips_when_advisory_lock_held(pool):
+    async with pool.acquire() as conn:
+        await _insert_ingestion_status(conn, CUTOFF - timedelta(days=1))
+
+    holder = await pool.acquire()
+    try:
+        await holder.fetchval(
+            "SELECT pg_try_advisory_lock($1)", _INGESTION_STATUS_ADVISORY_LOCK_KEY
+        )
+
+        result = await delete_old_ingestion_status(pool, cutoff=CUTOFF)
+
+        assert result.lock_skipped is True
+        assert result.deleted_count == 0
+        remaining = await pool.fetchval("SELECT count(*) FROM ingestion_status")
+        assert remaining == 1
+    finally:
+        await holder.execute("SELECT pg_advisory_unlock($1)", _INGESTION_STATUS_ADVISORY_LOCK_KEY)
+        await pool.release(holder)
 
 
 async def test_concurrent_run_skips_when_advisory_lock_held(pool):

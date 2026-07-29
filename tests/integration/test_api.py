@@ -327,6 +327,127 @@ async def test_recent_aircraft_returns_seeded_row(postgres_url, client: AsyncCli
     assert "aaaaaa" in icaos
 
 
+# --- receiver ---------------------------------------------------------------
+
+
+async def test_receiver_bearing_range_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/receiver/bearing-range")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["sectors"]) == 16
+    assert all(s["max_distance_km"] is None and s["sample_count"] == 0 for s in body["sectors"])
+
+
+async def test_receiver_altitude_range_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/receiver/altitude-range")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["bands"]) == 5
+    assert all(b["max_distance_km"] is None and b["sample_count"] == 0 for b in body["bands"])
+
+
+async def test_receiver_reception_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/receiver/reception", params={"hours": 1})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["buckets"]) == 60
+    assert all(b["message_count"] == 0 and b["position_rate"] is None for b in body["buckets"])
+
+
+async def test_receiver_bounds_rejected(client: AsyncClient) -> None:
+    for path in (
+        "/api/receiver/bearing-range",
+        "/api/receiver/altitude-range",
+        "/api/receiver/reception",
+    ):
+        assert (await client.get(path, params={"hours": 0})).status_code == 422
+        assert (await client.get(path, params={"hours": 721})).status_code == 422
+
+
+async def test_receiver_bearing_range_with_seeded_data(postgres_url, client: AsyncClient) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        # Bearing 11.25 is the center of sector 0 ([0, 22.5) degrees).
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=40000.0,
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=123.0,
+                bearing_deg=11.25,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/receiver/bearing-range", params={"hours": 24})
+    body = response.json()
+    sector0 = body["sectors"][0]
+    assert sector0["sample_count"] == 1
+    assert sector0["max_distance_km"] == 123.0
+    assert all(s["sample_count"] == 0 for s in body["sectors"][1:])
+
+
+async def test_receiver_altitude_range_with_seeded_data(postgres_url, client: AsyncClient) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=40000.0,  # "very_high" band
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=200.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/receiver/altitude-range", params={"hours": 24})
+    body = response.json()
+    by_key = {b["band_key"]: b for b in body["bands"]}
+    assert by_key["very_high"]["sample_count"] == 1
+    assert by_key["very_high"]["max_distance_km"] == 200.0
+    assert by_key["ground"]["sample_count"] == 0
+
+
+async def test_receiver_reception_with_seeded_minute(postgres_url, client: AsyncClient) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    bucket_at = (datetime.now(UTC) - timedelta(minutes=5)).replace(second=0, microsecond=0)
+    try:
+        await store.upsert_traffic_minute(TrafficMinute(bucket_at, 4, 2, 40))
+    finally:
+        await store.close()
+
+    response = await client.get("/api/receiver/reception", params={"hours": 1})
+    body = response.json()
+    matching = [b for b in body["buckets"] if b["message_count"] == 40]
+    assert len(matching) == 1
+    assert matching[0]["position_rate"] == 0.5
+
+
 # --- config -----------------------------------------------------------------
 
 
@@ -336,6 +457,8 @@ async def test_config_exposes_no_secrets(client: AsyncClient) -> None:
     body = response.json()
     assert body["map_style_url"].startswith("https://")
     assert body["display_timezone"] == "Asia/Tokyo"
+    assert len(body["altitude_bands"]) == 5
+    assert body["altitude_bands"][-1]["max_ft"] is None
     assert body["version"] not in (None, "", "unknown")
     assert "database_url" not in body
     assert "readsb_aircraft_url" not in body
@@ -360,4 +483,7 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/rankings",
         "/api/aircraft/recent",
         "/api/config",
+        "/api/receiver/bearing-range",
+        "/api/receiver/altitude-range",
+        "/api/receiver/reception",
     }

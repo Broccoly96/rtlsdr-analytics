@@ -20,19 +20,27 @@ import * as maplibregl from "./vendor/maplibre-gl/maplibre-gl.mjs";
 
 import { api } from "./api.js";
 
-const ALTITUDE_BANDS = [
-  { max: 0, color: "#fbbf24" }, // ground / very low
-  { max: 10000, color: "#34d399" },
-  { max: 25000, color: "#22d3ee" },
-  { max: 35000, color: "#60a5fa" },
-  { max: Infinity, color: "#c084fc" },
-];
+// Populated from GET /api/config (see setAltitudeBands below) -- Python
+// (app/domain/bands.py) is the single source of truth so this can't drift
+// from the server-side band definitions used for grouping/filtering.
+let altitudeBands = [];
 const UNKNOWN_ALTITUDE_COLOR = "#8fa3bd";
 
 let displayTimezone = "UTC";
 
 export function setTimezone(tz) {
   displayTimezone = tz;
+}
+
+// `config.altitude_bands` items have `max_ft` (null for the top,
+// unbounded band); normalized here to `max: Infinity` for the same
+// simple "first band whose max covers this altitude" scan colorForAltitude
+// already did against the old hard-coded array.
+export function setAltitudeBands(bands) {
+  altitudeBands = (bands || []).map((b) => ({
+    max: b.max_ft == null ? Infinity : b.max_ft,
+    color: b.color,
+  }));
 }
 
 function formatTime(isoString) {
@@ -46,7 +54,7 @@ function formatTime(isoString) {
 
 function colorForAltitude(altitudeFt) {
   if (altitudeFt == null) return UNKNOWN_ALTITUDE_COLOR;
-  for (const band of ALTITUDE_BANDS) {
+  for (const band of altitudeBands) {
     if (altitudeFt <= band.max) return band.color;
   }
   return UNKNOWN_ALTITUDE_COLOR;

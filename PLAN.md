@@ -1227,20 +1227,53 @@ backup保持=7世代
 
 ### Milestone I：2B 受信局性能（スキーマ変更なし）
 
-- [ ] `app/db/queries/receiver.py`を新規作成する（`tracks.py`の「2クエリ+Pythonでの後処理」パターンに倣う）。
-  - [ ] `bearing_range(pool, hours)` — `width_bucket(bearing_deg, 0, 360, 16)`で16方位に分類し、方位ごとの`MAX(distance_km)`。
-  - [ ] `altitude_band_range(pool, hours)` — 高度帯ごとの最大受信距離。
-  - [ ] `reception_timeseries(pool, hours)` — `traffic_minute`から`message_count_delta`と位置取得率の時系列(`traffic.py`のゼロ埋めバケット方式を再利用)。
-- [ ] 高度帯(`ALTITUDE_BANDS`)の定義をPython側(例: `app/domain/bands.py`)に一本化し、`GET /api/config`経由でフロントエンドへ渡す。`map.js`のハードコードされた定義を置き換える(JS/Python間の値のズレを防ぐ)。
-- [ ] `app/api/routers/receiver.py`を新規作成する: `GET /api/receiver/bearing-range?hours=1..720`(既定24)、`GET /api/receiver/altitude-range?hours=1..720`、`GET /api/receiver/reception?hours=1..720`。`app/api/main.py`に登録する。
-- [ ] **[このMilestoneでまとめて対応]** `ingestion_status`の保持ポリシー未定義(Milestone B以降3回のセッション記録で継続報告)を解消する。`app/retention.py`のバッチ削除ループを拡張し`RAW_RETENTION_DAYS`超過分を削除。`tests/contract/test_retention.py`と`scripts/db_status.py`のテーブル一覧を更新する。
-- [ ] `app/static/receiver.html` + `app/static/js/receiver.js`を新規作成する(極座標チャート、高度帯レンジのバーチャート、受信率の折れ線チャート、Milestone Hのファクトリ経由)。navに追加する。
-- [ ] テスト: バケット化ヘルパーの単体テスト(DBなし、辞書ベース)、3エンドポイント分の結合テスト(空DB/範囲外422/データありの3パターン)、`test_openapi_lists_all_endpoints`更新。
+- [x] `app/db/queries/receiver.py`を新規作成する（`tracks.py`の「2クエリ+Pythonでの後処理」パターンに倣う）。
+  - [x] `bearing_range(pool, hours)` — `width_bucket(bearing_deg, 0, 360, 16)`で16方位に分類し、方位ごとの`MAX(distance_km)`。
+  - [x] `altitude_band_range(pool, hours)` — 高度帯ごとの最大受信距離。
+  - [x] `reception_timeseries(pool, hours)` — `traffic_minute`から`message_count_delta`と位置取得率の時系列(`hours<=24`は分バケット、それ超は時バケットに切替、`traffic.py`のゼロ埋めバケット方式を踏襲)。
+- [x] 高度帯(`ALTITUDE_BANDS`)の定義をPython側(`app/domain/bands.py`)に一本化し、`GET /api/config`経由でフロントエンドへ渡した。`map.js`のハードコードされた定義を置き換えた(JS/Python間の値のズレを防ぐ)。
+- [x] `app/api/routers/receiver.py`を新規作成する: `GET /api/receiver/bearing-range?hours=1..720`(既定24)、`GET /api/receiver/altitude-range?hours=1..720`、`GET /api/receiver/reception?hours=1..720`。`app/api/main.py`に登録した。
+- [x] **[このMilestoneでまとめて対応]** `ingestion_status`の保持ポリシー未定義(Milestone B以降3回のセッション記録で継続報告)を解消した。`app/retention.py`を汎用の`_delete_old_rows`ヘルパーに整理し、`delete_old_observations`(既存)と`delete_old_ingestion_status`(新規、専用advisory lock key `84372911`)の2本立てに拡張。`_run_once`は両方を順に実行する。`tests/contract/test_retention.py`に`ingestion_status`用テスト(削除範囲/dry-run/lock独立性/lock競合)を追加。`scripts/db_status.py`の`_TABLES`は元々`ingestion_status`を含んでいたため変更不要だった。
+- [x] `app/static/receiver.html` + `app/static/js/receiver.js`を新規作成した(極座標バーチャート、高度帯レンジの水平バーチャート、メッセージ数/位置取得率の折れ線チャート、いずれもMilestone Hの`createChart`ファクトリ経由)。navに追加した(Hで先行追加していたリンク先を実装)。
+- [x] テスト: `tests/unit/test_bands.py`・`tests/unit/test_receiver_query.py`(バケット化ヘルパーの単体テスト、DBなし)、`tests/integration/test_api.py`に3エンドポイント分の結合テスト(空DB/範囲外422/データありの3パターン)を追加、`test_openapi_lists_all_endpoints`更新。テスト総数158→174(+16)。
 
 **Milestone I 完了条件**
-- [ ] 3クエリともEXPLAINでSeq Scanがないことを確認する(bearing/altitude集計は`observed_at`のプレーンインデックスへフォールバックする可能性があるため要確認)。
-- [ ] 実データでページが表示される。
-- [ ] `make test`/`make lint`が通る。
+- [x] 3クエリともEXPLAIN ANALYZEを確認した(合成データ: aircraft 2,000件/observations 34,000件/traffic_minute・ingestion_status各43,200件=30日分、使い捨てdocker postgresコンテナ上)。`hours=24`のbearing_rangeは`ix_observations_observed_at`のBitmap Index Scan(1.2ms)。`hours=720`(ほぼ全期間)のbearing_range/altitude_band_rangeはSeq Scan(各5.9ms/6.6ms)にフォールバックした — 対象が全34,000行の過半を占め、Postgres自身がSeq Scanを最適と判断した結果であり、この規模では関数インデックスを追加する根拠がないと判断(先回りしない方針どおり)。reception_timeseriesの時バケット集計(720h)は14.9ms。全て目標値(500ms)を大幅に下回る。
+- [x] 実データでページが表示される(使い捨てpostgres + 実uvicorn + Playwright Chromiumで`/static/receiver.html`を目視確認。3チャートとも描画、nav・アクティブページハイライトも正常、consoleエラーなし)。
+- [x] `make test`/`make lint`が通る(174件全green、lint/format clean)。
+
+### セッション記録
+
+```text
+日付: 2026-07-29
+完了したMilestone/Task: Milestone I（2B 受信局性能）
+変更した主要ファイル:
+  - app/domain/bands.py（新規、ALTITUDE_BANDSの単一情報源。band_key_for_altitude/band_case_sqlヘルパー）
+  - app/db/queries/receiver.py（新規、bearing_range/altitude_band_range/reception_timeseries）
+  - app/api/routers/receiver.py（新規、GET /api/receiver/bearing-range・altitude-range・reception）
+  - app/api/main.py（receiverルーター登録）
+  - app/api/schemas.py（Bearing/AltitudeRange/Reception系レスポンス、ConfigResponse.altitude_bands追加）
+  - app/api/routers/config.py（altitude_bandsをGET /api/configに追加)
+  - app/retention.py（_delete_old_rowsへの共通化、delete_old_ingestion_status追加、advisory lock key 84372911）
+  - app/static/js/map.js（ハードコードのALTITUDE_BANDSを廃し、setAltitudeBands(config.altitude_bands)で受け取る方式に変更)
+  - app/static/js/main.js（mapModule.setAltitudeBands呼び出し追加、DEFAULT_CONFIGにaltitude_bands: []追加)
+  - app/static/js/api.js（getBearingRange/getAltitudeRange/getReception追加)
+  - app/static/receiver.html・app/static/js/receiver.js（新規ページ、極座標/水平バー/折れ線の3チャート)
+  - tests/unit/test_bands.py・tests/unit/test_receiver_query.py（新規）
+  - tests/integration/test_api.py（receiver 3エンドポイント分の結合テスト追加、config応答にaltitude_bands検証追加、OpenAPI一覧更新）
+  - tests/contract/test_retention.py（ingestion_status用テスト4件追加）
+  - PLAN.md（本セクション）
+実行したテスト: pytest（フルスイート、174件）、ruff check / ruff format --check
+テスト結果: 全green、lint/format clean
+実環境で確認したこと:
+  - 使い捨てdocker postgresコンテナに合成データ(aircraft 2,000件/observations 34,000件/traffic_minute・ingestion_status各43,200件=30日分、Milestone C-8と同規模)を投入し、3クエリ全てにEXPLAIN ANALYZEを実施。`hours=24`のbearing_rangeは`ix_observations_observed_at`のBitmap Index Scan(1.2ms)。`hours=720`のbearing_range/altitude_band_rangeはSeq Scanにフォールバック(5.9ms/6.6ms) — 対象範囲が全期間の過半を占めるためPostgres自身の最適判断であり、この規模で関数インデックスを追加する根拠はないと判断(測定してから判断する方針どおり、先回りして追加せず)。retention側の`delete_old_ingestion_status`の選択クエリは既存の`ix_ingestion_status_checked_at`を正しく利用(Index Scan Backward)。
+  - Milestone Hと同じ手法(使い捨てPostgres + 実uvicorn + Playwright Chromium)で`/static/receiver.html`を目視確認。3チャート(極座標バー、高度帯水平バー、メッセージ数/位置取得率の折れ線)とも正しく描画、nav 4リンク・アクティブページハイライト(受信性能)とも正常、consoleエラーはゼロ。スクリーンショットで最終確認済み(セッション内一時ファイル、コミットせず)。
+残課題:
+  - daily.html/history.htmlは引き続き未作成のため、navの該当2リンクは404のまま(Milestone N/Oで解消予定、既知)。
+  - `app/retention.py`の`_run_loop`は失敗時に例外をログして次サイクルへ進む既存方針のまま(observations/ingestion_statusのどちらかが失敗しても他方の次回実行は妨げない設計)。
+次に行うTask: Milestone J（2A クイックウィン）
+ユーザー判断が必要な事項: なし
+```
 
 ### Milestone J：2A クイックウィン（スキーマ変更なし）
 

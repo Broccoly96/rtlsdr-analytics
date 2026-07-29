@@ -1363,25 +1363,60 @@ backup保持=7世代
 
 このMilestone単体でのユーザー向け機能はない。2A長期比較・2Dの30日超履歴・2Eの週比較が読むデータを、`observations`が保持期限で消える前に用意することが目的。
 
-- [ ] 新規migrationを追加する(既存の初期migrationを`down_revision`とし、`op.execute()`による生SQL、fix-forward方針を踏襲):
-  - [ ] `traffic_day(day PK, unique_aircraft_count, max_concurrent_count, message_count_total, position_aircraft_count_max, farthest_icao, farthest_distance_km, closest_icao, closest_distance_km, most_observed_icao, most_observed_count, computed_at)`
-  - [ ] `aircraft_day(icao, day, pass_count, observation_count, PK(icao,day))` + `ix_aircraft_day_day(day)`(Milestone Oの「直近N日で最頻」クエリのために先回りで追加、根拠明確なので許容)
-  - [ ] `aircraft_callsign_history(icao, callsign, first_seen_at, last_seen_at, PK(icao,callsign))`
-- [ ] JST日境界のヘルパー(例: `day_bounds_utc(day, tz_name) -> (start_utc, end_utc)`、`zoneinfo`使用、`settings.display_timezone`起点、Python側で計算しSQLの`AT TIME ZONE`に頼らない)を追加する。
-- [ ] `app/db/queries/period.py`を新規作成する:
-  - [ ] `compute_daily_summary(pool, start_utc, end_utc) -> DailyTrafficSummary` — ロールアップジョブ(過去日)と2Eの「今日」ライブ読み取りの両方から呼ばれる共通集計ロジック。
-  - [ ] `get_traffic_day(pool, day)` — 過去日は`traffic_day`から読む。
-  - [ ] `list_traffic_days(pool, start_day, end_day)` — ゼロ埋め、Milestone M用。
-- [ ] `app/dailyrollup.py`を新規作成する(`app/retention.py`の構造を踏襲): `--dry-run`、`--day YYYY-MM-DD`(手動バックフィル)、`--loop`(デーモン、JSTで毎日既定00:10頃に実行)。`pg_try_advisory_lock`は`retention.py`の`84372910`とは別のキーを使う。対象日(既定: DISPLAY_TIMEZONEの昨日)について`traffic_day`・`aircraft_day`(ギャップベースのpass分割、`tracks.py`と同種の手法)・`aircraft_callsign_history`を`ON CONFLICT ... DO UPDATE`で冪等に書き込む。
-- [ ] 新規Composeサービス`adsb-daily-rollup`を追加する(`adsb-retention`のブロックと同形: `depends_on: adsb-migrate: service_completed_successfully`、`restart: unless-stopped`、`stop_grace_period`、ログ上限)。
-- [ ] `tests/contract/pg_container.py`の`clean_db`のTRUNCATE対象に新3テーブルを追加する。`scripts/db_status.py`のテーブル一覧も更新する。
-- [ ] テスト: `tests/contract/test_dailyrollup.py`(`test_retention.py`に倣う: advisory lock、冪等性、**「その日のロールアップ値がretention.pyによる同日observations削除後も残る」**ことを確認するテストを含める)。`tests/unit/`にPython純粋ロジック(境界計算・pass分割)のテストを追加する。
+- [x] 新規migration(`5cee58fd601d`、`down_revision=62c3f8022564`)を追加した(`op.execute()`による生SQL、fix-forward方針を踏襲。使い捨てPostgresでupgrade→downgrade→re-upgradeが全て成功することを確認済み):
+  - [x] `traffic_day(day PK, unique_aircraft_count, max_concurrent_count, message_count_total, position_aircraft_count_max, farthest_icao, farthest_distance_km, closest_icao, closest_distance_km, most_observed_icao, most_observed_count, computed_at)`
+  - [x] `aircraft_day(icao, day, pass_count, observation_count, PK(icao,day))` + `ix_aircraft_day_day(day)`(Milestone Oの「直近N日で最頻」クエリのために先回りで追加、根拠明確なので許容)
+  - [x] `aircraft_callsign_history(icao, callsign, first_seen_at, last_seen_at, PK(icao,callsign))`
+- [x] JST日境界のヘルパーを`app/domain/daytime.py`に追加した: `day_bounds_utc(day, tz_name) -> (start_utc, end_utc)`(`zoneinfo`使用、Python側で計算しSQLの`AT TIME ZONE`に頼らない)、`today_in_tz`/`yesterday_in_tz`(ジョブの既定対象日計算・Milestone N用)。
+- [x] `app/db/queries/period.py`を新規作成した:
+  - [x] `compute_daily_summary(pool, day, start_utc, end_utc) -> DailyTrafficSummary`(plan記載の2引数`(pool, start_utc, end_utc)`に対し`day`を追加— `get_traffic_day`/`list_traffic_days`と同じ`DailyTrafficSummary`型が`day`フィールドを持つ必要があり、呼び出し側は既にどの日を計算しているか把握しているため自然な拡張と判断)。farthest/closestは`rankings.py`と同じ`ORDER BY distance_km {ASC,DESC} LIMIT 1`パターンを使用。
+  - [x] `get_traffic_day(pool, day)` — 過去日は`traffic_day`から読む。
+  - [x] `list_traffic_days(pool, start_day, end_day)` — ゼロ埋め、Milestone M用。
+- [x] `app/dailyrollup.py`を新規作成した(`app/retention.py`の構造を踏襲): `--dry-run`、`--day YYYY-MM-DD`(手動バックフィル)、`--loop`(デーモン、JSTで既定00:10に実行、`next_run_at`ヘルパーで次回実行時刻を計算)。`pg_try_advisory_lock`は`retention.py`の`84372910`/`84372911`とは別の`84372950`を使用。対象日(既定: DISPLAY_TIMEZONEの昨日)について`traffic_day`・`aircraft_day`(`count_passes`によるギャップベースのpass分割、`MAX_PASS_GAP_SECONDS=120`、`tracks.py`のMAX_GAP_SECONDSと同種の手法)・`aircraft_callsign_history`を`ON CONFLICT ... DO UPDATE`で冪等に書き込む。`compute_daily_summary`がpool経由で独立に接続を取得するため、advisory lock保持用に`min_size=1,max_size=2`のプール(`retention.py`の`max_size=1`とは異なる)を使用。
+- [x] 新規Composeサービス`adsb-daily-rollup`を追加した(`adsb-retention`のブロックと同形: `depends_on: adsb-migrate: service_completed_successfully`、`restart: unless-stopped`、`stop_grace_period`、ログ上限)。
+- [x] `tests/contract/pg_container.py`の`clean_db`のTRUNCATE対象に新3テーブルを追加した。`scripts/db_status.py`のテーブル一覧も更新した。
+- [x] テスト: `tests/contract/test_dailyrollup.py`(`test_retention.py`に倣う: 手計算値との一致・冪等性・dry-run・advisory lock競合・**「その日のロールアップ値がretention.pyによる同日observations削除後も残る」**ことを確認するテスト、計5件)。`tests/unit/test_daytime.py`(境界計算、JSTの無DST・比較用にDSTありタイムゾーンも1ケース検証)、`tests/unit/test_dailyrollup.py`(`count_passes`のpass分割、`next_run_at`のスケジューリング計算)。テスト総数184→202(+18)。
 
 **Milestone L 完了条件**
-- [ ] 合成データで手計算した期待値とロールアップ結果が一致する。
-- [ ] 同じ日を2回実行しても結果が変わらない(冪等性)。
-- [ ] retention実行後もロールアップ済みデータが残ることを確認するテストが通る。
-- [ ] 実`adsb-db`に対して`--dry-run`と実実行の両方を確認する。
+- [x] 合成データで手計算した期待値とロールアップ結果が一致する(`test_run_rollup_writes_expected_values`: 2機体・パス数・callsign履歴・farthest/closest/most_observedを全て手計算値と照合)。
+- [x] 同じ日を2回実行しても結果が変わらない(`test_run_rollup_is_idempotent`: `computed_at`以外の全カラムが一致、行数が増えないことを確認)。
+- [x] retention実行後もロールアップ済みデータが残ることを確認するテストが通る(`test_rollup_survives_retention_deleting_the_day`)。
+- [ ] **[ユーザー確認待ち]** 実`adsb-db`に対して`--dry-run`と実実行の両方を確認する — このセッションは実サーバーへのアクセス手段を持たないため未実施。migration適用(`docker compose up`で`adsb-migrate`経由)と`adsb-daily-rollup`サービスのデプロイはスキーマ変更・新規サービスであり、CLAUDE.md運用制約により実行前にユーザーへの提示が必要な変更として、コード提出のみに留め実施はユーザーに委ねる。
+
+実測性能(このホスト上の使い捨てPostgres、Milestone C-8/I/J/K相当の合成データ 34,000件から抽出した1日分、約1,167 observations・約880機体):
+- `compute_daily_summary`の各クエリ(unique/traffic_minute集計/farthest/closest/most_observed): 全て3ms未満。farthest/closestは`rankings.py`と同じ`ix_observations_distance_observed_at`のIndex Scanを使用することを確認。
+- `run_rollup`のエンドツーエンド実行(880機体分の`aircraft_day`+`aircraft_callsign_history`個別upsert込み): 約9.2秒。1日1回のバッチジョブとして許容範囲と判断(1文ずつの逐次round-trip方式は本アプリ全体の「トランザクションを跨がない」既存方針に合わせたもので、将来`executemany`によるバッチ化の余地はあるが現時点では先回りの最適化をしない)。
+
+### セッション記録
+
+```text
+日付: 2026-07-29
+完了したMilestone/Task: Milestone L（日次ロールアップ基盤）
+変更した主要ファイル:
+  - migrations/versions/5cee58fd601d_add_daily_rollup_tables.py（新規、traffic_day/aircraft_day/aircraft_callsign_history）
+  - app/domain/daytime.py（新規、day_bounds_utc/today_in_tz/yesterday_in_tz）
+  - app/db/queries/period.py（新規、compute_daily_summary/get_traffic_day/list_traffic_days）
+  - app/dailyrollup.py（新規、count_passes/next_run_at/run_rollup/CLI(--dry-run/--day/--loop)）
+  - compose.yaml（adsb-daily-rollupサービス追加）
+  - tests/contract/pg_container.py（clean_dbのTRUNCATE対象に新3テーブル追加）
+  - scripts/db_status.py（_TABLESに新3テーブル追加）
+  - tests/contract/test_dailyrollup.py（新規、5件）
+  - tests/unit/test_daytime.py・tests/unit/test_dailyrollup.py（新規、計13件)
+  - PLAN.md（本セクション）
+実行したテスト: pytest（フルスイート、202件）、ruff check / ruff format --check
+テスト結果: 全green、lint/format clean
+実環境で確認したこと:
+  - 使い捨てdocker postgresコンテナで新migrationの`upgrade head`→`downgrade 62c3f8022564`→再`upgrade head`が全て成功することを確認(fix-forward前提だが、空DBに対するdowngradeの安全性は62c3f8022564の前例に倣い検証)。
+  - Milestone C-8/I/J/K相当の合成データ(observations 34,000件、30日分)から抽出した1日分(約1,167 observations、約880機体)で`compute_daily_summary`内の各クエリにEXPLAIN ANALYZEを実施。farthest/closestが`rankings.py`と同じ`ix_observations_distance_observed_at`のIndex Scanを使うことを確認(Backward/Forward、共に0.03ms未満)。他のクエリも全て3ms未満。
+  - 同じ合成データに対して実際に`run_rollup`をエンドツーエンドで実行し、880機体分の`aircraft_day`+`aircraft_callsign_history`書き込みに約9.2秒かかることを実測(1日1回のバッチジョブとして許容範囲)。
+  - `tests/contract/test_dailyrollup.py`で手計算値との一致・冪等性・dry-run・advisory lock競合・retention実行後の生存確認、全5件が実際の使い捨てPostgresに対して成功することを確認。
+残課題(重要 — ユーザー確認・実施が必要):
+  - **実`adsb-db`に対する`--dry-run`と実実行の確認が未実施**。このセッションはユーザーの実サーバーへのアクセス手段を持たない。ユーザー側で以下を実施いただく必要がある: (1) `docker compose up -d adsb-migrate`(または通常のcompose起動)でmigration `5cee58fd601d`を適用、(2) `docker compose run --rm adsb-daily-rollup python3 -m app.dailyrollup --dry-run`で実データに対する挙動を確認、(3) 問題なければ`docker compose up -d adsb-daily-rollup`でサービスを起動。migration適用・新規サービスのデプロイは実施前提示が必要な変更(CLAUDE.md運用制約)のため、コード提出のみに留めた。
+  - daily.html/history.htmlは引き続き未作成のため、navの該当2リンクは404のまま(Milestone N/Oで解消予定、既知)。
+次に行うTask: （ユーザーが実`adsb-db`での検証を実施した後)Milestone M（2A 長期比較）
+ユーザー判断が必要な事項:
+  - 上記の実`adsb-db`へのmigration適用・`adsb-daily-rollup`デプロイをいつ実施するか。
+```
 
 ### Milestone M：2A 長期比較（Milestone L依存）
 

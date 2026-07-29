@@ -135,7 +135,8 @@ async def clean_db(postgres_url):
     conn = await asyncpg.connect(postgres_url)
     try:
         await conn.execute(
-            "TRUNCATE aircraft, observations, traffic_minute, ingestion_status CASCADE"
+            "TRUNCATE aircraft, observations, traffic_minute, ingestion_status, "
+            "traffic_day, aircraft_day, aircraft_callsign_history CASCADE"
         )
         yield
     finally:

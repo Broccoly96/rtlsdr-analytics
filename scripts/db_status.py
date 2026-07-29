@@ -16,7 +16,15 @@ import asyncpg
 
 from app.config import Settings
 
-_TABLES = ("aircraft", "observations", "traffic_minute", "ingestion_status")
+_TABLES = (
+    "aircraft",
+    "observations",
+    "traffic_minute",
+    "ingestion_status",
+    "traffic_day",
+    "aircraft_day",
+    "aircraft_callsign_history",
+)
 
 
 def _human_bytes(n: float) -> str:

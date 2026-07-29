@@ -575,6 +575,72 @@ async def test_traffic_csv_returns_csv_content(client: AsyncClient) -> None:
     assert len(lines) == 1 + 60  # header + 60 zero-filled minute buckets
 
 
+# --- heatmap ------------------------------------------------------------------
+
+
+async def test_heatmap_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/heatmap")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cells"] == []
+
+
+async def test_heatmap_bounds_rejected(client: AsyncClient) -> None:
+    assert (await client.get("/api/heatmap", params={"hours": 0})).status_code == 422
+    assert (await client.get("/api/heatmap", params={"hours": 721})).status_code == 422
+    assert (await client.get("/api/heatmap", params={"hour_of_day": -1})).status_code == 422
+    assert (await client.get("/api/heatmap", params={"hour_of_day": 24})).status_code == 422
+    assert (await client.get("/api/heatmap", params={"day_of_week": -1})).status_code == 422
+    assert (await client.get("/api/heatmap", params={"day_of_week": 7})).status_code == 422
+    assert (
+        await client.get("/api/heatmap", params={"altitude_band": "not-a-real-band"})
+    ).status_code == 422
+
+
+async def test_heatmap_with_seeded_data_and_filters(postgres_url, client: AsyncClient) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.681,
+                lon=139.767,
+                altitude_ft=0.0,  # "ground" band (max_ft=0, inclusive)
+                ground_speed_kt=200.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=10.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/heatmap", params={"hours": 24})
+    body = response.json()
+    assert len(body["cells"]) == 1
+    assert body["cells"][0]["count"] == 1
+
+    # Filtering to the seeded observation's own altitude band still matches...
+    match_response = await client.get(
+        "/api/heatmap", params={"hours": 24, "altitude_band": "ground"}
+    )
+    assert len(match_response.json()["cells"]) == 1
+
+    # ...but a different band excludes it.
+    no_match_response = await client.get(
+        "/api/heatmap", params={"hours": 24, "altitude_band": "very_high"}
+    )
+    assert no_match_response.json()["cells"] == []
+
+
 # --- config -----------------------------------------------------------------
 
 
@@ -616,4 +682,5 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/distribution/hour-of-day",
         "/api/distribution/altitude",
         "/api/distribution/speed",
+        "/api/heatmap",
     }

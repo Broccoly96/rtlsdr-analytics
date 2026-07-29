@@ -25,6 +25,9 @@ import { api } from "./api.js";
 // from the server-side band definitions used for grouping/filtering.
 let altitudeBands = [];
 const UNKNOWN_ALTITUDE_COLOR = "#8fa3bd";
+// Cool-to-warm density ramp for the heatmap layer, matching this app's
+// existing color tokens (style.css's --accent-2/--accent/--success/--warning/--danger).
+const HEATMAP_COLOR_RAMP = ["#60a5fa", "#22d3ee", "#34d399", "#fbbf24", "#fb7185"];
 
 let displayTimezone = "UTC";
 
@@ -128,6 +131,17 @@ function tracksToLineFeatures(tracksGeoJSON) {
   return { type: "FeatureCollection", features };
 }
 
+function cellsToHeatmapFeatures(cells) {
+  return {
+    type: "FeatureCollection",
+    features: (cells || []).map((cell) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [cell.lon, cell.lat] },
+      properties: { count: cell.count },
+    })),
+  };
+}
+
 const LOAD_TIMEOUT_MS = 10000;
 
 export function createTrackMap({ containerId, styleUrl }) {
@@ -136,11 +150,13 @@ export function createTrackMap({ containerId, styleUrl }) {
   let ready = false;
   let selectedIcao = null;
 
+  const noop = { setTracks: () => {}, resize: () => {}, setHeatmap: () => {}, setHeatmapVisible: () => {} };
+
   if (!isWebGLAvailable()) {
     showMapError(
       "このブラウザ/環境ではWebGLが利用できないため地図を表示できません(グラフ・ランキングは利用できます)。リモートデスクトップ/VM環境やWebGL無効化設定が原因のことがあります。"
     );
-    return { setTracks: () => {}, resize: () => {} };
+    return noop;
   }
 
   try {
@@ -157,7 +173,7 @@ export function createTrackMap({ containerId, styleUrl }) {
   } catch (err) {
     console.error("map init failed", err);
     showMapError(`地図の初期化に失敗しました: ${describeError(err)}(グラフ・ランキングは利用できます)`);
-    return { setTracks: () => {}, resize: () => {} };
+    return noop;
   }
 
   // If `load` never fires (e.g. the style URL or one of its referenced
@@ -198,6 +214,40 @@ export function createTrackMap({ containerId, styleUrl }) {
         // handler below, which updates this via setPaintProperty.
         "line-width": 2,
         "line-opacity": 0.75,
+      },
+    });
+
+    map.addSource("heatmap", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: "heatmap-layer",
+      type: "heatmap",
+      source: "heatmap",
+      layout: { visibility: "none" },
+      paint: {
+        "heatmap-weight": ["interpolate", ["linear"], ["get", "count"], 0, 0, 50, 1],
+        "heatmap-intensity": 1,
+        "heatmap-color": [
+          "interpolate",
+          ["linear"],
+          ["heatmap-density"],
+          0,
+          "rgba(0,0,0,0)",
+          0.2,
+          HEATMAP_COLOR_RAMP[0],
+          0.4,
+          HEATMAP_COLOR_RAMP[1],
+          0.6,
+          HEATMAP_COLOR_RAMP[2],
+          0.8,
+          HEATMAP_COLOR_RAMP[3],
+          1,
+          HEATMAP_COLOR_RAMP[4],
+        ],
+        "heatmap-radius": 20,
+        "heatmap-opacity": 0.8,
       },
     });
 
@@ -256,11 +306,22 @@ export function createTrackMap({ containerId, styleUrl }) {
     if (source) source.setData(tracksToLineFeatures(tracksGeoJSON));
   }
 
+  function setHeatmap(cells) {
+    if (!ready) return;
+    const source = map.getSource("heatmap");
+    if (source) source.setData(cellsToHeatmapFeatures(cells));
+  }
+
+  function setHeatmapVisible(visible) {
+    if (!ready) return;
+    map.setLayoutProperty("heatmap-layer", "visibility", visible ? "visible" : "none");
+  }
+
   function resize() {
     if (map) map.resize();
   }
 
-  return { setTracks, resize };
+  return { setTracks, resize, setHeatmap, setHeatmapVisible };
 }
 
 export async function refreshTracks(mapController, hours) {

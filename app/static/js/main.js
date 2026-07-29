@@ -166,6 +166,76 @@ async function refreshDistributionPanels(charts) {
   }
 }
 
+const DAY_OF_WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"]; // matches Postgres EXTRACT(DOW): 0=Sunday
+
+function addOption(select, value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  select.appendChild(option);
+}
+
+function populateHeatmapFilterOptions(altitudeBands) {
+  const bandSelect = document.getElementById("heatmap-altitude-band");
+  const hourSelect = document.getElementById("heatmap-hour");
+  const dowSelect = document.getElementById("heatmap-dow");
+  if (!bandSelect || !hourSelect || !dowSelect) return;
+
+  addOption(bandSelect, "", "高度: 全て");
+  for (const band of altitudeBands || []) {
+    addOption(bandSelect, band.key, band.label);
+  }
+
+  addOption(hourSelect, "", "時間帯: 全て");
+  for (let hour = 0; hour < 24; hour++) {
+    addOption(hourSelect, String(hour), `${hour}時台`);
+  }
+
+  addOption(dowSelect, "", "曜日: 全て");
+  DAY_OF_WEEK_LABELS.forEach((label, dow) => addOption(dowSelect, String(dow), `${label}曜`));
+}
+
+// Heatmap is opt-in (toggle button) and re-fetched only while visible --
+// avoids an extra query on every load for a feature most sessions won't use.
+function setupHeatmapControls(mapController, altitudeBands) {
+  populateHeatmapFilterOptions(altitudeBands);
+
+  const toggle = document.getElementById("heatmap-toggle");
+  const bandSelect = document.getElementById("heatmap-altitude-band");
+  const hourSelect = document.getElementById("heatmap-hour");
+  const dowSelect = document.getElementById("heatmap-dow");
+  if (!toggle || !bandSelect || !hourSelect || !dowSelect) return;
+
+  let enabled = false;
+
+  async function refresh() {
+    if (!enabled) return;
+    try {
+      const params = {
+        hours: TRAFFIC_WINDOW_HOURS,
+        altitude_band: bandSelect.value || undefined,
+        hour_of_day: hourSelect.value !== "" ? Number(hourSelect.value) : undefined,
+        day_of_week: dowSelect.value !== "" ? Number(dowSelect.value) : undefined,
+      };
+      const data = await api.getHeatmap(params);
+      mapController.setHeatmap(data.cells);
+    } catch (err) {
+      console.error("heatmap refresh failed", err);
+    }
+  }
+
+  toggle.addEventListener("click", () => {
+    enabled = !enabled;
+    toggle.setAttribute("aria-pressed", String(enabled));
+    mapController.setHeatmapVisible(enabled);
+    if (enabled) refresh();
+  });
+
+  for (const select of [bandSelect, hourSelect, dowSelect]) {
+    select.addEventListener("change", refresh);
+  }
+}
+
 async function main() {
   let config;
   try {
@@ -185,7 +255,12 @@ async function main() {
     altitudeHist: createHistogramChart("altitude-hist-chart", "altitude-hist-chart-error", "ft"),
     speedHist: createHistogramChart("speed-hist-chart", "speed-hist-chart-error", "kt"),
   };
-  let mapController = { setTracks: () => {}, resize: () => {} };
+  let mapController = {
+    setTracks: () => {},
+    resize: () => {},
+    setHeatmap: () => {},
+    setHeatmapVisible: () => {},
+  };
   let currentTracksHours = 6;
 
   const mapModule = await loadMapModule();
@@ -198,7 +273,11 @@ async function main() {
     await refreshTracks(mapController, currentTracksHours);
   }
 
-  const periodButtons = document.querySelectorAll(".period-btn");
+  // Scoped to the header's period group specifically: #heatmap-toggle
+  // below also uses the `.period-btn` class for shared styling only, and
+  // must not be swept up by this handler (it has no data-hours, and isn't
+  // part of the mutually-exclusive tracks-period button group).
+  const periodButtons = document.querySelectorAll(".app-header__period .period-btn");
   periodButtons.forEach((button) => {
     button.addEventListener("click", () => {
       periodButtons.forEach((b) => b.setAttribute("aria-pressed", "false"));
@@ -207,6 +286,8 @@ async function main() {
       refreshTracks(mapController, currentTracksHours);
     });
   });
+
+  setupHeatmapControls(mapController, config.altitude_bands);
 
   window.addEventListener("resize", () => {
     mapController.resize();

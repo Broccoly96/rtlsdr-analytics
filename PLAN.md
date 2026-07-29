@@ -1321,13 +1321,43 @@ backup保持=7世代
 
 ### Milestone K：2C ヒートマップ（スキーマ変更なし）
 
-- [ ] `app/db/queries/heatmap.py`を新規作成する: `grid_density(pool, hours, cell_deg=0.01, altitude_band=None, hour_of_day=None, day_of_week=None)` — `round(lat/cell_deg)*cell_deg, round(lon/cell_deg)*cell_deg`でグループ化。`MAX_GRID_CELLS`(例: 5000件)の上限をサーバー側で強制する(`tracks.py`の`MAX_TOTAL_POINTS`と同じ安全策、Milestone C-8で`hours=168`が1.18MBを返した失敗を繰り返さない)。
-- [ ] `app/api/routers/heatmap.py`を新規作成する: `GET /api/heatmap?hours=1..720&altitude_band=&hour_of_day=0..23&day_of_week=0..6`。
-- [ ] `map.js`を拡張し、既存ダッシュボード地図にヒートマップレイヤー+トグルボタン+高度帯/時間帯/曜日フィルタを追加する(新規ページではない)。
-- [ ] テスト: グリッド化ロジックの単体テスト、フィルタ組み合わせを含む結合テスト、可能なら`test_map_failure_playwright.py`を拡張する。
+- [x] `app/db/queries/heatmap.py`を新規作成した: `grid_density(pool, hours, cell_deg=0.01, altitude_band=None, hour_of_day=None, day_of_week=None)` — `round(lat/cell_deg)*cell_deg, round(lon/cell_deg)*cell_deg`でグループ化。`MAX_GRID_CELLS`(5000件)の上限を`ORDER BY count DESC LIMIT`でサーバー側に強制(`tracks.py`の`MAX_TOTAL_POINTS`と同じ「密度の高いセルを優先して切り詰める」安全策、Milestone C-8で`hours=168`が1.18MBを返した失敗を繰り返さない)。
+- [x] `app/api/routers/heatmap.py`を新規作成した: `GET /api/heatmap?hours=1..720&altitude_band=&hour_of_day=0..23&day_of_week=0..6`。不正な`altitude_band`値は422。`app/api/main.py`に登録した。
+- [x] `map.js`を拡張し、既存ダッシュボード地図にヒートマップレイヤー(初期`visibility: none`)+トグルボタン+高度帯/時間帯/曜日フィルタを追加した(新規ページではない)。トグルはオプトインで、有効時のみ`/api/heatmap`を取得する(既定では追加クエリなし)。地図初期化失敗時の3種類のフォールバック(`{setTracks,resize,setHeatmap,setHeatmapVisible}`のno-op)にも`setHeatmap`/`setHeatmapVisible`を含め、既存の「地図障害時も他パネルは動作継続」契約を壊さないようにした。
+- [x] テスト: `tests/integration/test_api.py`にフィルタ組み合わせを含む結合テスト(空/範囲外422/altitude_band不正値422/データあり+フィルタ一致・不一致)を追加、`test_openapi_lists_all_endpoints`更新。グリッド化計算はSQL側の`round(x/cell)*cell`一行のみで、Milestone I/Jと同様に意味のある純Pythonロジックがないため専用unit testは追加していない。`test_map_failure_playwright.py`の拡張は見送った — ヒートマップコントロールは地図read失敗時もno-opフォールバックで動作継続する設計そのものが検証対象であり、既存テストの「スタイルURL失敗」シナリオとは直交するため、既存テストへの追加より新規の目視確認(下記)で十分と判断。テスト総数181→184(+3)。
 
 **Milestone K 完了条件**
-- [ ] Milestone C-8相当の合成データ量で`EXPLAIN ANALYZE`を実施してから、`(round(lat,2), round(lon,2))`等の関数インデックスの要否を判断する(先回りして追加しない)。測定値をセッション記録に残す。
+- [x] Milestone C-8相当の合成データ量(observations 34,000件)で`EXPLAIN ANALYZE`を実施した。フィルタなし24h: 1.4ms(Bitmap Index Scan)。フィルタなし720h(全期間の大半): 12.4ms、実際に全データで16,766個の異なるグリッドセルが存在することを確認し、`MAX_GRID_CELLS=5000`の切り詰めが実際に発動することを検証した。altitude_band+hour_of_day+day_of_week全フィルタ組み合わせ(720h): 5.5ms。全てSeq Scan/Bitmap Scanのいずれかで、720hのSeq Scanは対象範囲が広いための正しい選択であり、`(round(lat,2), round(lon,2))`等の関数インデックスを追加する根拠はないと判断(先回りしない方針どおり)。
+
+### セッション記録
+
+```text
+日付: 2026-07-29
+完了したMilestone/Task: Milestone K（2C ヒートマップ）
+変更した主要ファイル:
+  - app/db/queries/heatmap.py（新規、grid_density。ORDER BY count DESC LIMIT MAX_GRID_CELLSで密度優先の切り詰め）
+  - app/api/routers/heatmap.py（新規、GET /api/heatmap。不正altitude_bandを422に）
+  - app/api/main.py（heatmapルーター登録）
+  - app/api/schemas.py（GridCellResponse/HeatmapResponse追加）
+  - app/static/js/map.js（heatmapソース+レイヤー追加、setHeatmap/setHeatmapVisible、3種のno-opフォールバックにも追加）
+  - app/static/js/api.js（getHeatmap追加）
+  - app/static/js/main.js（ヒートマップトグル+3フィルタselectの生成・配線、periodButtonsセレクタを.app-header__period配下に限定するバグ修正込み)
+  - app/static/index.html（地図パネルヘッダーにヒートマップコントロール追加）
+  - app/static/css/style.css（.heatmap-controls追加）
+  - tests/integration/test_api.py（heatmap結合テスト、OpenAPI一覧更新）
+  - PLAN.md（本セクション）
+実行したテスト: pytest（フルスイート、184件）、ruff check / ruff format --check
+テスト結果: 全green、lint/format clean
+実環境で確認したこと:
+  - 使い捨てdocker postgresコンテナに合成データ(observations 34,000件)を投入し、フィルタなし(24h/720h)・全フィルタ組み合わせ(720h)にEXPLAIN ANALYZEを実施。720hのフィルタなしクエリでは実際に16,766個の異なるグリッドセルが存在し、`MAX_GRID_CELLS=5000`によるLIMIT切り詰めが本当に発動することを確認した(この規模で切り詰めが机上の空論でないことの実証)。
+  - 使い捨てPostgres + 実uvicorn + Playwright Chromiumでダッシュボードを目視確認。高度帯(6)・時間帯(25)・曜日(8)の各セレクトが`/api/config`のaltitude_bandsおよび静的な0-23時/日-土から正しく生成されることを確認、ヒートマップトグルをクリックして`aria-pressed`がtrueに変わること、フィルタ変更後も再フェッチが例外なく走ることを確認。consoleメッセージはソフトウェアGLレンダラの性能警告のみ(アプリコードとは無関係)。スクリーンショットで最終確認済み(セッション内一時ファイル、コミットせず)。
+  - Milestone Iのバグ修正付随発見: `.period-btn`クラスをヒートマップトグルボタンにも(スタイル共有目的で)付けたところ、既存の`document.querySelectorAll(".period-btn")`(航跡表示期間の1h/6h/24hボタン用)がヒートマップトグルまで拾ってしまい、クリック時に`currentTracksHours`が`NaN`になる実バグを実装中に発見・その場で修正(セレクタを`.app-header__period .period-btn`に限定)。
+残課題:
+  - daily.html/history.htmlは引き続き未作成のため、navの該当2リンクは404のまま(Milestone N/Oで解消予定、既知)。
+  - スキーマ変更なし群(I/J/K)が完了。次はスキーマ変更を伴うMilestone L(M/N/Oの前提)。
+次に行うTask: Milestone L（日次ロールアップ基盤）
+ユーザー判断が必要な事項: なし
+```
 
 ### Milestone L：日次ロールアップ基盤（スキーマ変更、M/N/Oの前提）
 

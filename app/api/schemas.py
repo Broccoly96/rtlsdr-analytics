@@ -169,3 +169,14 @@ class SpeedHistogramResponse(BaseModel):
     hours: int
     bucket_kt: int
     buckets: list[HistogramBucketResponse]
+
+
+class GridCellResponse(BaseModel):
+    lat: float
+    lon: float
+    count: int
+
+
+class HeatmapResponse(BaseModel):
+    hours: int
+    cells: list[GridCellResponse]

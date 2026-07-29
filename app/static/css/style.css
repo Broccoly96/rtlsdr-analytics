@@ -230,6 +230,26 @@ button {
   text-decoration: underline;
 }
 
+.heatmap-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.heatmap-controls select {
+  padding: 4px 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+
+.heatmap-controls .period-btn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
+
 /* --- distribution area (hour-of-day / altitude / speed) ----------------- */
 
 .distribution-area {

@@ -61,7 +61,15 @@
 
   <section class="main-area">
     <div class="panel panel--map">
-      <div class="panel__header" id="map-heading">航跡地図</div>
+      <div class="panel__header" id="map-heading">
+        航跡地図
+        <div class="heatmap-controls" role="group" aria-label="ヒートマップ設定">
+          <button type="button" id="heatmap-toggle" class="period-btn" aria-pressed="false">ヒートマップ</button>
+          <select id="heatmap-altitude-band" aria-label="高度帯フィルタ"></select>
+          <select id="heatmap-hour" aria-label="時間帯フィルタ"></select>
+          <select id="heatmap-dow" aria-label="曜日フィルタ"></select>
+        </div>
+      </div>
       <div id="map" class="map-container" role="img" aria-labelledby="map-heading"></div>
       <div id="map-error" class="panel__error" hidden></div>
     </div>

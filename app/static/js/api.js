@@ -46,4 +46,5 @@ export const api = {
   getHourOfDay: (days) => getJSON("/api/distribution/hour-of-day", { days }),
   getAltitudeHistogram: (hours) => getJSON("/api/distribution/altitude", { hours }),
   getSpeedHistogram: (hours) => getJSON("/api/distribution/speed", { hours }),
+  getHeatmap: (params) => getJSON("/api/heatmap", params),
 };

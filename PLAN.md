@@ -883,17 +883,20 @@ collectorは1インスタンスだけ起動する。将来APIを複数化して�
 
 既存サービスへの影響を避けるため、最初はアプリのCompose再起動だけを行う。
 
-- [ ] アプリCompose再起動後に自動復旧する。
-- [ ] DBデータが残る。
-- [ ] collectorが重複起動しない。
-- [ ] 既存サービスが継続稼働する。
+- [x] アプリCompose再起動後に自動復旧する(`docker compose restart adsb-api adsb-collector adsb-db`後、全コンテナ`Up`/`healthy`に復旧、`/health/ready`・`/api/status`とも正常応答を確認。OS再起動時のようなbind race自体が発生しないため単純に復旧)。
+- [x] DBデータが残る(OS再起動試験の一環で確認。`aircraft.first_seen_at`の最小値が再起動時刻より前であることを実機確認、observations/traffic_minute/ingestion_statusとも非ゼロで継続)。
+- [x] collectorが重複起動しない(OS再起動試験の一環で確認。`docker ps -a`で`adsb-collector`コンテナは常に1つのみ)。
+- [x] 既存サービスが継続稼働する(`systemctl is-active readsb tar1090 fr24feed`が3つとも`active`のまま、無停止・無再設定)。
 
 OS再起動試験はユーザーの明示的な許可と実施時間帯を確認してから行う。
 
-- [ ] OS再起動の許可を得る。
-- [ ] 再起動後にDockerが起動する。
-- [ ] アプリが自動復旧する。
-- [ ] readsb、tar1090、fr24feedも正常復旧する。
+- [x] OS再起動の許可を得る(ユーザーが実施、2026-07-28 03:12 UTC)。
+- [x] 再起動後にDockerが起動する(`docker.service`はブート後正常に起動)。
+- [!] **[今回の点検で発見、未修正]** アプリが自動復旧する — `adsb-db`/`adsb-collector`/`adsb-retention`は自動復旧したが、`adsb-api`は復旧しなかった。原因は2つ:
+  1. v0.5.1で`APP_BIND_HOST`をTailscale IP(`100.87.106.77`)に固定したため、ブート時に`docker.service`と`tailscaled.service`がほぼ同時に起動し、`tailscale0`にIPが割り当てられる前にDockerがポートbindを試みて`cannot assign requested address`で失敗(`journalctl -u docker`で確認)。Dockerの`restart: unless-stopped`はプロセス側の異常終了時のみ再試行し、コンテナ起動時のネットワーク設定失敗そのものは再試行しないため、そのまま停止状態が続いた。
+  2. 手動で`docker compose up -d adsb-api`しても、失敗した起動試行で壊れたネットワークエンドポイントがそのまま再利用され、`adsb-db`への名前解決が`socket.gaierror`で失敗しクラッシュループした。`docker compose up -d --force-recreate adsb-api`でエンドポイントを作り直すことで復旧(単純な`up -d`/`restart`では不十分)。
+  - 対応方針はユーザーと協議し、今回は「記録のみ、修正は次回以降」を選択(2026-07-28)。恒久対応の候補: (a) `tailscale0`のIP確立を待ってから`docker compose up`するsystemdユニットを追加する、(b) `APP_BIND_HOST=0.0.0.0`に戻しufw等のホストファイアウォールでTailscaleインターフェースのみへ制限する。どちらもsudo操作を伴うため、実施前にユーザーへ提示が必要(CLAUDE.md記載の運用制約)。
+- [x] readsb、tar1090、fr24feedも正常復旧する(`systemctl is-active`で3つとも`active`)。
 
 ### G-5. 24時間soak test
 
@@ -1166,4 +1169,187 @@ backup保持=7世代
 次に行うTask: ユーザーによるブラウザでの動作確認 → 問題なければMilestone E（保持・バックアップ・運用）
 ユーザー判断が必要な事項:
   - `docker compose up -d adsb-db`起動後、APIサーバーを何らかの方法で起動し `http://<host>:8088/` をブラウザで開いて、地図・グラフ・レスポンシブ・console errorを確認していただきたい。問題があれば次セッションで修正する。
+```
+
+### セッション記録
+
+```text
+日付: 2026-07-28
+完了したMilestone/Task: Milestone G-4（再起動試験）の実機検証 — ユーザーがOS再起動を実施済みの状態から継続
+変更した主要ファイル:
+  - PLAN.md（G-4チェックリストの実測結果を記録。コード変更なし）
+実行したテスト: なし（今回はコード変更なし、実機検証のみ）
+実環境で確認したこと:
+  - OS再起動後、`adsb-db`/`adsb-collector`/`adsb-retention`は`restart: unless-stopped`により自動復旧していたが、`adsb-api`は`Exited (128)`のまま停止していることを`docker compose ps`/`docker inspect`で発見。
+  - `journalctl -u docker`で原因を特定: v0.5.1で`APP_BIND_HOST`をTailscale IP固定にしたため、ブート時に`tailscaled`のIP割り当てより先にDockerがポートbindを試み`cannot assign requested address`で失敗。Dockerはコンテナ起動時のネットワーク設定失敗を自動再試行しないため、そのまま停止し続けていた。
+  - `docker compose up -d adsb-api`で再起動を試みたところ、`socket.gaierror: Temporary failure in name resolution`（`adsb-db`への名前解決失敗）でクラッシュループ。前回の失敗した起動試行で壊れたネットワークエンドポイントが再利用されたことが原因と判断。
+  - `docker compose up -d --force-recreate adsb-api`でエンドポイントを作り直し復旧。`/health/live`・`/health/ready`・`/api/status`とも正常応答、実readsbデータの取り込みも継続していることを確認。
+  - DBデータの継続性を確認: `aircraft.first_seen_at`の最小値(01:38 UTC)が再起動時刻(03:12 UTC)より前であり、`docker compose down`されずにvolumeが保持されたことを裏付け。observations 3,323件・traffic_minute 105件・ingestion_status 1,227件とも非ゼロ。
+  - collectorの重複起動なし(`docker ps -a`で`adsb-collector`は常に1コンテナ)。
+  - 既存の`readsb`・`tar1090`・`fr24feed`は`systemctl is-active`で3つとも`active`のまま、無停止・無再設定。
+  - 追加で`docker compose restart adsb-api adsb-collector adsb-db`（OS再起動を伴わない単純なCompose再起動）も実施し、こちらは即座に正常復旧することを確認(ブート順序レースが存在しないため)。
+残課題（重要 — ユーザー確認推奨）:
+  - **G-4の「アプリが自動復旧する」は未達**。恒久対応をユーザーに提示し、今回は「記録のみ、修正は次回以降」を選択いただいた(2026-07-28)。対応候補は本文G-4節に記載: (a) `tailscale0`のIP確立を待ってから`docker compose up`するsystemdユニットを追加、(b) `APP_BIND_HOST=0.0.0.0`に戻しufw等のホストファイアウォールでTailscaleインターフェースのみへ制限。どちらもsudo操作を伴うため、実施前に必ずユーザーへ提示すること(CLAUDE.md運用制約)。
+  - 次回OS再起動が発生した場合(予期しない停電・カーネル更新等を含む)、同じ理由で`adsb-api`が復旧しない可能性が高い。恒久対応までは、再起動後に`docker compose ps`を確認し、`adsb-api`が起動していなければ`docker compose up -d --force-recreate adsb-api`が必要になる。
+次に行うTask: G-4残り(恒久対応の実施可否をユーザーと決定) → G-5（24時間soak test）
+ユーザー判断が必要な事項:
+  - 恒久対応(a)systemdユニット追加 / (b)0.0.0.0+ufw のどちらを取るか、いつsudo作業を許可するか。
+```
+
+---
+
+## 16. Phase 2 詳細実装計画（Milestone H〜O）
+
+§13のPhase 2候補のうち、2A（期間比較）・2B（受信局性能）・2C（ヒートマップ）・2D（機体の再訪履歴）・2E（今日の空）を対象に、2026-07-28に詳細計画を作成した。**2F（地図セルフホスト）は対象外（保留）**。Milestone G-4（OS再起動後のadsb-api復旧不全）も対象外（保留、詳細はG-4のセッション記録を参照）。G-5（24時間soak test）はPhase 2と並行して進めてよく、ブロッカーではない。
+
+計画のフルテキストはこのセッションの計画ファイルに基づく。設計判断の根拠（既存コードの規約調査結果）は各Milestoneの説明に要約する。以下は実装順の推奨であり、H→I→J→K→Lはこの順、L完了後にM/N/Oへ進む(M/N/OはLの新スキーマに依存)。I/J/Kはスキーマ変更を伴わないため、優先度が変われば入れ替え可。
+
+### 全体を通じた設計判断
+
+- `traffic_minute`(永年保持)には機体ユニーク数・高度・距離・方位がないため、2A/2D/2Eの30日超の期間比較には新しい日次ロールアップ（Milestone L）が必須。`observations`は`RAW_RETENTION_DAYS`(既定30日)で削除されるため、削除前に集計を書き出す必要がある。
+- 2B・2Cはスキーマ変更不要(`observations`に既にbearing_deg/distance_km/altitude_ftがある)。価値を先に積み上げるため、スキーマ変更を伴うMilestone Lより先に着手する。
+- 現在のAPIに書き込み系エンドポイントは一つもない(全てGET、認証なし、Tailscale/localhost限定)。2Dの「お気に入り機体」はこの前提を壊さないよう、サーバー側エンドポイントを持たずブラウザの`localStorage`のみで実装する。
+- `chart.js`には再利用可能なチャート抽象が存在しない(エラー表示DOM要素IDが1つにハードコードされている等)。後続の全チャート追加を妨げるため、最初にリファクタリングする(Milestone H)。
+- 2Bと2Eは既存ダッシュボードとは別の専用ページとし、共通ナビゲーションでリンクする(ユーザー判断、2026-07-28)。2Eの通知はSlack/Discord互換のwebhookとし、既定で無効・設定で有効化するオプトイン方式とする(ユーザー判断、2026-07-28)。
+
+### Milestone H：チャートファクトリと共通ナビゲーション
+
+- [x] `app/static/js/chart.js`から`createChart(containerId, errorElId, buildOption)`ファクトリを抽出する。
+- [x] `createTrafficChart`をこのファクトリの最初の呼び出し元にする(`{setData, resize}`という既存の呼び出し契約は変更しない、`main.js`が依存しているため)。
+- [x] `index.html`に共通`<nav class="app-nav">`(ダッシュボード/受信性能/今日の空/機体履歴)を追加する。
+- [ ] 後続Milestoneで追加する各新規ページにも同じnavブロックを複製する(テンプレートエンジンがないため、意図的な複製として許容する) — receiver.html/daily.html/history.htmlの作成時に対応。
+- [x] アクティブページを`aria-current="page"`で表示する(`data-`属性ではなくARIA標準属性を採用)。
+
+**Milestone H 完了条件**
+- [x] 既存ダッシュボードの見た目・挙動が変化しない(Playwright実ブラウザで確認。詳細はセッション記録参照)。
+- [x] 新規エンドポイントなし。
+- [x] `make test`/`make lint`が通る(158件全green)。
+
+### Milestone I：2B 受信局性能（スキーマ変更なし）
+
+- [ ] `app/db/queries/receiver.py`を新規作成する（`tracks.py`の「2クエリ+Pythonでの後処理」パターンに倣う）。
+  - [ ] `bearing_range(pool, hours)` — `width_bucket(bearing_deg, 0, 360, 16)`で16方位に分類し、方位ごとの`MAX(distance_km)`。
+  - [ ] `altitude_band_range(pool, hours)` — 高度帯ごとの最大受信距離。
+  - [ ] `reception_timeseries(pool, hours)` — `traffic_minute`から`message_count_delta`と位置取得率の時系列(`traffic.py`のゼロ埋めバケット方式を再利用)。
+- [ ] 高度帯(`ALTITUDE_BANDS`)の定義をPython側(例: `app/domain/bands.py`)に一本化し、`GET /api/config`経由でフロントエンドへ渡す。`map.js`のハードコードされた定義を置き換える(JS/Python間の値のズレを防ぐ)。
+- [ ] `app/api/routers/receiver.py`を新規作成する: `GET /api/receiver/bearing-range?hours=1..720`(既定24)、`GET /api/receiver/altitude-range?hours=1..720`、`GET /api/receiver/reception?hours=1..720`。`app/api/main.py`に登録する。
+- [ ] **[このMilestoneでまとめて対応]** `ingestion_status`の保持ポリシー未定義(Milestone B以降3回のセッション記録で継続報告)を解消する。`app/retention.py`のバッチ削除ループを拡張し`RAW_RETENTION_DAYS`超過分を削除。`tests/contract/test_retention.py`と`scripts/db_status.py`のテーブル一覧を更新する。
+- [ ] `app/static/receiver.html` + `app/static/js/receiver.js`を新規作成する(極座標チャート、高度帯レンジのバーチャート、受信率の折れ線チャート、Milestone Hのファクトリ経由)。navに追加する。
+- [ ] テスト: バケット化ヘルパーの単体テスト(DBなし、辞書ベース)、3エンドポイント分の結合テスト(空DB/範囲外422/データありの3パターン)、`test_openapi_lists_all_endpoints`更新。
+
+**Milestone I 完了条件**
+- [ ] 3クエリともEXPLAINでSeq Scanがないことを確認する(bearing/altitude集計は`observed_at`のプレーンインデックスへフォールバックする可能性があるため要確認)。
+- [ ] 実データでページが表示される。
+- [ ] `make test`/`make lint`が通る。
+
+### Milestone J：2A クイックウィン（スキーマ変更なし）
+
+- [ ] `index.html`の未配線`#card-unique`要素に`TrafficResponse.unique_aircraft_count`(既存)を配線する(`ui.js`/`main.js`のみの変更)。
+- [ ] `app/db/queries/distribution.py`を新規作成する: `hour_of_day_unique(pool, days)`、`altitude_histogram(pool, hours, bucket_ft=1000)`、`speed_histogram(pool, hours, bucket_kt=50)`。
+- [ ] `app/api/routers/distribution.py`を新規作成する: `GET /api/distribution/hour-of-day?days=1..30`、`GET /api/distribution/altitude?hours=1..720`、`GET /api/distribution/speed?hours=1..720`。
+- [ ] CSVエクスポート: `GET /api/traffic.csv?hours=`(既存`traffic.py`のクエリ関数を再利用、標準ライブラリ`csv`+`StreamingResponse`、`Content-Disposition: attachment`)。
+- [ ] 既存ダッシュボードに新規パネル(時間帯別バーチャート、高度・速度ヒストグラム、CSVダウンロードリンク)を追加する(新規ページではなく既存トラフィックパネルの拡張)。
+- [ ] テスト: Milestone Iと同パターン。
+
+**Milestone J 完了条件**
+- [ ] 各クエリのEXPLAIN確認。
+- [ ] CSV出力が実データで正しく開けることを確認する。
+- [ ] `make test`/`make lint`が通る。
+
+### Milestone K：2C ヒートマップ（スキーマ変更なし）
+
+- [ ] `app/db/queries/heatmap.py`を新規作成する: `grid_density(pool, hours, cell_deg=0.01, altitude_band=None, hour_of_day=None, day_of_week=None)` — `round(lat/cell_deg)*cell_deg, round(lon/cell_deg)*cell_deg`でグループ化。`MAX_GRID_CELLS`(例: 5000件)の上限をサーバー側で強制する(`tracks.py`の`MAX_TOTAL_POINTS`と同じ安全策、Milestone C-8で`hours=168`が1.18MBを返した失敗を繰り返さない)。
+- [ ] `app/api/routers/heatmap.py`を新規作成する: `GET /api/heatmap?hours=1..720&altitude_band=&hour_of_day=0..23&day_of_week=0..6`。
+- [ ] `map.js`を拡張し、既存ダッシュボード地図にヒートマップレイヤー+トグルボタン+高度帯/時間帯/曜日フィルタを追加する(新規ページではない)。
+- [ ] テスト: グリッド化ロジックの単体テスト、フィルタ組み合わせを含む結合テスト、可能なら`test_map_failure_playwright.py`を拡張する。
+
+**Milestone K 完了条件**
+- [ ] Milestone C-8相当の合成データ量で`EXPLAIN ANALYZE`を実施してから、`(round(lat,2), round(lon,2))`等の関数インデックスの要否を判断する(先回りして追加しない)。測定値をセッション記録に残す。
+
+### Milestone L：日次ロールアップ基盤（スキーマ変更、M/N/Oの前提）
+
+このMilestone単体でのユーザー向け機能はない。2A長期比較・2Dの30日超履歴・2Eの週比較が読むデータを、`observations`が保持期限で消える前に用意することが目的。
+
+- [ ] 新規migrationを追加する(既存の初期migrationを`down_revision`とし、`op.execute()`による生SQL、fix-forward方針を踏襲):
+  - [ ] `traffic_day(day PK, unique_aircraft_count, max_concurrent_count, message_count_total, position_aircraft_count_max, farthest_icao, farthest_distance_km, closest_icao, closest_distance_km, most_observed_icao, most_observed_count, computed_at)`
+  - [ ] `aircraft_day(icao, day, pass_count, observation_count, PK(icao,day))` + `ix_aircraft_day_day(day)`(Milestone Oの「直近N日で最頻」クエリのために先回りで追加、根拠明確なので許容)
+  - [ ] `aircraft_callsign_history(icao, callsign, first_seen_at, last_seen_at, PK(icao,callsign))`
+- [ ] JST日境界のヘルパー(例: `day_bounds_utc(day, tz_name) -> (start_utc, end_utc)`、`zoneinfo`使用、`settings.display_timezone`起点、Python側で計算しSQLの`AT TIME ZONE`に頼らない)を追加する。
+- [ ] `app/db/queries/period.py`を新規作成する:
+  - [ ] `compute_daily_summary(pool, start_utc, end_utc) -> DailyTrafficSummary` — ロールアップジョブ(過去日)と2Eの「今日」ライブ読み取りの両方から呼ばれる共通集計ロジック。
+  - [ ] `get_traffic_day(pool, day)` — 過去日は`traffic_day`から読む。
+  - [ ] `list_traffic_days(pool, start_day, end_day)` — ゼロ埋め、Milestone M用。
+- [ ] `app/dailyrollup.py`を新規作成する(`app/retention.py`の構造を踏襲): `--dry-run`、`--day YYYY-MM-DD`(手動バックフィル)、`--loop`(デーモン、JSTで毎日既定00:10頃に実行)。`pg_try_advisory_lock`は`retention.py`の`84372910`とは別のキーを使う。対象日(既定: DISPLAY_TIMEZONEの昨日)について`traffic_day`・`aircraft_day`(ギャップベースのpass分割、`tracks.py`と同種の手法)・`aircraft_callsign_history`を`ON CONFLICT ... DO UPDATE`で冪等に書き込む。
+- [ ] 新規Composeサービス`adsb-daily-rollup`を追加する(`adsb-retention`のブロックと同形: `depends_on: adsb-migrate: service_completed_successfully`、`restart: unless-stopped`、`stop_grace_period`、ログ上限)。
+- [ ] `tests/contract/pg_container.py`の`clean_db`のTRUNCATE対象に新3テーブルを追加する。`scripts/db_status.py`のテーブル一覧も更新する。
+- [ ] テスト: `tests/contract/test_dailyrollup.py`(`test_retention.py`に倣う: advisory lock、冪等性、**「その日のロールアップ値がretention.pyによる同日observations削除後も残る」**ことを確認するテストを含める)。`tests/unit/`にPython純粋ロジック(境界計算・pass分割)のテストを追加する。
+
+**Milestone L 完了条件**
+- [ ] 合成データで手計算した期待値とロールアップ結果が一致する。
+- [ ] 同じ日を2回実行しても結果が変わらない(冪等性)。
+- [ ] retention実行後もロールアップ済みデータが残ることを確認するテストが通る。
+- [ ] 実`adsb-db`に対して`--dry-run`と実実行の両方を確認する。
+
+### Milestone M：2A 長期比較（Milestone L依存）
+
+- [ ] `GET /api/traffic/daily?days=1..365`(既定30) — `period.list_traffic_days`、ゼロ埋め。
+- [ ] `GET /api/traffic/daily-summary?day=YYYY-MM-DD`(既定は今日) — 今日ならライブで`compute_daily_summary`、過去日なら`get_traffic_day`。比較専用エンドポイントは作らず、フロントエンドがこのエンドポイントを2回呼んで差分計算する(Milestone Nでも同じエンドポイントを再利用)。
+- [ ] 既存ダッシュボードのトラフィックパネルに日/週/月の粒度切替と、前日・先週同曜日比較の表示を追加する。
+
+**Milestone M 完了条件**
+- [ ] 月表示が数MB級のペイロードにならないことを確認する(レスポンスサイズを実測)。
+- [ ] 比較差分が手計算と一致する。
+- [ ] `test_openapi_lists_all_endpoints`更新。
+
+### Milestone N：2E 今日の空 + webhook通知（Milestone L依存）
+
+- [ ] `app/static/daily.html` + `app/static/js/daily.js`を新規作成する(今日のライブサマリー、前日・先週同曜日との比較、最遠・最接近・最多観測)。navに追加する。
+- [ ] webhook通知(オプトイン、Slack/Discord互換): 環境変数`NOTIFY_WEBHOOK_URL`・`NOTIFY_WEBHOOK_ENABLED`(既定無効、未設定でも起動失敗しない)。`app/notify.py`を新規作成し、Slack互換の`{"text": "..."}`ペイロードで前日分`DailyTrafficSummary`を要約(座標・秘密情報は含めない)、`httpx`で短いタイムアウト付きPOST、失敗時はログのみで継続。`app/dailyrollup.py`の前日ロールアップ完了直後にトリガーする。
+- [ ] `.env.example`に新規環境変数をオプトインとして記載する。
+- [ ] テスト: `tests/unit/test_notify.py`(ペイロード形状、既定無効、失敗しても例外を投げないこと、モックHTTPトランスポート使用、実webhookは呼ばない)。
+
+**Milestone N 完了条件**
+- [ ] webhook無効時、ロールアップの挙動が変化しない。
+- [ ] webhook有効時、モックサーバーに対して正しい形状のペイロードが1日1回送られる。
+- [ ] ページが実データで表示される。
+
+### Milestone O：2D 機体の再訪履歴（Milestone L依存）
+
+- [ ] `app/db/queries/aircraft_history.py`を新規作成する: `aircraft_summary(pool, icao)`(`aircraft`の永年データ+`aircraft_day`の集計)、`callsign_history(pool, icao)`、`most_frequent(pool, days=1..365, limit=1..100)`(`ix_aircraft_day_day`を利用)。
+- [ ] `app/api/routers/aircraft_history.py`を新規作成する: `GET /api/aircraft/{icao}/history`(不明ICAOは404、このAPI初のpathパラメータ404だがGETのみで新たな懸念は生まない)、`GET /api/aircraft/frequent?days=&limit=`。
+- [ ] `app/static/history.html` + `app/static/js/history.js`を新規作成する: 最頻観測ランキング(`ui.js`の`renderRankingTable`を再利用)、`?icao=`で機体詳細、callsign履歴。**お気に入り機体はブラウザ`localStorage`のみで実装し、バックエンドの書き込みエンドポイントは追加しない**(このAPI初の書き込み経路にしないため)。navに追加する。
+- [ ] テスト: 404ケースを含む結合テストのトリオ、純粋Pythonフォーマットヘルパーの単体テスト。
+
+**Milestone O 完了条件**
+- [ ] 複数日にわたる合成データを持つ機体で、観測日数・pass数・callsign履歴が正しく表示される。
+- [ ] お気に入りがページ再読み込み後も`localStorage`経由で保持される。
+- [ ] `make test`/`make lint`が通る。
+
+### 実行上の注意
+
+- Milestone Hより前(Step 0)として、この§16をA〜G同様の構造でPLAN.mdへ追加する作業自体が完了している(このセッションで実施)。各Milestone完了時は引き続き§15形式のセッション記録を追記する。
+- 推奨コミット粒度(Milestone単位): `ui: add chart factory and shared nav` / `api: add receiver performance queries and endpoints` / `api+ui: add period quick-wins and CSV export` / `api+ui: add heatmap` / `db: add daily rollup schema and job` / `api+ui: add long-horizon traffic comparison` / `ui+notify: add daily report page and webhook` / `api+ui: add aircraft revisit history`。
+- 推奨順序はH→I→J→K→L→M→N→O。I/J/Kはスキーマ変更を伴わず相互に独立のため優先度に応じて入れ替え可。LはM/N/Oの前提。
+
+### セッション記録
+
+```text
+日付: 2026-07-28
+完了したMilestone/Task: Phase 2 Step 0（§16追加）、Milestone H（チャートファクトリと共通ナビゲーション）
+変更した主要ファイル:
+  - PLAN.md（§16 Phase 2詳細実装計画を新規追加）
+  - app/static/js/chart.js（createChart(containerId, errorElId, buildOption)ファクトリを抽出、createTrafficChartをその最初の呼び出し元に変更。{setData,resize}の外部契約は不変）
+  - app/static/index.html（共通<nav class="app-nav">追加、aria-current="page"でアクティブページ表示）
+  - app/static/css/style.css（.app-nav用スタイル追加）
+実行したテスト: pytest（フルスイート）、ruff check
+テスト結果: 158件全green、lint clean
+実環境で確認したこと:
+  - **[今回のセッションで新たに実施]** Playwright + 使い捨てPostgresコンテナ + 実uvicornサーバーで、実ブラウザ(Chromium)によるダッシュボードの目視・console error確認を実施した(一時テストファイルとして作成し、確認後に削除)。これまでのセッション記録で繰り返し「ブラウザ環境がなく目視確認ができない」と記録されていたが、`tests/integration/test_map_failure_playwright.py`と同じ手法(disposable Postgres + 実uvicorn + Playwright Chromium)がこの環境で実際に動作することを確認した。今後のフロントエンド変更でも同様の手法で目視確認が可能。
+  - **[今回の点検で発見・修正]** `.panel__error`のCSSに`display: flex`が無条件に指定されており、`[hidden]`属性のUAデフォルト`display: none`と詳細度が同点のため、著者スタイルが優先されて`hidden`が事実上無視されていた。この結果、`#chart-error`と`#map-error`が常時(エラーが無い状態でも)半透明の赤枠オーバーレイとして地図・グラフパネルの上に表示される、本番環境にも存在していたはずの表示バグを発見した。`.panel__error[hidden] { display: none; }`を追加して修正し、Playwrightで`hidden`時に正しく非表示になることを確認した。Milestone D以降のセッション記録に残っていた「ブラウザ目視確認未実施」のリスクが実際に顕在化した実例。
+  - 修正後、Chromiumで実際にダッシュボードをスクリーンショット確認: ナビゲーション4リンク表示・アクティブページハイライト・地図(MapLibre)・交通量チャート・ランキングテーブルが正しく描画され、console errorはゼロ。
+残課題:
+  - `#card-unique`(24時間ユニーク機数)は引き続き未配線(Milestone Jで対応予定、想定通り)。
+  - receiver.html/daily.html/history.html未作成のため、navの3リンクは現時点で404になる(該当Milestone作成時に解消)。
+次に行うTask: Milestone I（2B 受信局性能）
+ユーザー判断が必要な事項: なし
 ```

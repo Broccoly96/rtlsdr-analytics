@@ -18,6 +18,8 @@ from pathlib import Path
 import asyncpg
 import pytest
 
+from app.db.tables import ALL_TABLES
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 POSTGRES_IMAGE = "postgres:16"
 CONTAINER_USER = "test"
@@ -134,10 +136,7 @@ async def clean_db(postgres_url):
     the container-startup cost per test."""
     conn = await asyncpg.connect(postgres_url)
     try:
-        await conn.execute(
-            "TRUNCATE aircraft, observations, traffic_minute, ingestion_status, "
-            "traffic_day, aircraft_day, aircraft_callsign_history CASCADE"
-        )
+        await conn.execute(f"TRUNCATE {', '.join(ALL_TABLES)} CASCADE")
         yield
     finally:
         await conn.close()

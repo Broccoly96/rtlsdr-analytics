@@ -15,16 +15,9 @@ from datetime import UTC, datetime, timedelta
 import asyncpg
 
 from app.config import Settings
+from app.db.tables import ALL_TABLES
 
-_TABLES = (
-    "aircraft",
-    "observations",
-    "traffic_minute",
-    "ingestion_status",
-    "traffic_day",
-    "aircraft_day",
-    "aircraft_callsign_history",
-)
+_TABLES = ALL_TABLES
 
 
 def _human_bytes(n: float) -> str:

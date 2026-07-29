@@ -20,6 +20,7 @@ import {
   createTrafficChart,
   refreshTraffic,
   setTimezone as setChartTimezone,
+  trafficChartOption,
 } from "./chart.js";
 
 // CSP violations (e.g. a browser extension or local policy blocking a
@@ -236,6 +237,48 @@ function setupHeatmapControls(mapController, altitudeBands) {
   }
 }
 
+function dailyTrafficChartOption(daily) {
+  const days = daily.daily.map((d) => d.day);
+  const counts = daily.daily.map((d) => d.unique_aircraft_count);
+  return {
+    ...baseChartOption(),
+    tooltip: { trigger: "axis" },
+    xAxis: { type: "category", data: days, ...axisStyle() },
+    yAxis: { type: "value", minInterval: 1, ...axisStyle() },
+    series: [
+      {
+        name: "ユニーク機数",
+        type: "bar",
+        data: counts,
+        itemStyle: { color: CHART_COLORS.seriesA },
+      },
+    ],
+  };
+}
+
+// Adds `delta` whole days to an ISO "YYYY-MM-DD" date string, computed in
+// UTC so it never depends on the browser's own timezone -- the input is
+// always a `day` value the server already resolved via DISPLAY_TIMEZONE.
+function addDaysToIsoDate(isoDate, delta) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDelta(label, current, previous) {
+  const span = document.createElement("span");
+  span.className = "traffic-delta";
+  if (previous == null || previous === 0) {
+    span.textContent = `${label}: --`;
+    return span;
+  }
+  const pct = ((current - previous) / previous) * 100;
+  const sign = pct > 0 ? "+" : "";
+  span.textContent = `${label}: ${sign}${pct.toFixed(0)}%`;
+  span.classList.add(pct > 0 ? "delta-up" : pct < 0 ? "delta-down" : "delta-flat");
+  return span;
+}
+
 async function main() {
   let config;
   try {
@@ -297,13 +340,68 @@ async function main() {
     distributionCharts.speedHist.resize();
   });
 
-  async function refreshTrafficAndCard() {
-    const traffic = await refreshTraffic(chartController, TRAFFIC_WINDOW_HOURS);
-    if (traffic) ui.setUniqueCount(traffic.unique_aircraft_count);
+  // "24時間ユニーク機数" card is always the last-24h figure, independent of
+  // whichever granularity the chart panel itself is currently showing.
+  async function refreshCardUnique() {
+    try {
+      const traffic = await api.getTraffic(TRAFFIC_WINDOW_HOURS);
+      ui.setUniqueCount(traffic.unique_aircraft_count);
+    } catch (err) {
+      console.error("traffic (unique card) refresh failed", err);
+    }
+  }
+
+  let currentGranularity = "day";
+
+  async function refreshTrafficPanel() {
+    if (currentGranularity === "day") {
+      await refreshTraffic(chartController, TRAFFIC_WINDOW_HOURS);
+      return;
+    }
+    const days = currentGranularity === "week" ? 7 : 30;
+    try {
+      const daily = await api.getTrafficDaily(days);
+      chartController.setData(daily);
+    } catch (err) {
+      console.error("daily traffic refresh failed", err);
+    }
+  }
+
+  const granularityButtons = document.querySelectorAll(".granularity-btn");
+  granularityButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      granularityButtons.forEach((b) => b.setAttribute("aria-pressed", "false"));
+      button.setAttribute("aria-pressed", "true");
+      currentGranularity = button.dataset.granularity;
+      chartController.setBuildOption(
+        currentGranularity === "day" ? trafficChartOption : dailyTrafficChartOption
+      );
+      refreshTrafficPanel();
+    });
+  });
+
+  async function refreshTrafficDeltas() {
+    const el = document.getElementById("traffic-deltas");
+    if (!el) return;
+    try {
+      const today = await api.getTrafficDailySummary();
+      const [yesterday, lastWeek] = await Promise.all([
+        api.getTrafficDailySummary(addDaysToIsoDate(today.day, -1)),
+        api.getTrafficDailySummary(addDaysToIsoDate(today.day, -7)),
+      ]);
+      el.replaceChildren(
+        formatDelta("前日比", today.unique_aircraft_count, yesterday.unique_aircraft_count),
+        formatDelta("先週同曜日比", today.unique_aircraft_count, lastWeek.unique_aircraft_count)
+      );
+    } catch (err) {
+      console.error("traffic deltas refresh failed", err);
+    }
   }
 
   await Promise.all([
-    refreshTrafficAndCard(),
+    refreshCardUnique(),
+    refreshTrafficPanel(),
+    refreshTrafficDeltas(),
     ui.refreshStatusAndRankings(),
     refreshDistributionPanels(distributionCharts),
   ]);
@@ -313,7 +411,9 @@ async function main() {
   setInterval(() => {
     if (!document.hidden) {
       refreshTracks(mapController, currentTracksHours);
-      refreshTrafficAndCard();
+      refreshCardUnique();
+      refreshTrafficPanel();
+      refreshTrafficDeltas();
     }
   }, AUTO_REFRESH_INTERVAL_MS);
 }

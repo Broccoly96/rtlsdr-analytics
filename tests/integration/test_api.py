@@ -7,8 +7,9 @@ bounds, empty-data behavior, and basic OpenAPI-schema consistency.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
+import asyncpg
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -17,6 +18,7 @@ from app.collector.aggregator import TrafficMinute
 from app.collector.store import IngestionStatus
 from app.config import Settings
 from app.db.postgres_store import PostgresStore
+from app.domain.daytime import today_in_tz, yesterday_in_tz
 from app.domain.models import AircraftObservation, ReceptionState
 
 T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
@@ -196,6 +198,136 @@ async def test_traffic_with_seeded_minute(postgres_url, client: AsyncClient) -> 
     body = response.json()
     matching = [b for b in body["buckets"] if b["active_aircraft_count"] == 5]
     assert len(matching) == 1
+
+
+# --- traffic/daily, traffic/daily-summary ------------------------------------
+
+
+async def _insert_traffic_day(postgres_url: str, day: date, *, most_observed_count: int) -> None:
+    conn = await asyncpg.connect(postgres_url)
+    try:
+        await conn.execute(
+            """
+            INSERT INTO traffic_day (
+                day, unique_aircraft_count, max_concurrent_count, message_count_total,
+                position_aircraft_count_max, most_observed_count
+            )
+            VALUES ($1, 7, 3, 999, 2, $2)
+            """,
+            day,
+            most_observed_count,
+        )
+    finally:
+        await conn.close()
+
+
+async def test_traffic_daily_empty_is_zero_filled(client: AsyncClient) -> None:
+    response = await client.get("/api/traffic/daily", params={"days": 5})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["days"] == 5
+    assert len(body["daily"]) == 5
+    assert all(d["unique_aircraft_count"] == 0 for d in body["daily"])
+
+
+async def test_traffic_daily_bounds_rejected(client: AsyncClient) -> None:
+    assert (await client.get("/api/traffic/daily", params={"days": 0})).status_code == 422
+    assert (await client.get("/api/traffic/daily", params={"days": 366})).status_code == 422
+
+
+async def test_traffic_daily_month_view_response_is_small(client: AsyncClient) -> None:
+    # Milestone M completion check: the "days=365" view must not repeat
+    # Milestone C-8's hours=168/1.18MB mistake -- 365 daily rows stays well
+    # under a megabyte (this asserts "not multi-MB", not a tight byte budget).
+    response = await client.get("/api/traffic/daily", params={"days": 365})
+    assert response.status_code == 200
+    assert len(response.content) < 500_000
+
+
+async def test_traffic_daily_includes_seeded_past_day_not_today(
+    postgres_url, client: AsyncClient
+) -> None:
+    yesterday = yesterday_in_tz("Asia/Tokyo")
+    await _insert_traffic_day(postgres_url, yesterday, most_observed_count=42)
+
+    response = await client.get("/api/traffic/daily", params={"days": 2})
+    body = response.json()
+    by_day = {d["day"]: d for d in body["daily"]}
+    assert by_day[yesterday.isoformat()]["most_observed_count"] == 42
+    # today is deliberately excluded: traffic_day only holds finished days.
+    assert today_in_tz("Asia/Tokyo").isoformat() not in by_day
+
+
+async def test_traffic_daily_summary_today_is_computed_live(
+    postgres_url, client: AsyncClient
+) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10000.0,
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=50.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/traffic/daily-summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["day"] == today_in_tz("Asia/Tokyo").isoformat()
+    assert body["unique_aircraft_count"] == 1
+    assert body["farthest_icao"] == "aaaaaa"
+
+
+async def test_traffic_daily_summary_past_day_reads_persisted_row(
+    postgres_url, client: AsyncClient
+) -> None:
+    ten_days_ago = today_in_tz("Asia/Tokyo") - timedelta(days=10)
+    # most_observed_count=777 has no corresponding observations at all --
+    # only reachable if the endpoint reads the persisted traffic_day row
+    # rather than (wrongly) recomputing live from (empty) observations.
+    await _insert_traffic_day(postgres_url, ten_days_ago, most_observed_count=777)
+
+    response = await client.get(
+        "/api/traffic/daily-summary", params={"day": ten_days_ago.isoformat()}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["most_observed_count"] == 777
+
+
+async def test_traffic_daily_summary_future_day_rejected(client: AsyncClient) -> None:
+    tomorrow = today_in_tz("Asia/Tokyo") + timedelta(days=1)
+    response = await client.get("/api/traffic/daily-summary", params={"day": tomorrow.isoformat()})
+    assert response.status_code == 422
+
+
+async def test_traffic_daily_summary_no_data_past_day_falls_back_to_zero(
+    client: AsyncClient,
+) -> None:
+    # Not yet rolled up and no raw observations either -- compute_daily_summary
+    # returns zeros/None rather than erroring.
+    some_day = today_in_tz("Asia/Tokyo") - timedelta(days=5)
+    response = await client.get("/api/traffic/daily-summary", params={"day": some_day.isoformat()})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unique_aircraft_count"] == 0
+    assert body["farthest_icao"] is None
 
 
 # --- rankings ---------------------------------------------------------------
@@ -683,4 +815,6 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/distribution/altitude",
         "/api/distribution/speed",
         "/api/heatmap",
+        "/api/traffic/daily",
+        "/api/traffic/daily-summary",
     }

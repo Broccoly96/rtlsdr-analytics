@@ -47,4 +47,6 @@ export const api = {
   getAltitudeHistogram: (hours) => getJSON("/api/distribution/altitude", { hours }),
   getSpeedHistogram: (hours) => getJSON("/api/distribution/speed", { hours }),
   getHeatmap: (params) => getJSON("/api/heatmap", params),
+  getTrafficDaily: (days) => getJSON("/api/traffic/daily", { days }),
+  getTrafficDailySummary: (day) => getJSON("/api/traffic/daily-summary", { day }),
 };

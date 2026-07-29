@@ -3,7 +3,7 @@ visible in the generated OpenAPI schema (PLAN.md Milestone C-1)."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -60,6 +60,25 @@ class TrafficResponse(BaseModel):
     hours: int
     buckets: list[TrafficBucketResponse]
     unique_aircraft_count: int
+
+
+class DailyTrafficSummaryResponse(BaseModel):
+    day: date
+    unique_aircraft_count: int
+    max_concurrent_count: int
+    message_count_total: int
+    position_aircraft_count_max: int
+    farthest_icao: str | None
+    farthest_distance_km: float | None
+    closest_icao: str | None
+    closest_distance_km: float | None
+    most_observed_icao: str | None
+    most_observed_count: int | None
+
+
+class TrafficDailyResponse(BaseModel):
+    days: int
+    daily: list[DailyTrafficSummaryResponse]
 
 
 class RankingEntryResponse(BaseModel):

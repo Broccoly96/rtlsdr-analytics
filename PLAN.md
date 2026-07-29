@@ -1420,14 +1420,41 @@ backup保持=7世代
 
 ### Milestone M：2A 長期比較（Milestone L依存）
 
-- [ ] `GET /api/traffic/daily?days=1..365`(既定30) — `period.list_traffic_days`、ゼロ埋め。
-- [ ] `GET /api/traffic/daily-summary?day=YYYY-MM-DD`(既定は今日) — 今日ならライブで`compute_daily_summary`、過去日なら`get_traffic_day`。比較専用エンドポイントは作らず、フロントエンドがこのエンドポイントを2回呼んで差分計算する(Milestone Nでも同じエンドポイントを再利用)。
-- [ ] 既存ダッシュボードのトラフィックパネルに日/週/月の粒度切替と、前日・先週同曜日比較の表示を追加する。
+- [x] `GET /api/traffic/daily?days=1..365`(既定30) — `period.list_traffic_days`、ゼロ埋め。終端は「今日」ではなく「昨日」(`traffic_day`は確定済みの日のみ保持するため、今日を含めると常にゼロ埋めされた紛らわしい行になる)。
+- [x] `GET /api/traffic/daily-summary?day=YYYY-MM-DD`(既定は今日) — 今日ならライブで`compute_daily_summary`、過去日なら`get_traffic_day`(ロールアップ未実施の直近日は生観測データがまだ残っているため、`traffic_day`に行がなければライブ計算にフォールバック)。未来日は422。比較専用エンドポイントは作らず、フロントエンドがこのエンドポイントを2回呼んで差分計算する(Milestone Nでも同じエンドポイントを再利用)。
+- [x] 既存ダッシュボードのトラフィックパネルに日/週/月の粒度切替と、前日・先週同曜日比較の表示を追加した。実装のためMilestone Hの`createChart`ファクトリに`setBuildOption()`を追加(1つのチャートコンテナを分単位の折れ線⇔日単位の棒グラフで再利用するための一般化。`chart.setOption(..., true)`でnotMergeにし、形状切替時に旧シリーズ/軸設定が残らないようにした)。差分表示はサーバーの`day`値(DISPLAY_TIMEZONE基準)から日付演算するクライアント側ヘルパー`addDaysToIsoDate`を使用し、ブラウザのタイムゾーンには依存しない。
 
 **Milestone M 完了条件**
-- [ ] 月表示が数MB級のペイロードにならないことを確認する(レスポンスサイズを実測)。
-- [ ] 比較差分が手計算と一致する。
-- [ ] `test_openapi_lists_all_endpoints`更新。
+- [x] 月表示が数MB級のペイロードにならないことを確認した(`days=365`で約101KB、実測してテストに組み込み済み — `test_traffic_daily_month_view_response_is_small`)。
+- [x] 比較差分が手計算と一致する(Playwrightで実際に前日=20機・先週同曜日=10機・今日=30機とシードし、前日比+50%/先週同曜日比+200%が画面表示と一致することを確認)。
+- [x] `test_openapi_lists_all_endpoints`更新。
+
+### セッション記録
+
+```text
+日付: 2026-07-29
+完了したMilestone/Task: Milestone M（2A 長期比較）
+変更した主要ファイル:
+  - app/api/schemas.py（DailyTrafficSummaryResponse/TrafficDailyResponse追加）
+  - app/api/routers/traffic.py（GET /api/traffic/daily・daily-summary追加）
+  - app/static/js/chart.js（createChartにsetBuildOption追加、trafficChartOptionを独立export)
+  - app/static/js/main.js（日/週/月トグル、前日比/先週同曜日比の差分表示、card-unique更新ロジックの分離)
+  - app/static/js/api.js（getTrafficDaily/getTrafficDailySummary追加)
+  - app/static/index.html（粒度トグル・差分表示要素追加)
+  - app/static/css/style.css（.chart-controls/.granularity-controls/.traffic-deltas追加)
+  - tests/integration/test_api.py（daily/daily-summary結合テスト8件、OpenAPI一覧更新）
+  - PLAN.md（本セクション）
+実行したテスト: pytest（フルスイート、210件）、ruff check / ruff format --check
+テスト結果: 全green、lint/format clean
+実環境で確認したこと:
+  - `traffic_day`に399件相当(実運用の現実的な上限規模)を投入しEXPLAIN ANALYZEを実施。`list_traffic_days`の範囲クエリはSeq Scanだが実行時間0.1ms — このテーブルは1日1行×長期保持でも数百〜数千行にしかならないため、Seq Scanが正しい選択であり索引追加の判断は不要と結論。
+  - 使い捨てPostgres + 実uvicorn + Playwright Chromiumで実際に前日=20機・先週同曜日=10機・当日(ライブ計算)=30機をシードし、画面の差分表示が「前日比: +50%」「先週同曜日比: +200%」と手計算どおり表示されることを確認。日→週→月→日の粒度切替をクリックで実施し、チャートが分単位の折れ線(受信中/位置取得中の2系列)⇔日単位の棒グラフ(ユニーク機数1系列)に正しく切り替わること、consoleエラーがゼロであることを確認(スクリーンショット3枚で最終確認、セッション内一時ファイル・コミットせず)。今回はサンドボックスから実際にOpenFreeMapへの接続もでき、地図タイルも描画された。
+残課題:
+  - daily.html/history.htmlは引き続き未作成のため、navの該当2リンクは404のまま(Milestone N/Oで解消予定、既知)。
+  - Milestone L由来の残課題(実`adsb-db`への migration適用・`adsb-daily-rollup`デプロイがユーザー確認待ち)は継続してオープン。Milestone M自体はスキーマ変更を伴わないため、この点はMの完了を妨げない。
+次に行うTask: Milestone N（2E 今日の空 + webhook通知）
+ユーザー判断が必要な事項: なし
+```
 
 ### Milestone N：2E 今日の空 + webhook通知（Milestone L依存）
 

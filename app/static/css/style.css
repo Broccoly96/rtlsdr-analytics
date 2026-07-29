@@ -230,6 +230,33 @@ button {
   text-decoration: underline;
 }
 
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.granularity-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.traffic-deltas {
+  margin: 8px 4px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+}
+
+.traffic-delta.delta-up {
+  color: var(--success);
+}
+
+.traffic-delta.delta-down {
+  color: var(--danger);
+}
+
 .heatmap-controls {
   display: flex;
   flex-wrap: wrap;

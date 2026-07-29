@@ -92,79 +92,95 @@ function initChart(containerId, errorElId) {
 // polar/bar/heatmap chart) should be built through this, not by calling
 // echarts.init() directly, so error handling and resize behave the same
 // way everywhere.
+//
+// The returned controller also exposes setBuildOption(), so one chart
+// instance/container can be repointed at a different data shape entirely
+// (Milestone M's day/week/month traffic-panel granularity toggle reuses
+// the single "chart" container for both the per-minute line chart and a
+// per-day bar chart). setData() always calls chart.setOption(..., true)
+// (notMerge) so switching shape can't leave stale series/axis config
+// behind from the previous buildOption.
 export function createChart(containerId, errorElId, buildOption) {
   const chart = initChart(containerId, errorElId);
   if (!chart) {
-    return { setData: () => {}, resize: () => {} };
+    return { setData: () => {}, resize: () => {}, setBuildOption: () => {} };
   }
+
+  let currentBuildOption = buildOption;
 
   function setData(data) {
     try {
       hideError(errorElId);
-      chart.setOption(buildOption(data));
+      chart.setOption(currentBuildOption(data), true);
     } catch (err) {
       console.error("chart render failed", err);
       showError(errorElId, "グラフの描画に失敗しました。");
     }
   }
 
+  function setBuildOption(newBuildOption) {
+    currentBuildOption = newBuildOption;
+  }
+
   function resize() {
     chart.resize();
   }
 
-  return { setData, resize };
+  return { setData, resize, setBuildOption };
+}
+
+export function trafficChartOption(traffic) {
+  const times = traffic.buckets.map((b) => formatAxisTime(b.bucket_at));
+  const active = traffic.buckets.map((b) => b.active_aircraft_count);
+  const position = traffic.buckets.map((b) => b.position_aircraft_count);
+
+  return {
+    ...baseChartOption(),
+    tooltip: {
+      trigger: "axis",
+      formatter: (params) => {
+        const time = params[0] ? params[0].axisValueLabel : "";
+        const lines = params.map((p) => `${p.marker}${p.seriesName}: ${p.data}`);
+        return [time, ...lines].join("<br/>");
+      },
+    },
+    legend: {
+      data: ["受信中", "位置取得中"],
+      textStyle: { color: CHART_COLORS.axisLabel },
+      top: 0,
+    },
+    xAxis: {
+      type: "category",
+      data: times,
+      ...axisStyle(),
+    },
+    yAxis: {
+      type: "value",
+      minInterval: 1,
+      ...axisStyle(),
+    },
+    series: [
+      {
+        name: "受信中",
+        type: "line",
+        data: active,
+        showSymbol: false,
+        lineStyle: { color: CHART_COLORS.seriesA },
+        areaStyle: { color: "rgba(96, 165, 250, 0.15)" },
+      },
+      {
+        name: "位置取得中",
+        type: "line",
+        data: position,
+        showSymbol: false,
+        lineStyle: { color: CHART_COLORS.seriesB },
+      },
+    ],
+  };
 }
 
 export function createTrafficChart(containerId) {
-  return createChart(containerId, "chart-error", (traffic) => {
-    const times = traffic.buckets.map((b) => formatAxisTime(b.bucket_at));
-    const active = traffic.buckets.map((b) => b.active_aircraft_count);
-    const position = traffic.buckets.map((b) => b.position_aircraft_count);
-
-    return {
-      ...baseChartOption(),
-      tooltip: {
-        trigger: "axis",
-        formatter: (params) => {
-          const time = params[0] ? params[0].axisValueLabel : "";
-          const lines = params.map((p) => `${p.marker}${p.seriesName}: ${p.data}`);
-          return [time, ...lines].join("<br/>");
-        },
-      },
-      legend: {
-        data: ["受信中", "位置取得中"],
-        textStyle: { color: CHART_COLORS.axisLabel },
-        top: 0,
-      },
-      xAxis: {
-        type: "category",
-        data: times,
-        ...axisStyle(),
-      },
-      yAxis: {
-        type: "value",
-        minInterval: 1,
-        ...axisStyle(),
-      },
-      series: [
-        {
-          name: "受信中",
-          type: "line",
-          data: active,
-          showSymbol: false,
-          lineStyle: { color: CHART_COLORS.seriesA },
-          areaStyle: { color: "rgba(96, 165, 250, 0.15)" },
-        },
-        {
-          name: "位置取得中",
-          type: "line",
-          data: position,
-          showSymbol: false,
-          lineStyle: { color: CHART_COLORS.seriesB },
-        },
-      ],
-    };
-  });
+  return createChart(containerId, "chart-error", trafficChartOption);
 }
 
 export async function refreshTraffic(chartController, hours) {

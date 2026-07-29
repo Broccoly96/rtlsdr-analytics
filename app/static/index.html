@@ -74,12 +74,20 @@
       <div id="map-error" class="panel__error" hidden></div>
     </div>
     <div class="panel panel--chart">
-      <div class="panel__header" id="chart-heading">
-        交通量(24時間)
-        <a href="/api/traffic.csv?hours=24" download class="csv-link">CSVダウンロード</a>
+      <div class="panel__header">
+        <span id="chart-heading">交通量</span>
+        <div class="chart-controls">
+          <div class="granularity-controls" role="group" aria-label="表示粒度">
+            <button type="button" data-granularity="day" class="period-btn granularity-btn" aria-pressed="true">日</button>
+            <button type="button" data-granularity="week" class="period-btn granularity-btn" aria-pressed="false">週</button>
+            <button type="button" data-granularity="month" class="period-btn granularity-btn" aria-pressed="false">月</button>
+          </div>
+          <a href="/api/traffic.csv?hours=24" download class="csv-link">CSVダウンロード</a>
+        </div>
       </div>
       <div id="chart" class="chart-container" role="img" aria-labelledby="chart-heading"></div>
       <div id="chart-error" class="panel__error" hidden></div>
+      <p class="traffic-deltas" id="traffic-deltas" aria-live="polite"></p>
     </div>
   </section>
 

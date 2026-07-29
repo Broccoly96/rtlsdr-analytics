@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.errors import register_exception_handlers
 from app.api.routers import (
     aircraft,
+    aircraft_history,
     config,
     distribution,
     health,
@@ -54,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tracks.router)
     app.include_router(rankings.router)
     app.include_router(aircraft.router)
+    app.include_router(aircraft_history.router)
     app.include_router(config.router)
     app.include_router(receiver.router)
     app.include_router(distribution.router)

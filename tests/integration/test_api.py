@@ -773,6 +773,126 @@ async def test_heatmap_with_seeded_data_and_filters(postgres_url, client: AsyncC
     assert no_match_response.json()["cells"] == []
 
 
+# --- aircraft history --------------------------------------------------------
+
+
+async def _insert_aircraft_day(
+    postgres_url: str, icao: str, day: date, *, pass_count: int, observation_count: int
+) -> None:
+    conn = await asyncpg.connect(postgres_url)
+    try:
+        await conn.execute(
+            "INSERT INTO aircraft_day (icao, day, pass_count, observation_count) "
+            "VALUES ($1, $2, $3, $4)",
+            icao,
+            day,
+            pass_count,
+            observation_count,
+        )
+    finally:
+        await conn.close()
+
+
+async def _insert_callsign_history(
+    postgres_url: str, icao: str, callsign: str, first_seen_at: datetime, last_seen_at: datetime
+) -> None:
+    conn = await asyncpg.connect(postgres_url)
+    try:
+        await conn.execute(
+            "INSERT INTO aircraft_callsign_history (icao, callsign, first_seen_at, last_seen_at) "
+            "VALUES ($1, $2, $3, $4)",
+            icao,
+            callsign,
+            first_seen_at,
+            last_seen_at,
+        )
+    finally:
+        await conn.close()
+
+
+async def test_aircraft_history_unknown_icao_is_404(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/aaaaaa/history")
+    assert response.status_code == 404
+
+
+async def test_aircraft_history_invalid_format_is_422(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/not-an-icao/history")
+    assert response.status_code == 422
+
+
+async def test_aircraft_history_with_seeded_data(postgres_url, client: AsyncClient) -> None:
+    now = datetime.now(UTC)
+    store = await PostgresStore.connect(postgres_url)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "AAA002")
+    finally:
+        await store.close()
+
+    await _insert_aircraft_day(
+        postgres_url, "aaaaaa", now.date() - timedelta(days=2), pass_count=2, observation_count=10
+    )
+    await _insert_aircraft_day(
+        postgres_url, "aaaaaa", now.date() - timedelta(days=1), pass_count=1, observation_count=5
+    )
+    await _insert_callsign_history(
+        postgres_url, "aaaaaa", "AAA001", now - timedelta(days=2), now - timedelta(days=2)
+    )
+    await _insert_callsign_history(postgres_url, "aaaaaa", "AAA002", now - timedelta(days=1), now)
+
+    response = await client.get("/api/aircraft/aaaaaa/history")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["icao"] == "aaaaaa"
+    assert body["last_callsign"] == "AAA002"
+    assert body["days_observed"] == 2
+    assert body["total_pass_count"] == 3
+    assert body["total_observation_count"] == 15
+    assert [c["callsign"] for c in body["callsign_history"]] == ["AAA002", "AAA001"]
+
+
+async def test_aircraft_frequent_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/frequent")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["aircraft"] == []
+
+
+async def test_aircraft_frequent_bounds_rejected(client: AsyncClient) -> None:
+    assert (await client.get("/api/aircraft/frequent", params={"days": 0})).status_code == 422
+    assert (await client.get("/api/aircraft/frequent", params={"days": 366})).status_code == 422
+    assert (await client.get("/api/aircraft/frequent", params={"limit": 0})).status_code == 422
+    assert (await client.get("/api/aircraft/frequent", params={"limit": 101})).status_code == 422
+
+
+async def test_aircraft_frequent_orders_by_days_observed(postgres_url, client: AsyncClient) -> None:
+    now = datetime.now(UTC)
+    store = await PostgresStore.connect(postgres_url)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "FREQ001")
+        await store.upsert_aircraft("bbbbbb", now, "RARE001")
+    finally:
+        await store.close()
+
+    for i in range(3):
+        await _insert_aircraft_day(
+            postgres_url,
+            "aaaaaa",
+            now.date() - timedelta(days=i),
+            pass_count=1,
+            observation_count=1,
+        )
+    await _insert_aircraft_day(
+        postgres_url, "bbbbbb", now.date(), pass_count=1, observation_count=1
+    )
+
+    response = await client.get("/api/aircraft/frequent", params={"days": 30, "limit": 10})
+    body = response.json()
+    assert body["aircraft"][0]["icao"] == "aaaaaa"
+    assert body["aircraft"][0]["days_observed"] == 3
+    assert body["aircraft"][1]["icao"] == "bbbbbb"
+    assert body["aircraft"][1]["days_observed"] == 1
+
+
 # --- config -----------------------------------------------------------------
 
 
@@ -817,4 +937,6 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/heatmap",
         "/api/traffic/daily",
         "/api/traffic/daily-summary",
+        "/api/aircraft/{icao}/history",
+        "/api/aircraft/frequent",
     }

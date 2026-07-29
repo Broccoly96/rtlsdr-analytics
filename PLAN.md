@@ -1498,15 +1498,45 @@ backup保持=7世代
 
 ### Milestone O：2D 機体の再訪履歴（Milestone L依存）
 
-- [ ] `app/db/queries/aircraft_history.py`を新規作成する: `aircraft_summary(pool, icao)`(`aircraft`の永年データ+`aircraft_day`の集計)、`callsign_history(pool, icao)`、`most_frequent(pool, days=1..365, limit=1..100)`(`ix_aircraft_day_day`を利用)。
-- [ ] `app/api/routers/aircraft_history.py`を新規作成する: `GET /api/aircraft/{icao}/history`(不明ICAOは404、このAPI初のpathパラメータ404だがGETのみで新たな懸念は生まない)、`GET /api/aircraft/frequent?days=&limit=`。
-- [ ] `app/static/history.html` + `app/static/js/history.js`を新規作成する: 最頻観測ランキング(`ui.js`の`renderRankingTable`を再利用)、`?icao=`で機体詳細、callsign履歴。**お気に入り機体はブラウザ`localStorage`のみで実装し、バックエンドの書き込みエンドポイントは追加しない**(このAPI初の書き込み経路にしないため)。navに追加する。
-- [ ] テスト: 404ケースを含む結合テストのトリオ、純粋Pythonフォーマットヘルパーの単体テスト。
+- [x] `app/db/queries/aircraft_history.py`を新規作成した: `aircraft_summary(pool, icao)`(`aircraft`の永年データ+`aircraft_day`の集計)、`callsign_history(pool, icao)`、`most_frequent(pool, days=1..365, limit=1..100)`(`ix_aircraft_day_day`を利用)。
+- [x] `app/api/routers/aircraft_history.py`を新規作成した: `GET /api/aircraft/{icao}/history`(既存のDB CHECK制約`aircraft_icao_format`と同じ正規表現`^~?[0-9a-f]{6}$`で形式検証→422、不明ICAOは404、このAPI初のpathパラメータ404だがGETのみで新たな懸念は生まない)、`GET /api/aircraft/frequent?days=&limit=`。`app/api/main.py`に登録した。
+- [x] `app/static/history.html` + `app/static/js/history.js`を新規作成した: 最頻観測ランキング(`ui.js`の`renderRankingTable`を再利用 — `addCell`をDOMノードも受け付けるよう一般化し、お気に入り星ボタンをセルとして描画できるようにした)、`?icao=`で機体詳細、callsign履歴。**お気に入り機体はブラウザ`localStorage`のみで実装し、バックエンドの書き込みエンドポイントは追加していない**(このAPI初の書き込み経路にしないため)。navに追加した(これで4/4ページが揃った)。
+- [x] テスト: `tests/integration/test_api.py`に404ケース・形式不正422・データありの結合テスト6件を追加、`test_openapi_lists_all_endpoints`更新。集計はSQL側で完結し意味のある純Pythonロジックがないため、Milestone I/Jと同様に専用unit testファイルは追加していない。テスト総数223→229(+6)。
 
 **Milestone O 完了条件**
-- [ ] 複数日にわたる合成データを持つ機体で、観測日数・pass数・callsign履歴が正しく表示される。
-- [ ] お気に入りがページ再読み込み後も`localStorage`経由で保持される。
-- [ ] `make test`/`make lint`が通る。
+- [x] 複数日にわたる合成データを持つ機体で、観測日数・pass数・callsign履歴が正しく表示される(結合テストで手計算値と照合、Playwrightでも5日分のシードデータで目視確認)。
+- [x] お気に入りがページ再読み込み後も`localStorage`経由で保持される(Playwrightで実際に星をクリック→`aria-pressed=true`→ページreload→`aria-pressed=true`のまま、を確認)。
+- [x] `make test`/`make lint`が通る(229件全green、lint/format clean)。
+
+### セッション記録
+
+```text
+日付: 2026-07-29
+完了したMilestone/Task: Milestone O（2D 機体の再訪履歴）— これでPhase 2 Milestone H〜Oが全て完了
+変更した主要ファイル:
+  - app/db/queries/aircraft_history.py（新規、aircraft_summary/callsign_history/most_frequent）
+  - app/api/routers/aircraft_history.py（新規、GET /api/aircraft/{icao}/history・/api/aircraft/frequent）
+  - app/api/main.py（aircraft_historyルーター登録）
+  - app/api/schemas.py（AircraftHistoryResponse/FrequentAircraftResponse等追加）
+  - app/static/js/ui.js（renderRankingTableをbuildRowコールバック方式に一般化、addCellがDOMノードも受理するよう拡張、distanceRankingRowを既存呼び出し元に適用、renderRankingTableをexport）
+  - app/static/history.html・app/static/js/history.js（新規ページ。最頻観測ランキング+お気に入りフィルタ、?icao=機体詳細、callsign履歴。お気に入りはlocalStorageのみ）
+  - app/static/css/style.css（.favorite-toggle/.detail-title-row/.callsign-history-list等追加）
+  - tests/integration/test_api.py（aircraft history結合テスト6件、OpenAPI一覧更新）
+  - PLAN.md（本セクション）
+実行したテスト: pytest（フルスイート、229件）、ruff check / ruff format --check
+テスト結果: 全green、lint/format clean
+実環境で確認したこと:
+  - `aircraft_day`に実運用の複数年規模(2,000機体×365日分サンプリング、63,779行)相当の合成データを投入し、`most_frequent`にEXPLAIN ANALYZEを実施。狙いどおり`ix_aircraft_day_day`のIndex Scanが使われていることを確認(3.6ms)。`aircraft_summary`の単一機体集計は主キー経由のBitmap Index Scanで0.16ms。
+  - 使い捨てPostgres + 実uvicorn + Playwright Chromiumで`/static/history.html`を目視確認。5機体(観測日数5〜1日で意図的に差をつけた合成データ)のランキングが正しい順序で表示されること、お気に入り星をクリック→`aria-pressed`がtrueに変化→ページ再読み込み後も`localStorage`経由で状態が保持されること(完了条件の核心)、お気に入りのみフィルタで1件に絞り込まれること、`?icao=`機体詳細ビューで初観測/最終観測/観測日数/総パス数/callsign履歴が正しく表示されること、不明ICAOで「機体が見つかりません」表示になることを確認。スクリーンショット2枚で最終確認済み(セッション内一時ファイル、コミットせず)。
+残課題:
+  - 全4ページ(ダッシュボード/受信性能/今日の空/機体履歴)が揃い、navの404リンクは解消済み。
+  - **Milestone L由来の残課題が唯一未解決のまま**: 実`adsb-db`への migration `5cee58fd601d`適用と`adsb-daily-rollup`サービスのデプロイがユーザー確認待ち。これが完了するまで、M/N/Oが依存する`traffic_day`/`aircraft_day`/`aircraft_callsign_history`は本番環境では空のまま(コード自体は正しく空データを処理してゼロ表示するため、本番でエラーにはならないが機能として無意味な状態が続く)。
+  - Phase 2の6候補中、2F(地図セルフホスト)のみ意図的に対象外(冒頭の設計判断を参照)。
+次に行うTask: なし(Phase 2 Milestone H〜O完了)。次のアクションはユーザーによる実adsb-dbへのデプロイ、またはPhase 3の計画。
+ユーザー判断が必要な事項:
+  - Milestone Lのmigration適用・adsb-daily-rollupデプロイをいつ実施するか(繰り返し、CLAUDE.md運用制約により実行前提示が必要)。
+  - 2F(地図セルフホスト)や新たなPhase 3候補に進むかどうか。
+```
 
 ### 実行上の注意
 

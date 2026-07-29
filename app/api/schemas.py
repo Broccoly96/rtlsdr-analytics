@@ -190,6 +190,36 @@ class SpeedHistogramResponse(BaseModel):
     buckets: list[HistogramBucketResponse]
 
 
+class CallsignHistoryEntryResponse(BaseModel):
+    callsign: str
+    first_seen_at: datetime
+    last_seen_at: datetime
+
+
+class AircraftHistoryResponse(BaseModel):
+    icao: str
+    first_seen_at: datetime
+    last_seen_at: datetime
+    last_callsign: str | None
+    days_observed: int
+    total_pass_count: int
+    total_observation_count: int
+    callsign_history: list[CallsignHistoryEntryResponse]
+
+
+class FrequentAircraftEntryResponse(BaseModel):
+    icao: str
+    last_callsign: str | None
+    days_observed: int
+    total_pass_count: int
+
+
+class FrequentAircraftResponse(BaseModel):
+    days: int
+    limit: int
+    aircraft: list[FrequentAircraftEntryResponse]
+
+
 class GridCellResponse(BaseModel):
     lat: float
     lon: float

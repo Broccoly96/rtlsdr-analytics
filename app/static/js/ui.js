@@ -68,9 +68,16 @@ function clearChildren(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
-function addCell(row, text) {
+// `content` is plain text in the common case, but may also be a DOM node
+// (e.g. history.js's favorite-toggle button cell) -- never innerHTML with
+// API-derived text either way (callsigns/ICAOs are externally sourced).
+function addCell(row, content) {
   const cell = document.createElement("td");
-  cell.textContent = text;
+  if (content instanceof Node) {
+    cell.appendChild(content);
+  } else {
+    cell.textContent = content;
+  }
   row.appendChild(cell);
 }
 
@@ -80,7 +87,10 @@ function toggleTableVisibility(table, hasRows) {
   if (emptyMessage) emptyMessage.hidden = hasRows;
 }
 
-function renderRankingTable(tableId, entries) {
+// Generic ranking-table renderer: `buildRow(entry)` returns the cell text
+// values for one row, so this same table-rendering shell (clear/toggle-
+// empty/populate) works for any entry shape, not just farthest/closest.
+function renderRankingTable(tableId, entries, buildRow) {
   const table = document.getElementById(tableId);
   if (!table) return;
   const tbody = table.querySelector("tbody");
@@ -89,12 +99,20 @@ function renderRankingTable(tableId, entries) {
 
   for (const entry of entries) {
     const row = document.createElement("tr");
-    addCell(row, entry.callsign || entry.icao);
-    addCell(row, `${entry.distance_km.toFixed(1)} km`);
-    addCell(row, entry.altitude_ft != null ? `${Math.round(entry.altitude_ft)} ft` : "--");
-    addCell(row, formatTime(entry.observed_at));
+    for (const cellText of buildRow(entry)) {
+      addCell(row, cellText);
+    }
     tbody.appendChild(row);
   }
+}
+
+function distanceRankingRow(entry) {
+  return [
+    entry.callsign || entry.icao,
+    `${entry.distance_km.toFixed(1)} km`,
+    entry.altitude_ft != null ? `${Math.round(entry.altitude_ft)} ft` : "--",
+    formatTime(entry.observed_at),
+  ];
 }
 
 function renderRecentAircraft(rows) {
@@ -133,8 +151,8 @@ async function refreshStatusAndRankings() {
       api.getRankings(24, 10),
       api.getRecentAircraft(24, 20),
     ]);
-    renderRankingTable("ranking-farthest", rankings.farthest);
-    renderRankingTable("ranking-closest", rankings.closest);
+    renderRankingTable("ranking-farthest", rankings.farthest, distanceRankingRow);
+    renderRankingTable("ranking-closest", rankings.closest, distanceRankingRow);
     renderRecentAircraft(recent);
   } catch (err) {
     console.error("rankings/recent refresh failed", err);
@@ -170,4 +188,5 @@ export const ui = {
   refreshStatusAndRankings,
   startPolling,
   setUniqueCount,
+  renderRankingTable,
 };

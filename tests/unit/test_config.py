@@ -77,6 +77,17 @@ def test_settings_notify_webhook_disabled_by_default(monkeypatch):
     assert settings.notify_webhook_url is None
 
 
+def test_settings_accepts_empty_string_notify_webhook_url_as_unset(monkeypatch):
+    # NOTIFY_WEBHOOK_URL=  (empty, .env.example's documented "leave unset"
+    # convention -- e.g. from `cp .env.example .env` without filling it
+    # in) must behave identically to the var being absent entirely, not
+    # raise as a malformed URL.
+    _set_env(monkeypatch, {"NOTIFY_WEBHOOK_URL": ""})
+    settings = Settings()
+    assert settings.notify_webhook_url is None
+    assert settings.notify_webhook_enabled is False
+
+
 def test_settings_rejects_notify_enabled_without_url(monkeypatch):
     _set_env(monkeypatch, {"NOTIFY_WEBHOOK_ENABLED": "true"})
     with pytest.raises(ValidationError):

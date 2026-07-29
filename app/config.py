@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     @field_validator("notify_webhook_url")
     @classmethod
     def _validate_notify_webhook_url(cls, value: str | None) -> str | None:
+        # An empty string (NOTIFY_WEBHOOK_URL=, .env.example's documented
+        # "leave unset" convention) means "not configured", same as the env
+        # var being absent entirely -- not a malformed URL.
+        if value == "":
+            return None
         if value is not None and not value.startswith(("http://", "https://")):
             raise ValueError("NOTIFY_WEBHOOK_URL must start with http:// or https://")
         return value

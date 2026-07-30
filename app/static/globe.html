@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D航跡 - ADS-B Analytics</title>
+<!--
+  script-src includes 'unsafe-eval' on this page ONLY (same precedent as
+  receiver.html's echarts-gl chart): CesiumJS's own top-level script
+  eagerly compiles WebAssembly (and, separately, uses a plain string-eval
+  path) for its terrain/imagery decoding -- without this, those calls
+  throw CSP violations *during* Cesium.js's own script execution, which
+  aborts partway through and leaves `window.Cesium` undefined entirely
+  (confirmed by reproducing the exact failure). Same disclosure as
+  receiver.html: this app never uses eval()/Function() itself and never
+  renders API/user data as HTML, so the realistic added risk is narrow,
+  but it's a real loosening of this page's CSP.
+-->
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: ws: wss:; font-src 'self' https: data:; worker-src 'self' blob:;"
+>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/js/vendor/cesium/Widgets/widgets.css">
+</head>
+<body>
+<div class="app">
+
+  <nav class="app-nav" aria-label="ページ">
+    <a href="/">ダッシュボード</a>
+    <a href="/static/receiver.html">受信性能</a>
+    <a href="/static/daily.html">今日の空</a>
+    <a href="/static/history.html">機体履歴</a>
+    <a href="/static/fullmap.html">フルスクリーン地図</a>
+    <a href="/static/rawdata.html">生データ</a>
+    <a href="/static/globe.html" aria-current="page">3D航跡</a>
+  </nav>
+
+  <header class="app-header">
+    <div class="app-header__title">
+      <h1>3D航跡</h1>
+      <span class="app-header__version" id="app-version"></span>
+    </div>
+    <div class="app-header__period" role="group" aria-label="機体選択">
+      <select id="aircraft-select">
+        <option value="">機体を選択…</option>
+      </select>
+      <button type="button" id="aircraft-refresh" class="period-btn">一覧更新</button>
+    </div>
+  </header>
+
+  <p class="panel__empty" style="padding: 0;">
+    衛星画像(<a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>,
+    Maxar, Earthstar Geographics, GIS User Community)を背景に、選んだ機体の過去の軌跡(実線)と
+    ライブ更新中の現在位置を3次元空間に表示します。ドラッグで回転、スクロールでズームできます。
+    データはサーバーに保存されません。
+  </p>
+
+  <section class="main-area" style="grid-template-columns: 1fr;">
+    <div class="panel">
+      <div id="cesium-container" style="width: 100%; height: 75vh; border-radius: 6px; overflow: hidden;"></div>
+      <div id="globe-error" class="panel__error" hidden></div>
+    </div>
+  </section>
+
+  <footer class="app-footer">
+    <span>ADS-B Analytics</span>
+  </footer>
+
+</div>
+
+<script src="/static/js/cesium-base-url.js"></script>
+<script src="/static/js/vendor/cesium/Cesium.js"></script>
+<script type="module" src="/static/js/globe.js"></script>
+</body>
+</html>

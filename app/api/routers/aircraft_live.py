@@ -42,6 +42,13 @@ _ICAO_PATTERN = re.compile(r"^~?[0-9a-f]{6}$")
 # since this is a display-only pass-through, not something this app
 # relies on for its own metrics.
 _LIVE_FIELDS: tuple[str, ...] = (
+    # lat/lon are the one field pair this app *does* also store (sampled
+    # every TRACK_SAMPLE_SECONDS, not every poll) -- included here anyway
+    # for the 3D flight globe's live-moving marker (app/static/globe.html),
+    # which wants the same ~5s cadence as everything else in this payload,
+    # not the coarser stored sampling rate.
+    "lat",
+    "lon",
     "squawk",
     "alt_baro",
     "alt_geom",

@@ -48,6 +48,10 @@ reference for AI coding agents working in this repo.
   readsb's raw Beast-format stream with a simple decode (downlink format,
   ICAO24, ADS-B message-type category), for learning the frame structure.
   Nothing shown here is stored anywhere.
+- **3D flight globe** (`/static/globe.html`) — pick an aircraft and see its
+  track in a real 3D scene (satellite imagery ground, CesiumJS), drag to
+  orbit around it. Shows the last several hours of history immediately,
+  then keeps extending the track live while the page is open.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
@@ -325,6 +329,21 @@ the tab loses the history, and the server never writes any of it to the
 database. Pause to read, or clear the table, with the buttons at the top;
 it reconnects automatically if the connection drops.
 
+### 3D flight globe (`/static/globe.html`)
+
+Pick an aircraft from the dropdown (recently-seen aircraft, refreshable)
+and see it in a real 3D scene: satellite imagery on the ground (ArcGIS
+World Imagery), its last several hours of track drawn immediately as a
+line, and a marker that keeps moving live while the page stays open (the
+same `WS /ws/aircraft/{icao}` connection the
+[aircraft detail sidebar](#aircraft-detail-sidebar) uses). Drag to orbit,
+scroll to zoom, click the home icon to reset the view. Unlike the
+receiver-performance page's 3D reception-hemisphere chart (which is
+`echarts-gl`, an aggregate view of reception range), this is
+[CesiumJS](https://github.com/CesiumGS/cesium) — built for exactly this
+"one real aircraft's real track in a real 3D scene" use case. Nothing
+here is persisted.
+
 ### API
 
 All HTTP endpoints are `GET`-only, unauthenticated (intended for
@@ -495,6 +514,17 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   never uses `eval()`/`Function()` itself and never renders API/user data
   as HTML (always `textContent`), so the realistic added risk is narrow —
   worth knowing if you're auditing this page specifically.
+- `/static/globe.html`'s CSP similarly adds `'unsafe-eval'` (CesiumJS's
+  own script eagerly compiles WebAssembly for terrain/imagery decoding;
+  without it, Cesium's own top-level script throws mid-execution and
+  never finishes loading at all) and `blob:` to `script-src` (Cesium
+  bootstraps its web workers via a small in-memory blob: script) — again,
+  only this one page, confirmed by reproducing and fixing the exact
+  failure rather than added speculatively.
+- `/static/globe.html` fetches satellite imagery (ArcGIS World Imagery,
+  attribution shown on-page) continuously while it's open — not just on
+  click, the same posture as the dashboard's map tiles, just a different
+  provider and only on this one page.
 - Your receiver's coordinates are used server-side for distance
   calculations and are never returned at full precision by the API; the
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off
@@ -543,7 +573,8 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
 Both the original Phase 1 MVP (collector, storage, API, dashboard) and a
 set of Phase 2 extensions (receiver performance, distributions, heatmap,
 daily rollups + webhook, aircraft revisit history, live raw-data view,
-aircraft photo/type lookup) are implemented — see `PLAN.md` for the full
+aircraft photo/type lookup, a tar1090-style live aircraft sidebar, and a
+3D flight globe) are implemented — see `PLAN.md` for the full
 milestone-by-milestone history.
 
 Explicitly out of scope: runway/arrival/departure inference, go-around/

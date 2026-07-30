@@ -1566,3 +1566,85 @@ backup保持=7世代
 次に行うTask: Milestone I（2B 受信局性能）
 ユーザー判断が必要な事項: なし
 ```
+
+## 17. ダッシュボードフィードバック対応（Milestone P〜U）
+
+ユーザーが実運用中のダッシュボードを実際に使った上でのフィードバック(改善2件+新機能6件)を受けて追加した一連の作業。着手前に各項目をコードベースに即して検討し、ユーザーと議論(AskUserQuestion)した上で計画を確定した。主な設計判断:
+
+- **更新頻度**: 収集側の実際の更新周期(`POLL_INTERVAL_SECONDS`=5秒)より速くしても意味がないことを確認した上で、10秒→5秒に変更(3秒は無駄と判断)。
+- **機体写真・機種情報**: 当初計画していた「tar1090-dbのようなオフライン一括データベースを同梱する」方式は断念した。`wiedehopf/tar1090-db`はGitHub API上でライセンスファイルが存在しない(`license: None`)ことを確認し、代替候補のOpenSky Network機体データベースもOpenSky自身が"unlicensed"と明記しており、どちらも再配布に適さないと判断。ユーザーと相談の上、`api.adsbdb.com`(登録記号・機種)と`api.planespotters.net`(写真)への**クリック時のみのライブ問い合わせ**方式に変更した(両APIとも実際に生きていることをWebFetchで事前確認済み)。
+- **今日のTop10機種チャートだけは例外**: 1日分の全機体を集計する必要があり、クリック時問い合わせ方式では実現できないため、ユーザーと相談の上「初めて見た機体につき1回だけサーバー側がadsbdb.comに問い合わせ、結果を永続キャッシュする」方式(`aircraft_type_cache`)を採用。読み取りパス(`GET /api/distribution/aircraft-type`)は完全にオフラインのまま。
+- **生データ/簡易デコードタブ**: `CLAUDE.md`の既存スコープ外(Raw Beast/Mode-S非対応)と明確に矛盾するが、ユーザーの明示的な依頼により追加。表示専用・DB保存なし・簡易デコード(DF/ICAO24/CA/ADS-B TCカテゴリのみ、CPR位置/速度は非対応)に限定してスコープを絞り、`CLAUDE.md`の out-of-scope 記述を実態に合わせて修正した。
+- **受信性能の3D化**: `echarts-gl`(BSD-3-Clause、ベンダリング前にライセンス確認済み)を新規採用。
+
+### Milestone P：UIクイックウィン(スキーマ変更・新規依存なし)
+
+- [x] 地図ホバーポップアップの文字色: ダークテーマの`--text`(ほぼ白)がMapLibreの白背景ポップアップに継承され読めなくなっていたバグを`style.css`の`.maplibregl-popup-content`スコープ指定で修正。
+- [x] ダッシュボード更新間隔: `app/static/js/ui.js`の`REFRESH_INTERVAL_MS`を10000→5000に変更。
+- [x] フルスクリーン地図ページ: `app/static/fullmap.html` + `app/static/js/fullmap.js`を新規作成、`map.js`の既存`createTrackMap`/`refreshTracks`をそのまま再利用。全ページのnavに追加。
+- [x] 距離別RSSIヒートマップ: `app/db/queries/receiver.py`に`rssi_by_distance()`追加、`GET /api/receiver/rssi-by-distance`新設、`receiver.html`/`receiver.js`にECharts heatmapパネル追加。
+- [x] テスト: `tests/integration/test_api.py`にrssi-by-distanceの空/bounds/シード済みテスト追加。全234件green。
+
+### Milestone Q：機体情報・写真ポップアップ(④⑤、当初計画のQ+Rを統合)
+
+オフラインDBのライセンス問題により当初計画から設計変更(上記参照)。
+
+- [x] `app/static/js/aircraftinfo.js`を新規作成: `createAircraftInfoTrigger(icao, label)`が、クリック時のみ`api.adsbdb.com`(登録記号/機種/製造者)と`api.planespotters.net`(サムネイル+撮影者クレジット+リンク)へ並行して問い合わせ、結果をトグルパネルに描画するボタンを返す。自動プリフェッチなし、サーバー側キャッシュなし。
+- [x] `history.js`(機体詳細)・`ui.js`(ダッシュボードのランキング/最近観測テーブルの機体セル)・`daily.js`(今日の空のハイライトタイル)に組み込んだ。
+- [x] **今回の点検で発見・修正**: `ui.js`のランキング/最近観測テーブルはPミルストーンで5秒ポーリングに変更済みのため、開いた情報パネルが5秒ごとの再描画で消えてしまうバグを実装中に発見。`aircraftinfo.js`に開いているパネル数を追跡する`isAnyAircraftInfoPanelOpen()`を追加し、`ui.js`側でパネルが開いている間はテーブル再描画をスキップするよう修正。
+- [x] READMEのSecurity & Privacy節を更新し、「呼び出し先なし」の主張に2つの明示的な例外(クリック時のみ)があることを明記。
+
+### Milestone S：今日のTop10機種チャート(⑥)
+
+Milestone Qのクリック方式では1日分の集計ができないため、ユーザーと協議の上サーバー側の永続キャッシュ方式を採用。
+
+- [x] 新規migration(`d6494c2713c8`): `aircraft_type_cache(icao PK, type_code, type_name, manufacturer, registration, lookup_failed, looked_up_at)`。
+- [x] `app/aircraft_lookup.py`新規作成: `refresh_uncached_aircraft_types()`が、まだキャッシュにない機体(または30日以上前に失敗した機体)を`api.adsbdb.com`に問い合わせ、成功/失敗の両方を永続的にキャッシュする(失敗した検索を毎回再試行しないため)。`app/dailyrollup.py`の`--loop`サイクルに組み込み、ロールアップ本体・webhookとは独立したtry/exceptで失敗を隔離。
+- [x] `app/db/queries/aircraft_type.py` + `GET /api/distribution/aircraft-type?day=&limit=`: `aircraft_type_cache`は日付を持たないため、`traffic/daily-summary`と同様「対象日はobservationsから都度計算」という単一のクエリ形状で今日・過去日の両方に対応。
+- [x] `daily.html`/`daily.js`にチャート追加、キャッシュが空の場合は明示的な空状態メッセージを表示(エラーにしない)。
+- [x] テスト: `tests/contract/test_aircraft_lookup.py`(httpx.MockTransportで7ケース、実DB使用)、`tests/integration/test_api.py`に5ケース追加。
+- [x] 実機体3件(JA218A/A320、HL8015/B738、JA614A/B767)で実際に`adsbdb.com`へ問い合わせてキャッシュへの書き込みとチャートAPIへの反映を実環境で確認済み。
+
+### Milestone T：生データ・簡易デコードタブ(⑦、CLAUDE.mdの既存スコープ外だがユーザー依頼により追加)
+
+- [x] `app/domain/beast.py`新規作成: Beastバイナリフォーマットのパース(バイトスタッフィング処理、TCPの分割読み込みに対応)と簡易デコード(DF/ICAO24/CA、DF17/18のTCカテゴリラベル)。単体テスト14件に加え、実機の30005番ポートから直接キャプチャした実データでも検証した。
+- [x] `app/api/routers/rawdata.py`: `WS /ws/rawdata`。ブラウザ接続ごとにreadsbのBeastポートへ個別にTCP接続(Beastサーバーは複数同時読者を前提に設計されているため、共有ファンアウトハブは過剰と判断)。DBには一切書き込まない。
+- [x] `READSB_BEAST_HOST`/`READSB_BEAST_PORT`設定を追加(`READSB_AIRCRAFT_URL`のホスト名から自動導出)。空文字列が`Settings()`をクラッシュさせないことをテストで確認(NOTIFY_WEBHOOK_URLと同じ落とし穴)。
+- [x] `app/static/rawdata.html` + `js/rawdata.js`: 最大500件・一時停止/クリア・自動再接続。全ページのnavに追加。
+- [x] `CLAUDE.md`の out-of-scope 記述を、実態(表示専用・簡易デコードのみは対象内、保存・本格デコードは引き続き対象外)に合わせて修正。
+- [x] **今回の点検で発見・修正**: `compose.yaml`で`adsb-api`に`extra_hosts: host.docker.internal:host-gateway`が設定されておらず(これまで`adsb-collector`のみに設定)、実際にWebSocketクライアントで接続するまで気づかなかった接続失敗を発見・修正。
+- [x] 実際のWebSocketクライアント(`websockets`ライブラリ)で本番環境に接続し、DF11/DF17/DF0の実フレームが正しくデコードされて配信されることを確認済み。
+
+### Milestone U：受信性能3D半球表示(⑧-a)
+
+- [x] `app/db/queries/receiver.py`に`bearing_elevation_range()`追加: 既存の方位セクター分割に仰角帯(0-90度を10度刻み9帯)を追加した2次元ビニング。`GET /api/receiver/bearing-elevation-range`新設。
+- [x] `echarts-gl@2.0.9`(BSD-3-Clause、ベンダリング前にGitHub APIでライセンス確認)を`app/static/js/vendor/echarts-gl/`に配置。
+- [x] **実ブラウザ検証で発見・解決した問題が2つ**:
+  1. echarts-gl公式ドキュメントは「ECharts 5.x系のみ対応」と明記しているが、本リポジトリは6.1.0を同梱済み。ドキュメントを鵜呑みにせずPlaywrightで実際に組み合わせて検証した結果、正常に動作することを確認してから採用した。
+  2. 実データ+visualMapで実際にチャートを描画すると、echarts-glのシェーダー内部コンパイラが"Invalid expression"で例外を投げる不具合を発見。scratchpad上で最小再現ケースを作り、原因が本アプリの厳格なCSP(`script-src 'self'`、`unsafe-eval`なし)であることを特定。`receiver.html`のCSPにのみ`'unsafe-eval'`を追加して解決し(他の全ページは変更なし)、READMEのSecurity & Privacy節にトレードオフとして明記した。
+- [x] 実際の本番データ(118セル)でPlaywrightからスクリーンショットを取得し、正しく3D散布図が描画され console error がゼロであることを確認済み。
+
+### セッション記録
+
+```text
+日付: 2026-07-30
+完了したMilestone/Task: Milestone P〜U(ダッシュボードフィードバック対応、全6件)
+変更した主要ファイル:
+  - Milestone P: app/static/css/style.css, app/static/js/ui.js, app/static/fullmap.html(新規), app/static/js/fullmap.js(新規), app/db/queries/receiver.py, app/api/schemas.py, app/api/routers/receiver.py, app/static/receiver.html, app/static/js/api.js, app/static/js/receiver.js
+  - Milestone Q: app/static/js/aircraftinfo.js(新規), app/static/js/history.js, app/static/js/ui.js, app/static/js/daily.js, README.md
+  - Milestone S: migrations/versions/d6494c2713c8_add_aircraft_type_cache.py(新規), app/aircraft_lookup.py(新規), app/dailyrollup.py, app/db/queries/aircraft_type.py(新規), app/api/routers/distribution.py, app/api/schemas.py, app/static/daily.html, app/static/js/api.js, app/static/js/daily.js
+  - Milestone T: app/domain/beast.py(新規), app/api/routers/rawdata.py(新規), app/config.py, app/api/main.py, app/static/rawdata.html(新規), app/static/js/rawdata.js(新規), compose.yaml, CLAUDE.md, 全ページのnav
+  - Milestone U: app/db/queries/receiver.py, app/api/schemas.py, app/api/routers/receiver.py, app/static/js/api.js, app/static/js/receiver.js, app/static/receiver.html, app/static/js/vendor/echarts-gl/echarts-gl.min.js(新規)
+  - 共通: README.md(全マイルストーンで機能・設定・Security & Privacy節を都度更新), .env.example
+実行したテスト: pytest(フルスイート、234→271件、+37)、ruff check
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - 各マイルストーンごとに`docker compose build`/`up -d --force-recreate`で本番デプロイし、curl/実WebSocketクライアント/Playwright(実Chromium)で目視・動作確認した(セッション内の一連の作業として、都度)。
+  - 実環境検証で3件の実バグを発見・修正(コードだけでは見つからなかったもの): (1) Milestone Qでui.jsの5秒ポーリングが開いた情報パネルを消してしまう競合、(2) Milestone Tでcompose.yamlのadsb-apiにhost.docker.internal解決用のextra_hostsが不足、(3) Milestone Uでecharts-glのCSP(unsafe-eval)要件。
+  - Milestone Sは実機体3件、Milestone Tは実Beastフレーム、Milestone Uは実受信データ118セルで、それぞれ本番のreadsb/adsbdb.com/DBを使った検証を実施。
+残課題:
+  - なし(6マイルストーン全て完了・デプロイ・検証済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+

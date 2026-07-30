@@ -26,7 +26,8 @@ async def get_tracks_endpoint(
         TrackFeature(
             geometry=GeoJSONMultiLineString(
                 coordinates=[
-                    [[point.lon, point.lat] for point in segment] for segment in track.segments
+                    [[point.lon, point.lat, point.altitude_ft or 0] for point in segment]
+                    for segment in track.segments
                 ]
             ),
             properties=TrackFeatureProperties(

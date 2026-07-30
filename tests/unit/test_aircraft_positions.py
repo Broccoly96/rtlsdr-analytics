@@ -1,4 +1,8 @@
-from app.api.routers.aircraft_positions import extract_position
+from app.api.routers.aircraft_positions import (
+    FAST_POLL_INTERVAL_SECONDS,
+    PositionBroadcaster,
+    extract_position,
+)
 
 
 def test_extracts_position_with_geometric_altitude():
@@ -67,3 +71,40 @@ def test_no_icao_returns_none():
 def test_blank_callsign_becomes_none():
     result = extract_position({"hex": "ffffff", "lat": 1.0, "lon": 2.0, "flight": "   "})
     assert result["callsign"] is None
+
+
+# --- PositionBroadcaster fast-mode interval selection --------------------
+# Plain objects stand in for WebSocket connections -- register/unregister/
+# set_fast only ever add/discard by identity, never call WebSocket methods.
+
+
+def test_current_interval_defaults_to_configured_value():
+    broadcaster = PositionBroadcaster("http://example/aircraft.json", poll_interval_seconds=5.0)
+    assert broadcaster.current_interval == 5.0
+
+
+def test_current_interval_is_fast_when_any_client_opts_in():
+    broadcaster = PositionBroadcaster("http://example/aircraft.json", poll_interval_seconds=5.0)
+    client_a, client_b = object(), object()
+    broadcaster.register(client_a)
+    broadcaster.register(client_b)
+    broadcaster.set_fast(client_a, True)
+    assert broadcaster.current_interval == FAST_POLL_INTERVAL_SECONDS
+
+
+def test_current_interval_reverts_once_no_client_wants_fast():
+    broadcaster = PositionBroadcaster("http://example/aircraft.json", poll_interval_seconds=5.0)
+    client = object()
+    broadcaster.register(client)
+    broadcaster.set_fast(client, True)
+    broadcaster.set_fast(client, False)
+    assert broadcaster.current_interval == 5.0
+
+
+def test_unregister_clears_fast_state():
+    broadcaster = PositionBroadcaster("http://example/aircraft.json", poll_interval_seconds=5.0)
+    client = object()
+    broadcaster.register(client)
+    broadcaster.set_fast(client, True)
+    broadcaster.unregister(client)
+    assert broadcaster.current_interval == 5.0

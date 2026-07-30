@@ -15,13 +15,19 @@
 // Shift+click isolates one aircraft: hides every other one (model + track)
 // and flies the camera to it (no separate per-aircraft WS needed here --
 // that connection is still used by aircraftinfo.js's sidebar for its
-// deeper tar1090-parity fields). Ground imagery (ArcGIS World Imagery) is
-// fetched continuously by the browser while this page is open -- see
-// README Security & Privacy. Nothing here is persisted.
+// deeper tar1090-parity fields). An optional 1Hz "fast" update mode can be
+// requested per-connection over the same broadcast socket (see
+// aircraft_positions.py). The header's mode selector can instead switch to
+// a "history" view (GET /api/tracks?hours=, same endpoint/shape the flat
+// 2D map uses): every aircraft's past track over 1h/6h/24h, no live
+// broadcast/3D models, with a hover popup mirroring map.js's. Ground
+// imagery (ArcGIS World Imagery) is fetched continuously by the browser
+// while this page is open -- see README Security & Privacy. Nothing here
+// is persisted.
 
 import { api } from "./api.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
-import { formatAltitude } from "./units.js";
+import { formatAltitude, formatDistance } from "./units.js";
 import { getTrackOpacity } from "./track-settings.js";
 
 const FT_TO_M = 0.3048;
@@ -140,6 +146,28 @@ function segmentToCartesians(segment) {
   );
 }
 
+// Same [lon, lat, altitude] flattening as segmentToCartesians, for
+// GET /api/tracks's GeoJSON coordinate arrays (history mode) rather than
+// GET /api/aircraft/{icao}/positions's {lon,lat,altitude_ft} objects.
+function coordinatesToCartesians(coordinates) {
+  return Cesium.Cartesian3.fromDegreesArrayHeights(
+    coordinates.flatMap(([lon, lat, altitudeFt]) => [lon, lat, (altitudeFt || 0) * FT_TO_M])
+  );
+}
+
+// --- display timezone (mirrors map.js's formatTime) ------------------------
+
+let displayTimezone = "UTC";
+
+function formatTime(isoString) {
+  if (!isoString) return "--";
+  try {
+    return new Date(isoString).toLocaleString("ja-JP", { timeZone: displayTimezone, hour12: false });
+  } catch {
+    return isoString;
+  }
+}
+
 // --- state ----------------------------------------------------------------
 
 let viewer = null;
@@ -158,6 +186,13 @@ const pickerLabels = new Map();
 const trackState = new Map();
 
 let isolatedIcao = null;
+
+// "live" (default -- the broadcast-driven multi-aircraft models/tracks
+// above) or "history" (GET /api/tracks?hours=, every aircraft's past
+// track only, no 3D models -- see enterHistoryMode/enterLiveMode).
+let mode = "live";
+let historyEntities = [];
+let fastModeEnabled = false;
 
 // Read once at load (same "reload to pick up a change" precedent as
 // every other setting in this app).
@@ -377,23 +412,113 @@ function toggleIsolate(icao) {
   enterIsolate(icao);
 }
 
+// --- mode switching (live vs. history) --------------------------------------
+
+function teardownLiveView() {
+  if (socket) {
+    socket.close();
+    socket = null;
+  }
+  if (isolatedIcao) exitIsolate();
+  for (const icao of Array.from(aircraftEntities.keys())) {
+    viewer.entities.remove(aircraftEntities.get(icao));
+    aircraftEntities.delete(icao);
+    removeTrack(icao);
+  }
+  latestPositions.clear();
+}
+
+function clearHistoryEntities() {
+  for (const entity of historyEntities) viewer.entities.remove(entity);
+  historyEntities = [];
+}
+
+function setLiveControlsVisible(visible) {
+  const liveControls = document.getElementById("live-controls");
+  if (liveControls) liveControls.hidden = !visible;
+}
+
+async function enterHistoryMode(hours) {
+  hideTooltip();
+  hideError();
+  if (mode === "live") teardownLiveView();
+  mode = "history";
+  setLiveControlsVisible(false);
+  clearHistoryEntities();
+
+  try {
+    const response = await api.getTracks(hours);
+    for (const feature of response.features) {
+      const color = Cesium.Color.fromCssColorString(
+        colorForAltitude(feature.properties.last_altitude_ft)
+      );
+      for (const coordinates of feature.geometry.coordinates) {
+        if (coordinates.length < 2) continue;
+        const entity = viewer.entities.add({
+          polyline: {
+            positions: coordinatesToCartesians(coordinates),
+            width: 3,
+            material: color,
+          },
+        });
+        entity.trackInfo = feature.properties;
+        historyEntities.push(entity);
+      }
+    }
+  } catch (err) {
+    console.error("tracks fetch failed", err);
+    showError("過去航跡の取得に失敗しました。");
+  }
+}
+
+function enterLiveMode() {
+  if (mode === "live") return;
+  mode = "live";
+  clearHistoryEntities();
+  hideTooltip();
+  setLiveControlsVisible(true);
+  connectBroadcast();
+}
+
 // --- hover tooltip ----------------------------------------------------------
 
-function showTooltip(icao, screenPosition) {
+function positionTooltip(screenPosition) {
   const tooltip = document.getElementById("globe-tooltip");
-  const position = latestPositions.get(icao);
-  if (!tooltip || !position) return;
-
+  if (!tooltip) return null;
   const canvasRect = viewer.scene.canvas.getBoundingClientRect();
   const parent = tooltip.offsetParent;
   const parentRect = parent ? parent.getBoundingClientRect() : canvasRect;
   tooltip.style.left = `${canvasRect.left - parentRect.left + screenPosition.x + 12}px`;
   tooltip.style.top = `${canvasRect.top - parentRect.top + screenPosition.y + 12}px`;
+  return tooltip;
+}
+
+function showLiveTooltip(icao, screenPosition) {
+  const position = latestPositions.get(icao);
+  const tooltip = positionTooltip(screenPosition);
+  if (!tooltip || !position) return;
 
   const parts = [
     position.callsign || icao,
     position.altitude_ft != null ? formatAltitude(position.altitude_ft) : null,
     position.ground_speed_kt != null ? `${Math.round(position.ground_speed_kt)} kt` : null,
+  ].filter(Boolean);
+  tooltip.textContent = parts.join(" / ");
+  tooltip.hidden = false;
+}
+
+// History-mode tooltip content mirrors map.js's describeFeature exactly
+// (same properties GET /api/tracks already returns).
+function showTrackTooltip(trackInfo, screenPosition) {
+  const tooltip = positionTooltip(screenPosition);
+  if (!tooltip) return;
+
+  const parts = [
+    trackInfo.callsign || trackInfo.icao,
+    trackInfo.last_altitude_ft != null ? formatAltitude(trackInfo.last_altitude_ft) : "高度不明",
+    trackInfo.last_ground_speed_kt != null ? `${Math.round(trackInfo.last_ground_speed_kt)} kt` : null,
+    trackInfo.last_distance_km != null ? formatDistance(trackInfo.last_distance_km) : null,
+    formatTime(trackInfo.last_observed_at),
   ].filter(Boolean);
   tooltip.textContent = parts.join(" / ");
   tooltip.hidden = false;
@@ -460,13 +585,43 @@ function wireIsolateExit() {
   document.getElementById("exit-isolate").addEventListener("click", () => exitIsolate());
 }
 
+function wireModeButtons() {
+  const group = document.querySelector('.app-header__period[aria-label="表示モード"]');
+  if (!group) return;
+  const buttons = group.querySelectorAll(".period-btn");
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      buttons.forEach((b) => b.setAttribute("aria-pressed", "false"));
+      button.setAttribute("aria-pressed", "true");
+      if (button.dataset.mode === "live") {
+        enterLiveMode();
+      } else {
+        enterHistoryMode(Number(button.dataset.hours));
+      }
+    });
+  }
+}
+
+function wireFastModeToggle() {
+  const button = document.getElementById("fast-mode-toggle");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    fastModeEnabled = !fastModeEnabled;
+    button.setAttribute("aria-pressed", String(fastModeEnabled));
+    sendFastMode();
+  });
+}
+
 function wireSceneInteractions() {
   const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 
   handler.setInputAction((movement) => {
     const picked = viewer.scene.pick(movement.position);
-    if (Cesium.defined(picked) && picked.id && picked.id.icao) {
+    if (!Cesium.defined(picked) || !picked.id) return;
+    if (picked.id.icao) {
       openAircraftSidebar(picked.id.icao);
+    } else if (picked.id.trackInfo) {
+      openAircraftSidebar(picked.id.trackInfo.icao);
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
@@ -484,7 +639,9 @@ function wireSceneInteractions() {
   handler.setInputAction((movement) => {
     const picked = viewer.scene.pick(movement.endPosition);
     if (Cesium.defined(picked) && picked.id && picked.id.icao) {
-      showTooltip(picked.id.icao, movement.endPosition);
+      showLiveTooltip(picked.id.icao, movement.endPosition);
+    } else if (Cesium.defined(picked) && picked.id && picked.id.trackInfo) {
+      showTrackTooltip(picked.id.trackInfo, movement.endPosition);
     } else {
       hideTooltip();
     }
@@ -497,10 +654,21 @@ function wireSceneInteractions() {
   viewer.scene.canvas.addEventListener("mouseleave", hideTooltip);
 }
 
+function sendFastMode() {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ fast: fastModeEnabled }));
+  }
+}
+
 function connectBroadcast() {
+  if (socket) return; // already connected
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${protocol}//${window.location.host}/ws/aircraft-positions`);
+  socket.addEventListener("open", () => {
+    if (fastModeEnabled) sendFastMode();
+  });
   socket.addEventListener("message", (event) => {
+    if (mode !== "live") return; // guards against a message in flight at the exact moment of switching modes
     let data;
     try {
       data = JSON.parse(event.data);
@@ -542,6 +710,7 @@ async function main() {
   }
   renderVersion(config);
   setAltitudeBands(config.altitude_bands);
+  displayTimezone = config.display_timezone || "UTC";
 
   try {
     viewer = createViewer();
@@ -558,6 +727,8 @@ async function main() {
   wirePicker();
   wireFollowToggle();
   wireIsolateExit();
+  wireModeButtons();
+  wireFastModeToggle();
   wireSceneInteractions();
   connectBroadcast();
 }

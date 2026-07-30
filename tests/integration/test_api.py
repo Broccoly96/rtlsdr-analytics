@@ -438,6 +438,9 @@ async def test_tracks_returns_linestring_for_seeded_aircraft(
     assert feature["properties"]["last_distance_km"] == 50.0
     assert feature["geometry"]["type"] == "MultiLineString"
     assert len(feature["geometry"]["coordinates"][0]) == 3
+    # [lon, lat, altitude_ft] -- 3D so historical tracks render with real
+    # altitude in the 3D globe, not flattened to the ground.
+    assert feature["geometry"]["coordinates"][0][0] == [139.0, 35.0, 10000.0]
 
 
 # --- aircraft/recent ----------------------------------------------------

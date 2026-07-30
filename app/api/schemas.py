@@ -109,7 +109,7 @@ class RecentAircraftResponse(BaseModel):
 
 class GeoJSONMultiLineString(BaseModel):
     type: Literal["MultiLineString"] = "MultiLineString"
-    coordinates: list[list[list[float]]]  # [[[lon, lat], ...], ...] per segment
+    coordinates: list[list[list[float]]]  # [[[lon, lat, altitude_ft], ...], ...] per segment
 
 
 class TrackFeatureProperties(BaseModel):

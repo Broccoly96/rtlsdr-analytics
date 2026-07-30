@@ -1806,4 +1806,44 @@ Milestone V〜W(tar1090風サイドバー + 3D航跡)を実際に使ったユー
 ユーザー判断が必要な事項: なし。
 ```
 
+## 21. 3D航跡:過去航跡モード(1h/6h/24h) + ライブ更新1Hzモード(Milestone BB)
+
+3D航跡ページへの追加フィードバック2件を受けて実施。
+
+- **過去航跡モード**: フルスクリーン地図(`app/static/fullmap.html`/`app/static/js/map.js`)が既に持つ1h/6h/24hの期間ボタン+`GET /api/tracks?hours=`+ホバーポップアップの仕組みをそのまま3D航跡に流用する方針とした。調査で1点課題が判明: `GET /api/tracks`の座標は`[lon, lat]`のみ(高度なし)で、`GET /api/aircraft/{icao}/positions`(既存のライブ単体表示で使用)とは異なる。高度なしでは上昇・降下中の機体が真っ平らな線として描画され、ライブ3D航跡の隣で明らかに不自然に見えるため、`GET /api/tracks`のGeoJSON座標を`[lon, lat, altitude_ft]`の3要素に拡張(RFC 7946準拠、MapLibre GL JSは3要素目を無視するだけで動作に影響しない — 実機で2D地図/フルスクリーン地図が変更後も無エラーで描画されることを確認済み)。
+- **ライブ更新1Hzモード**: `WS /ws/aircraft-positions`の受信専用だったインバウンドチャンネル(`receive_text()`の戻り値を捨てているだけだった)を`{"fast": true/false}`のクライアント制御メッセージに転用。`PositionBroadcaster`が「1秒モードを希望している接続が1つでもあれば1秒、なければ既定値(`POLL_INTERVAL_SECONDS`)」で動作するよう拡張。収集側(`app/collector/service.py`)は完全に別プロセスのため、この変更はDB書き込み頻度に一切影響しない。**「ADS-Bの頻度的に毎秒は可能か」という質問に対し、この実機で`aircraft.json`を1秒間隔で複数回ポーリングし、readsb自身の`now`/`messages`フィールドが毎回確実に進んでいることを実際に確認**(推測ではなく実測に基づく回答)。
+
+### Milestone BB-1:過去航跡モード
+
+- [x] `app/db/queries/tracks.py`/`app/api/routers/tracks.py`: 座標を`[lon, lat, altitude_ft or 0]`の3要素に拡張。既存テスト更新+新規アサーション追加。
+- [x] `app/static/globe.html`: ヘッダーに表示モードボタン群(ライブ/1h/6h/24h、`fullmap.html`と同じ`.period-btn`規約)を新設。既存のライブ専用コントロール群に`id="live-controls"`を付与しモード切替時に一括表示/非表示。
+- [x] `app/static/js/globe.js`: `enterHistoryMode(hours)`/`enterLiveMode()`を新規実装。過去航跡モードではブロードキャストWSを切断し全ライブエンティティ(機体モデル+航跡)を解体、`GET /api/tracks`から取得した各セグメントを静的ポリラインとして描画(3D機体モデルなし、高度別色分けのみ)。ホバーで`map.js`の`describeFeature`と同じ内容(callsign/高度/速度/距離/観測時刻)のポップアップ、クリックで共有サイドバーを開く処理を追加(`picked.id.trackInfo`をライブ用の`picked.id.icao`と並行してチェック)。
+
+### Milestone BB-2:ライブ更新1Hzモード
+
+- [x] `app/api/routers/aircraft_positions.py`: `FAST_POLL_INTERVAL_SECONDS=1.0`定数、`PositionBroadcaster`に`_fast_clients`セットと`set_fast()`/`current_interval`プロパティを追加。WSハンドラが`receive_text()`の内容を実際にJSONとして解釈し`{"fast": true/false}`を処理するよう変更(不正なメッセージは無視、接続は切らない)。モジュールdocstringを実態に合わせて修正。
+- [x] `app/static/globe.html`/`globe.js`: 「更新頻度: 1秒」トグルボタンを追加、`socket.send(JSON.stringify({fast: enabled}))`で送信。再接続時(ライブモードに戻った時)も希望状態を保持し送信し直す。
+- [x] テスト追加(`tests/unit/test_aircraft_positions.py`): `PositionBroadcaster`のfast-client管理・`current_interval`選択ロジック。
+
+### セッション記録
+
+```text
+日付: 2026-07-31
+完了したMilestone/Task: Milestone BB-1(過去航跡モード)、BB-2(ライブ更新1Hzモード)
+変更した主要ファイル:
+  - BB-1: app/db/queries/tracks.py、app/api/routers/tracks.py、app/api/schemas.py、tests/integration/test_api.py、app/static/globe.html、app/static/js/globe.js
+  - BB-2: app/api/routers/aircraft_positions.py、tests/unit/test_aircraft_positions.py、app/static/globe.html、app/static/js/globe.js
+  - 全体: README.md、CLAUDE.md
+実行したテスト: pytest(フルスイート、291→295件)、ruff check
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - readsbの`aircraft.json`を1秒間隔で5回ポーリングし、`now`/`messages`フィールドが毎回確実に進むことを実測(1Hzモードの技術的な妥当性を推測ではなく実データで確認)。
+  - BB-1: 過去航跡モード(1h/6h/24h)で全機体の過去航跡が実際に高度変化を伴う3D形状(平坦でない)で描画されること、ホバーポップアップの内容、クリックでのサイドバー表示、ライブモードへの復帰(3D機体モデル・ライブコントロールが正しく戻る)を確認。座標拡張後もフルスクリーン地図/ダッシュボードの2D地図が無エラーで描画されることを確認。
+  - BB-2: WebSocketフレームの実際の受信間隔を計測し、既定時は約5秒間隔、「更新頻度: 1秒」有効時は約1.0-1.08秒間隔に変化、無効化で約5秒間隔に戻ることを実測で確認。
+残課題:
+  - なし(両マイルストーン完了・デプロイ・検証済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+
 

@@ -363,6 +363,23 @@ page (default 50%):
 - **カメラ自動追従** locks the camera onto whichever aircraft is currently
   isolated, following it as it moves (Cesium's built-in entity tracking —
   turns off automatically if you manually pan/zoom).
+- **更新頻度: 1秒** opts this connection into a faster live-update cadence
+  (the broadcast normally polls readsb once per `POLL_INTERVAL_SECONDS`,
+  same as the collector). This only changes how often *this page*
+  re-reads readsb's already-decoded state — it never touches the
+  collector or the database — and reverts automatically once no
+  connected tab still wants it. See
+  [Security & Privacy](#security--privacy) for why 1Hz is a reasonable
+  choice here.
+
+The header's mode selector (**ライブ**/**1h**/**6h**/**24h**) can switch
+away from the live view entirely to a historical-track mode: every
+aircraft's past track over the selected window (same `GET /api/tracks`
+endpoint and data the [flat map](#the-dashboard-) uses), drawn with real
+altitude (not flattened to the ground) but no 3D aircraft models — hover
+for a callsign/altitude/speed/distance/time popup, click to open the
+sidebar, same as live mode. Switching back to **ライブ** restores the
+live broadcast view.
 
 Drag to orbit, scroll to zoom, click the home icon to reset the view.
 Unlike the receiver-performance page's 3D reception-hemisphere chart
@@ -603,8 +620,19 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   sidebar's full tar1090-parity field set, and confined to this one
   page). A single shared `WS /ws/aircraft-positions` broadcast (one
   server-side readsb poll, fanned out to every connected client — never
-  one poll per
-  aircraft) drives it. Nothing is persisted (see `CLAUDE.md`).
+  one poll per aircraft) drives it, at `POLL_INTERVAL_SECONDS` by
+  default. Any connected tab may opt into a faster 1Hz cadence (the
+  page's "更新頻度: 1秒" button); this only changes how often *this
+  broadcaster* re-reads readsb's own already-decoded state, never the
+  collector's independent poll loop that controls what's actually written
+  to Postgres, so it carries no additional database load. It's also a
+  sensible cadence, not an arbitrary one: real airborne ADS-B position
+  squitters transmit roughly every 0.4–0.6s, and this deployment's own
+  `readsb` was confirmed (by polling it a few seconds apart and watching
+  its own `now`/`messages` counters advance every time) to genuinely
+  refresh its state at close to 1Hz — polling faster wouldn't reveal
+  materially newer data. The faster cadence reverts automatically once no
+  connected tab still wants it. Nothing is persisted (see `CLAUDE.md`).
 - The daily-report's aircraft-type chart is a third, narrower server-side
   exception: every ~15 minutes, `adsb-type-lookup` looks up any newly-seen
   aircraft's type against `api.adsbdb.com` and caches the result

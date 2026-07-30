@@ -54,14 +54,15 @@ readsb aircraft.json
                      Web UI
 ```
 
-Six Docker Compose services today (collector, retention, daily-rollup, and
-API share one image, built once from `Dockerfile` — see `compose.yaml`'s
-`command:` per service for which process each one runs):
+Seven Docker Compose services today (collector, retention, daily-rollup,
+type-lookup, and API share one image, built once from `Dockerfile` — see
+`compose.yaml`'s `command:` per service for which process each one runs):
 - `adsb-db` — PostgreSQL, never exposed on a host port
 - `adsb-migrate` — one-shot Alembic `upgrade head`, gates all app services
 - `adsb-collector` — polls `readsb`, normalizes, writes to Postgres
 - `adsb-retention` — deletes old `observations`/`ingestion_status` rows in batches
 - `adsb-daily-rollup` — computes the previous day's summary, sends the optional webhook
+- `adsb-type-lookup` — every ~15min, caches aircraft type/registration info against api.adsbdb.com
 - `adsb-api` — FastAPI, serves the UI and health checks
 
 Directory layout: `app/{api,collector,db,domain,static}/`, `migrations/`,

@@ -96,6 +96,26 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Shares app.dailyrollup's image but runs independently on a much
+  # shorter cadence -- see app/aircraft_lookup.py's module docstring for
+  # why this was split out of the once-a-day rollup cycle.
+  adsb-type-lookup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python3", "-m", "app.aircraft_lookup", "--loop", "--interval-minutes", "15"]
+    env_file: .env
+    depends_on:
+      adsb-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   adsb-api:
     build:
       context: .

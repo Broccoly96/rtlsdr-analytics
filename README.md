@@ -74,16 +74,16 @@ reference for AI coding agents working in this repo.
           ▼
    adsb-collector ──────► adsb-db (PostgreSQL)
                                 │
-             ┌──────────────────┼──────────────────┐
-             ▼                  ▼                   ▼
-      adsb-retention     adsb-daily-rollup      adsb-api (FastAPI)
-      (prunes old raw    (daily summaries,           │
-       observations)      optional webhook)           ▼
-                                              Web UI (static HTML/JS,
-                                              served by adsb-api)
+        ┌───────────────┬──────┼──────────────┬──────────────────┐
+        ▼                ▼      ▼              ▼                   ▼
+ adsb-retention  adsb-daily-rollup  adsb-type-lookup      adsb-api (FastAPI)
+ (prunes old raw  (daily summaries,  (aircraft type/reg.        │
+  observations)    optional webhook)  cache, every ~15min)       ▼
+                                                          Web UI (static HTML/JS,
+                                                          served by adsb-api)
 ```
 
-Six Docker Compose services, defined in [`compose.yaml`](compose.yaml):
+Seven Docker Compose services, defined in [`compose.yaml`](compose.yaml):
 
 | Service | Role |
 |---|---|
@@ -92,6 +92,7 @@ Six Docker Compose services, defined in [`compose.yaml`](compose.yaml):
 | `adsb-collector` | Polls `readsb`, normalizes records, writes to Postgres with exponential backoff on failure. |
 | `adsb-retention` | Deletes `observations`/`ingestion_status` rows older than `RAW_RETENTION_DAYS`, in small batches. |
 | `adsb-daily-rollup` | Once a day, computes the previous day's summary and (optionally) sends the webhook. |
+| `adsb-type-lookup` | Every ~15 minutes, caches type/registration info for any newly-seen aircraft against `api.adsbdb.com`. |
 | `adsb-api` | FastAPI app: serves the API and the static UI, on `APP_BIND_HOST:APP_PORT`. |
 
 ## Quick Start
@@ -293,12 +294,11 @@ once a day (after the previous day's rollup completes, around 00:10 in
 `DISPLAY_TIMEZONE`) to Slack or Discord automatically.
 
 The aircraft-type chart reads from a small self-populating cache
-(`aircraft_type_cache`): once a day, right after the rollup,
-`adsb-daily-rollup` looks up any aircraft it hasn't seen before against
-`api.adsbdb.com` and caches the result permanently (a type/registration
-essentially never changes). Brand-new aircraft won't show up in the chart
-until the *next* day's rollup cycle has run — the same "not populated
-until the first rollup" caveat as the rest of this page.
+(`aircraft_type_cache`): every ~15 minutes, `adsb-type-lookup` looks up
+any aircraft it hasn't seen before against `api.adsbdb.com` and caches
+the result permanently (a type/registration essentially never changes).
+A brand-new aircraft typically shows up in the chart within a lookup
+cycle or two, not the next calendar day.
 
 Manual invocation for backfilling a specific past day:
 
@@ -393,6 +393,7 @@ independently at the collector's own cadence, never persisted).
 docker compose logs -f adsb-collector
 docker compose logs -f adsb-api
 docker compose logs -f adsb-daily-rollup
+docker compose logs -f adsb-type-lookup
 ```
 
 **DB status** (read-only — sizes, row counts, growth, projected size, last
@@ -553,7 +554,7 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   browser. Nothing is persisted; this is scoped to one explicitly-selected
   aircraft, not a live map of everything (see `CLAUDE.md`).
 - The daily-report's aircraft-type chart is a third, narrower server-side
-  exception: once a day, `adsb-daily-rollup` looks up any newly-seen
+  exception: every ~15 minutes, `adsb-type-lookup` looks up any newly-seen
   aircraft's type against `api.adsbdb.com` and caches the result
   permanently in its own database — never per page view, never
   re-queried once cached.

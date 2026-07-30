@@ -1,23 +1,32 @@
 """Once-ever, permanently-cached aircraft type/registration lookups
 against api.adsbdb.com, backing the daily aircraft-type chart (Milestone
-S). Never called from any GET request path -- only from
-app/dailyrollup.py's --loop cycle, so a slow or unavailable upstream never
-affects page load latency. A type/registration essentially never changes
-once assigned, so a successful lookup is cached forever; a failed lookup
-(unknown hex, timeout) is cached too, so the same hex isn't re-queried on
-every single run -- only retried after a long cooldown, in case
-adsbdb.com's own data improves over time.
+S). Never called from any GET request path, so a slow or unavailable
+upstream never affects page load latency. A type/registration essentially
+never changes once assigned, so a successful lookup is cached forever; a
+failed lookup (unknown hex, timeout) is cached too, so the same hex isn't
+re-queried on every single run -- only retried after a long cooldown, in
+case adsbdb.com's own data improves over time.
+
+Runs as its own standalone --loop process (adsb-type-lookup, mirroring
+app/retention.py's --loop/--interval pattern) on a short interval, decoupled
+from app/dailyrollup.py's once-a-day cycle -- that cadence left the daily
+aircraft-type chart (which is supposed to reflect *today's* traffic) stuck
+showing only whatever handful of types had been looked up as of yesterday.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
+import signal
 from dataclasses import dataclass
 
 import asyncpg
 import httpx
 
+from app.config import Settings
+from app.db.pool import close_pool, create_pool
 from app.version import get_user_agent
 
 logger = logging.getLogger(__name__)
@@ -27,6 +36,7 @@ LOOKUP_TIMEOUT_SECONDS = 5.0
 REQUEST_DELAY_SECONDS = 0.5  # good-citizen pacing between requests
 FAILED_LOOKUP_RETRY_DAYS = 30
 DEFAULT_LOOKUP_LIMIT = 200
+DEFAULT_LOOP_INTERVAL_MINUTES = 15.0
 QUERY_TIMEOUT_SECONDS = 5.0
 
 _UPSERT_FOUND_SQL = """
@@ -135,3 +145,68 @@ async def refresh_uncached_aircraft_types(
 
     logger.info("aircraft_lookup: refreshed %d aircraft type cache entries", looked_up)
     return looked_up
+
+
+async def _run_once(settings: Settings, *, limit: int) -> int:
+    pool = await create_pool(settings.database_url, min_size=1, max_size=1)
+    try:
+        return await refresh_uncached_aircraft_types(pool, limit=limit)
+    finally:
+        await close_pool(pool)
+
+
+async def _run_loop(settings: Settings, *, limit: int, interval_minutes: float) -> None:
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stopping.set)
+
+    logger.info(
+        "aircraft_lookup: loop starting, interval=%.1f minutes, limit=%d",
+        interval_minutes,
+        limit,
+    )
+    while not stopping.is_set():
+        try:
+            looked_up = await _run_once(settings, limit=limit)
+            logger.info("aircraft_lookup: cycle complete, refreshed=%d", looked_up)
+        except Exception:
+            logger.exception("aircraft_lookup: run failed, will retry next cycle")
+        try:
+            await asyncio.wait_for(stopping.wait(), timeout=interval_minutes * 60)
+        except TimeoutError:
+            pass
+    logger.info("aircraft_lookup: loop stopped")
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    parser = argparse.ArgumentParser(
+        description="Look up and permanently cache aircraft type/registration info "
+        "against api.adsbdb.com for any ever-seen aircraft not cached yet."
+    )
+    parser.add_argument("--limit", type=int, default=DEFAULT_LOOKUP_LIMIT)
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Run continuously, sleeping --interval-minutes between passes, until SIGTERM/SIGINT",
+    )
+    parser.add_argument("--interval-minutes", type=float, default=DEFAULT_LOOP_INTERVAL_MINUTES)
+    args = parser.parse_args()
+
+    try:
+        settings = Settings()
+    except Exception as exc:
+        logger.error("invalid configuration: %s", exc)
+        raise SystemExit(1) from exc
+
+    if args.loop:
+        asyncio.run(_run_loop(settings, limit=args.limit, interval_minutes=args.interval_minutes))
+        return
+
+    looked_up = asyncio.run(_run_once(settings, limit=args.limit))
+    print(f"refreshed {looked_up} aircraft type cache entries")
+
+
+if __name__ == "__main__":
+    main()

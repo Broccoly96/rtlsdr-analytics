@@ -37,10 +37,13 @@ reference for AI coding agents working in this repo.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
-- No accounts, no auth, no telemetry, no calling home. Map tiles are the
-  only thing your browser fetches from the internet by default (see
-  [Configuration](#configuration-reference) to point that at a self-hosted
-  style instead).
+- No accounts, no auth, no telemetry. The server itself never calls out
+  anywhere. Your browser fetches from the internet only when you ask it
+  to: map tiles (always, to render the map — see
+  [Configuration](#configuration-reference) to point that at a
+  self-hosted style instead), and, only if you click an aircraft's "機体
+  情報を見る" link, registration/type from adsbdb.com and a photo from
+  Planespotters.net (see [Security & Privacy](#security--privacy)).
 
 ## Architecture
 
@@ -397,6 +400,18 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   calculations and are never returned at full precision by the API; the
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off
   by default (`MAP_SHOW_RECEIVER_MARKER=false`).
+- Clicking an aircraft's "機体情報を見る" (aircraft info) link fetches
+  registration/type from `api.adsbdb.com` and a photo from
+  `api.planespotters.net` **directly from your browser** — the server is
+  never involved and never sees which aircraft you looked up. This is
+  strictly opt-in per click; nothing is prefetched, and results aren't
+  cached server-side. It's the only outbound call this app makes besides
+  map tiles.
+- The daily-report's aircraft-type chart is the one exception where the
+  *server* calls out: once a day, `adsb-daily-rollup` looks up any
+  newly-seen aircraft's type against `api.adsbdb.com` and caches the
+  result permanently in its own database — never per page view, never
+  re-queried once cached.
 - `.env` is gitignored — never commit it. Only `.env.example` (with blank
   lat/lon and a placeholder password) is tracked.
 - Backups (`scripts/backup.sh`) are written `chmod 600` into a `chmod 700`

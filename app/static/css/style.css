@@ -424,6 +424,47 @@ button {
   padding: 8px;
 }
 
+/* --- aircraft info popup (aircraftinfo.js) -------------------------------- */
+
+.aircraft-info-trigger {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline dotted;
+}
+
+.aircraft-info {
+  margin-top: 4px;
+  padding: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  max-width: 260px;
+}
+
+.aircraft-info__meta {
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.aircraft-info__photo {
+  display: block;
+  margin-top: 6px;
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.aircraft-info__credit {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
 /* --- map popup ------------------------------------------------------------ */
 
 /* MapLibre's default popup keeps its own white background regardless of

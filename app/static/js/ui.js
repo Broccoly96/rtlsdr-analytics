@@ -3,6 +3,7 @@
 // (callsigns/ICAOs are externally-sourced strings) -- always textContent.
 
 import { api } from "./api.js";
+import { createAircraftInfoTrigger, isAnyAircraftInfoPanelOpen } from "./aircraftinfo.js";
 
 // Matches the collector's default POLL_INTERVAL_SECONDS (5s) -- the
 // active-aircraft count can't actually change any faster than that, so
@@ -111,7 +112,7 @@ function renderRankingTable(tableId, entries, buildRow) {
 
 function distanceRankingRow(entry) {
   return [
-    entry.callsign || entry.icao,
+    createAircraftInfoTrigger(entry.icao, entry.callsign || entry.icao),
     `${entry.distance_km.toFixed(1)} km`,
     entry.altitude_ft != null ? `${Math.round(entry.altitude_ft)} ft` : "--",
     formatTime(entry.observed_at),
@@ -127,7 +128,7 @@ function renderRecentAircraft(rows) {
 
   for (const row of rows) {
     const tr = document.createElement("tr");
-    addCell(tr, row.callsign || row.icao);
+    addCell(tr, createAircraftInfoTrigger(row.icao, row.callsign || row.icao));
     addCell(tr, formatTime(row.first_seen_at));
     addCell(tr, formatTime(row.last_seen_at));
     tbody.appendChild(tr);
@@ -148,6 +149,12 @@ async function refreshStatusAndRankings() {
       if (textEl) textEl.textContent = "APIエラー";
     }
   }
+
+  // Skip rebuilding these tables while the user has an aircraft-info panel
+  // open (opened from one of these very rows) -- a full rebuild on every
+  // 5s poll would otherwise yank the open panel away mid-read and discard
+  // its already-fetched data. Status cards above keep refreshing regardless.
+  if (isAnyAircraftInfoPanelOpen()) return;
 
   try {
     const [rankings, recent] = await Promise.all([

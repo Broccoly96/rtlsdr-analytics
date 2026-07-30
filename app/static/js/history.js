@@ -8,6 +8,7 @@
 
 import { api } from "./api.js";
 import { ui } from "./ui.js";
+import { createAircraftInfoTrigger } from "./aircraftinfo.js";
 
 const FAVORITES_KEY = "adsb-analytics:favorites";
 
@@ -122,6 +123,7 @@ async function renderDetail(icao) {
       createFavoriteToggle(history.icao, () => renderDetail(icao))
     );
     content.appendChild(titleRow);
+    content.appendChild(createAircraftInfoTrigger(history.icao, "機体情報・写真を見る"));
 
     const cards = document.createElement("section");
     cards.className = "status-cards";

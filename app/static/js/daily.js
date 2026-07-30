@@ -5,6 +5,7 @@
 // dedicated comparison endpoint, matching this API's GET-only philosophy.
 
 import { api } from "./api.js";
+import { createAircraftInfoTrigger } from "./aircraftinfo.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -53,7 +54,7 @@ function renderHighlight(elId, icao, valueText) {
   }
   const icaoEl = document.createElement("div");
   icaoEl.className = "daily-highlight__icao";
-  icaoEl.textContent = icao;
+  icaoEl.appendChild(createAircraftInfoTrigger(icao));
   const metaEl = document.createElement("div");
   metaEl.className = "daily-highlight__meta";
   metaEl.textContent = valueText;

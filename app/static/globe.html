@@ -42,24 +42,38 @@
       <h1>3D航跡</h1>
       <span class="app-header__version" id="app-version"></span>
     </div>
-    <div class="app-header__period" role="group" aria-label="機体選択">
-      <select id="aircraft-select">
-        <option value="">機体を選択…</option>
-      </select>
+    <div class="app-header__period" role="group" aria-label="表示機体">
+      <div class="globe-picker-wrapper">
+        <button type="button" id="aircraft-picker-toggle" class="period-btn" aria-expanded="false">
+          機体選択 ▾
+        </button>
+        <div class="globe-picker" id="aircraft-picker" hidden>
+          <div class="globe-picker__header">
+            <button type="button" id="aircraft-picker-all" class="globe-picker__link">すべて表示</button>
+            <button type="button" id="aircraft-picker-none" class="globe-picker__link">すべて非表示</button>
+          </div>
+          <div class="globe-picker__list" id="aircraft-picker-list"></div>
+        </div>
+      </div>
       <button type="button" id="aircraft-refresh" class="period-btn">一覧更新</button>
+      <button type="button" id="follow-toggle" class="period-btn" aria-pressed="false">カメラ自動追従</button>
+      <button type="button" id="exit-isolate" class="period-btn" hidden>全機体表示に戻す</button>
     </div>
   </header>
 
   <p class="panel__empty" style="padding: 0;">
     衛星画像(<a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>,
-    Maxar, Earthstar Geographics, GIS User Community)を背景に、選んだ機体の過去の軌跡(実線)と
-    ライブ更新中の現在位置を3次元空間に表示します。ドラッグで回転、スクロールでズームできます。
+    Maxar, Earthstar Geographics, GIS User Community)を背景に、現在受信中の全機体を高度別に色分けして
+    3次元空間にライブ表示します。機体をクリックすると詳細サイドパネルを開きます。Shift+クリックで
+    その機体だけを表示し、過去の軌跡(実線)を重ねて表示します(もう一度Shift+クリックか
+    「全機体表示に戻す」で解除)。ドラッグで回転、スクロールでズームできます。
     データはサーバーに保存されません。
   </p>
 
   <section class="main-area" style="grid-template-columns: 1fr;">
     <div class="panel">
       <div id="cesium-container" style="width: 100%; height: 75vh; border-radius: 6px; overflow: hidden;"></div>
+      <div id="globe-tooltip" class="globe-tooltip" hidden></div>
       <div id="globe-error" class="panel__error" hidden></div>
     </div>
   </section>

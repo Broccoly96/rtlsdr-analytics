@@ -48,10 +48,13 @@ reference for AI coding agents working in this repo.
   readsb's raw Beast-format stream with a simple decode (downlink format,
   ICAO24, ADS-B message-type category), for learning the frame structure.
   Nothing shown here is stored anywhere.
-- **3D flight globe** (`/static/globe.html`) — pick an aircraft and see its
-  track in a real 3D scene (satellite imagery ground, CesiumJS), drag to
-  orbit around it. Shows the last several hours of history immediately,
-  then keeps extending the track live while the page is open.
+- **3D flight globe** (`/static/globe.html`) — every currently-live aircraft
+  shown at once in a real 3D scene (satellite imagery ground, CesiumJS),
+  color-coded by altitude band, drag to orbit. Shift+click one aircraft to
+  isolate it and see its historical track extend live; hover for a
+  callsign/altitude/speed tooltip; a checkbox picker filters which
+  aircraft are shown; an optional camera-follow mode locks onto whichever
+  aircraft is isolated.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
@@ -331,20 +334,33 @@ it reconnects automatically if the connection drops.
 
 ### 3D flight globe (`/static/globe.html`)
 
-Pick an aircraft from the dropdown (recently-seen aircraft, refreshable,
-labeled by callsign) and see it in a real 3D scene: satellite imagery on
-the ground (ArcGIS World Imagery), its last several hours of track drawn
-immediately as a cyan line, and a marker that keeps moving live while the
-page stays open (the same `WS /ws/aircraft/{icao}` connection the
-[aircraft detail sidebar](#aircraft-detail-sidebar) uses) — the live
-track extends in yellow, picking up exactly where the historical track
-left off. Click the marker to open the same shared aircraft detail
-sidebar every other page uses. Drag to orbit, scroll to zoom, click the
-home icon to reset the view. Unlike the receiver-performance page's 3D
-reception-hemisphere chart (which is `echarts-gl`, an aggregate view of
-reception range), this is [CesiumJS](https://github.com/CesiumGS/cesium)
-— built for exactly this "one real aircraft's real track in a real 3D
-scene" use case. Nothing here is persisted.
+By default, every currently-live aircraft is shown at once as a
+color-coded dot (same altitude bands/colors as the 2D map) over satellite
+imagery (ArcGIS World Imagery), streamed from a single shared
+`WS /ws/aircraft-positions` broadcast connection (one server-side readsb
+poll, fanned out to every open tab — see
+[Security & Privacy](#security--privacy)):
+
+- **Click** a dot to open the same shared aircraft detail sidebar every
+  other page uses.
+- **Shift+click** a dot to isolate it: every other aircraft is hidden and
+  its historical track (last several hours, drawn as a cyan line) appears
+  immediately, with a yellow line extending live from exactly where the
+  historical track left off. Shift+click it again, or use the
+  "全機体表示に戻す" button, to return to the full view.
+- **Hover** a dot for a callsign/altitude/speed tooltip.
+- **機体選択** opens a checkbox picker to show/hide specific aircraft
+  (defaults to all shown); **一覧更新** refreshes it against recently-seen
+  aircraft.
+- **カメラ自動追従** locks the camera onto whichever aircraft is currently
+  isolated, following it as it moves (Cesium's built-in entity tracking —
+  turns off automatically if you manually pan/zoom).
+
+Drag to orbit, scroll to zoom, click the home icon to reset the view.
+Unlike the receiver-performance page's 3D reception-hemisphere chart
+(which is `echarts-gl`, an aggregate view of reception range), this is
+[CesiumJS](https://github.com/CesiumGS/cesium) — built for exactly this
+"real aircraft, real 3D scene" use case. Nothing here is persisted.
 
 ### Settings (`/static/settings.html`)
 
@@ -561,11 +577,17 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   the feature actually works now.
 - The **aircraft detail sidebar**'s live section
   (`WS /ws/aircraft/{icao}`) is a second, separate real-time exception:
-  while the sidebar (or the 3D flight globe) is open for a specific
-  aircraft, the server independently polls your own `readsb` instance at
-  the same cadence as the collector and streams the result to your
-  browser. Nothing is persisted; this is scoped to one explicitly-selected
-  aircraft, not a live map of everything (see `CLAUDE.md`).
+  while the sidebar is open for a specific aircraft, the server
+  independently polls your own `readsb` instance at the same cadence as
+  the collector and streams the result to your browser. Nothing is
+  persisted; this is scoped to one explicitly-selected aircraft.
+- The **3D flight globe**'s default view is a third, broader exception:
+  it genuinely is a live map of every currently-received aircraft's
+  position/callsign/altitude/track/speed (not the sidebar's full
+  tar1090-parity field set, and confined to this one page). A single
+  shared `WS /ws/aircraft-positions` broadcast (one server-side readsb
+  poll, fanned out to every connected client — never one poll per
+  aircraft) drives it. Nothing is persisted (see `CLAUDE.md`).
 - The daily-report's aircraft-type chart is a third, narrower server-side
   exception: every ~15 minutes, `adsb-type-lookup` looks up any newly-seen
   aircraft's type against `api.adsbdb.com` and caches the result

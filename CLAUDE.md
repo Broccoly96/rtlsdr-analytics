@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository currently contains only `PLAN.md` (written in Japanese) — no source code, README, build config, or tests exist yet. `PLAN.md` is the authoritative implementation plan; **read it in full before starting work**, and update its task checkboxes (`- [ ]`) as work progresses. There are no build, lint, or test commands to run yet — establishing them is literally Task 1 in the plan. Do not invent commands or a directory layout that contradicts `PLAN.md`; treat the structure below as the target, not something already in place.
+Phase 0 and Phase 1 are both implemented, plus a set of Phase 2 extensions
+beyond the original MVP scope (receiver-performance page, daily
+report/webhook, aircraft revisit history, heatmap, CSV export — see
+`README.md` for the current feature list). `PLAN.md` (written in Japanese)
+is the authoritative design record and session log; **read it in full
+before starting non-trivial work**, and update its task checkboxes
+(`- [ ]`) as work progresses. Build/lint/test commands exist today: `make
+install`, `make lint`, `make fmt`, `make test` (see `Makefile`). Do not
+invent commands or a directory layout that contradicts what's actually in
+the repo; treat the structure below as broadly accurate, not aspirational.
 
 ## What this project is
 
@@ -43,12 +52,22 @@ readsb aircraft.json
                      Web UI
 ```
 
-Three Docker Compose services (collector and API may share an image on small servers, but keep the processes/responsibilities separate):
+Six Docker Compose services today (collector, retention, daily-rollup, and
+API share one image, built once from `Dockerfile` — see `compose.yaml`'s
+`command:` per service for which process each one runs):
+- `adsb-db` — PostgreSQL, never exposed on a host port
+- `adsb-migrate` — one-shot Alembic `upgrade head`, gates all app services
 - `adsb-collector` — polls `readsb`, normalizes, writes to Postgres
+- `adsb-retention` — deletes old `observations`/`ingestion_status` rows in batches
+- `adsb-daily-rollup` — computes the previous day's summary, sends the optional webhook
 - `adsb-api` — FastAPI, serves the UI and health checks
-- `adsb-db` — PostgreSQL
 
-Planned directory layout: `app/{api,collector,domain,static,templates}/`, `migrations/`, `scripts/` (`check_environment.sh`, `probe_readsb.py`, `backup.sh`, `restore_test.sh`), `tests/{fixtures,unit,integration}/`, `reports/`.
+Directory layout: `app/{api,collector,db,domain,static}/`, `migrations/`,
+`scripts/` (`check_environment.sh`, `probe_readsb.py`, `backup.sh`,
+`restore_test.sh`, `db_status.py`, `reset_db.py`), `tests/{fixtures,unit,
+integration,contract}/`, `reports/`. `app/templates/` exists but is empty
+and unused — the UI is plain static HTML/JS (`app/static/`), not
+server-rendered templates.
 
 ### Data flow / collector rules
 - Poll `aircraft.json` on a short interval (default 5s) with a short HTTP timeout; use exponential backoff on failure and return to normal cadence on recovery — never hammer `readsb` with retries.

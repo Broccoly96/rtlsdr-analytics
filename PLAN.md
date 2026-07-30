@@ -1699,3 +1699,62 @@ Milestone Qのクリック方式では1日分の集計ができないため、�
 ユーザー判断が必要な事項: なし。
 ```
 
+## 19. バグ修正 + 単位設定 + マルチ機体3D航跡(Milestone X〜Z)
+
+Milestone V〜W(tar1090風サイドバー + 3D航跡)を実際に使ったユーザーからの追加フィードバック(バグ5件 + 新機能案2件)を受けて実施。着手前に問題を実際に再現・根本原因を特定した上でユーザーと議論(AskUserQuestion)し、以下を決定:
+
+- **言語選択**: 今回は見送り(全ページ・全JSファイルの文字列をi18nキー化する大きな別作業になるため)。単位設定(距離km/nm、高度ft/m)のみ実装。
+- **マルチ機体3Dのアーキテクチャ**: 現状の同時受信数(~14機程度)ならデフォルト全機体表示は視覚的に問題ないと判断。既存の「選択機体ごとに独立ポーリングするWebSocket」方式(1機体なら問題ない)から、**全機体一括配信の共有WebSocket1本**に変更(readsbへの冗長ポーリングを回避)。
+- **モダンな便利機能**: ユーザー提案の4件(高度による色分け、Shift+クリックで単体表示、ホバーツールチップ、カメラ自動追従)を全て採用。
+
+### Milestone X:バグ修正(新規アーキテクチャなし)
+
+- [x] 3D航跡のマーカー/ラベルがICAO16進コード表示だったのをcallsign表示に変更(`<select>`のoptionに保持していたcallsignを流用)。
+- [x] 3D航跡でライブ更新中の航跡(黄色線)が伸びないバグを修正 — 根本原因はWSハンドラが`liveEntity.position`を更新するだけで、ポリラインへの追記が一切なかったこと(コードレビューで確認済み)。`Cesium.CallbackProperty`で成長する配列を参照するポリラインに変更し、過去軌跡(シアン)の終端からライブ軌跡(黄色)が実際に伸びることを実環境で確認。
+- [x] 3D航跡で機体クリック時にサイドバーを開くよう追加(`Cesium.ScreenSpaceEventHandler` + `scene.pick`、既存の共有サイドバーを流用)。
+- [x] 今日の空の最遠/最接近/最多観測をICAOコードからcallsign表示に変更 — `app/db/queries/period.py`の`compute_daily_summary`が読む3クエリにcallsignを追加(`traffic_day`テーブル側=過去日分は対象外、スキーマ変更なし)。
+- [x] 今日の空の機種別機数チャートがTop3で止まり動的更新もされないバグを調査 — 根本原因は`aircraft_type_cache`が1日1回(`adsb-daily-rollup`の`--loop`サイクル内)しか更新されないアーキテクチャのミスマッチと判明(クエリ自体は正しい)。`app/aircraft_lookup.py`を独立した`--loop --interval-minutes`CLIに分離し、新規`adsb-type-lookup`サービス(15分間隔)として実行。実環境で3種類→10種類にチャートが実際に増えることを確認。
+
+### Milestone Y:設定タブ(単位のみ、言語は見送り)
+
+- [x] `app/static/settings.html` + `app/static/js/settings.js`新規: 距離単位(km/海里)・高度単位(ft/m)を`localStorage`のみで保存(Milestone Oのfavorites方式と同じくサーバー関与なし)。
+- [x] 共有`app/static/js/units.js`新規: `formatDistance`/`formatAltitude`/`toDisplayDistance`(軸データ自体を変換する必要がある箇所用)。
+- [x] 既存の距離/高度表示箇所全てに配線: `ui.js`のランキング行、`daily.js`のハイライトタイル、`aircraftinfo.js`のサイドバー、`map.js`のポップアップ、`receiver.js`のチャート(方位別受信距離、高度帯別受信距離、RSSI距離ヒートマップ、3D受信範囲半球) — ツールチップ文字列だけでなく系列データ自体も変換し、軸目盛りとツールチップの単位が食い違わないようにした。
+- [x] 全ページのnavに設定リンク追加。
+- [x] 実環境でnm/mに切り替え、ダッシュボード・今日の空・サイドバー・受信性能チャート(軸ラベル含む)が正しく変換されることをPlaywrightで確認、全8ページでconsole errorゼロ。
+
+### Milestone Z:マルチ機体ライブ3D + モダンな操作性
+
+- [x] **Z-1**: `WS /ws/aircraft-positions`(`app/api/routers/aircraft_positions.py`新規)を追加 — アプリのlifespanで起動/停止される単一のバックグラウンドタスクがreadsbを1回ポーリングし、接続中の全クライアントに同じスナップショットを配信。既存の`WS /ws/aircraft/{icao}`(サイドバー用、tar1090相当の詳細フィールド)は無変更。
+- [x] **Z-2**: `app/static/js/globe.js`を全面刷新:
+  - デフォルトで現在受信中の全機体を高度帯別の色分けドットで表示(`/api/config`の`altitude_bands`を2D地図と共通利用)。
+  - 機体クリックで共有サイドバーを開く。
+  - Shift+クリックで単体表示に切替(他機体を非表示にし、過去軌跡+ライブ延伸軌跡を表示)、再度Shift+クリックか「全機体表示に戻す」ボタンで解除。
+  - ホバーでcallsign/高度/速度のツールチップ表示(配信済みデータのみ、追加リクエストなし)。
+  - 「機体選択」チェックボックス式ポップオーバーで表示機体を絞り込み(デフォルト全機体表示)。
+  - 「カメラ自動追従」トグルでCesium組み込みの`trackedEntity`を単体表示中の機体にロック(ユーザーが手動でパン/ズームすると自動解除、`viewer.trackedEntityChanged`で追従ボタンの状態も同期)。
+  - Cesiumの初期カメラは地球全体を映す仕様のため、初回のライブデータ受信時に受信機体の重心へ自動フライト(以降はユーザー操作を妨げないよう1回のみ)。
+- [x] `CLAUDE.md`/`README.md`の「リアルタイム追跡はしない」記述を実態に合わせて修正 — 3D航跡のデフォルト表示は実質的に「全機体のライブマップ」になったため、意図的な例外として正直に3件目として明記(tar1090の全フィールドではない点、この1ページに限定される点は維持)。
+
+### セッション記録
+
+```text
+日付: 2026-07-30
+完了したMilestone/Task: Milestone X(バグ修正5件)、Milestone Y(設定タブ・単位)、Milestone Z(マルチ機体ライブ3D航跡)
+変更した主要ファイル:
+  - Milestone X: app/db/queries/period.py、app/api/schemas.py、app/static/js/daily.js、app/aircraft_lookup.py(--loopのCLI化)、app/dailyrollup.py(型キャッシュ更新の分離)、compose.yaml(adsb-type-lookup新規)、app/static/js/globe.js
+  - Milestone Y: app/static/settings.html(新規)、app/static/js/settings.js(新規)、app/static/js/units.js(新規)、ui.js、daily.js、aircraftinfo.js、map.js、receiver.js、全ページのnav
+  - Milestone Z: app/api/routers/aircraft_positions.py(新規)、app/api/main.py(lifespanでbroadcaster起動)、app/static/js/globe.js(全面刷新)、app/static/globe.html、app/static/css/style.css
+  - 全体: README.md、CLAUDE.md
+実行したテスト: pytest(フルスイート、282→288件)、ruff check
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - Milestone X: callsign表示・ライブ軌跡延伸・クリックでサイドバー表示・今日の空のcallsign表示・機種別チャートが3種類→10種類に増えることをPlaywright/curlで確認。
+  - Milestone Y: nm/m切り替え後、ダッシュボード・今日の空・サイドバー・受信性能チャート(軸ラベル含む)の全てが正しく変換されることを確認。
+  - Milestone Z: Cesiumの`scene.pick()`を直接呼び出して実機体の正確な画面座標を取得する手法で、実際に動いている機体へのクリック/Shift+クリックを確実に再現し、デフォルト全機体表示・色分け・ピッカーでの表示切替・クリックでのサイドバー表示・単体表示への切替と解除・ホバーツールチップ・カメラ追従の全てを確認。ホバーツールチップがCanvas外にマウスが出ると消えない実バグを発見しその場で修正(`mouseleave`リスナー追加)。全8ページでconsole errorゼロ。
+残課題:
+  - なし(3マイルストーン全て完了・デプロイ・検証済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+

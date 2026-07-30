@@ -19,17 +19,21 @@ reference for AI coding agents working in this repo.
 ## Features
 
 - **Dashboard** (`/`) — live ingestion status, currently-received /
-  position-acquired counts, a track map with an optional density heatmap,
-  a traffic chart (day/week/month granularity, CSV export), and
-  hour-of-day / altitude / speed distribution charts, plus
-  farthest/closest/recently-observed tables.
+  position-acquired counts, a track map with an optional density heatmap
+  (also available full-screen at `/static/fullmap.html`), a traffic chart
+  (day/week/month granularity, CSV export), and hour-of-day / altitude /
+  speed distribution charts, plus farthest/closest/recently-observed
+  tables — click an aircraft's callsign anywhere in the app for its
+  registration/type/photo (see [Security & Privacy](#security--privacy)).
 - **Receiver performance** (`/static/receiver.html`) — how far you're
   actually receiving, broken down by compass bearing and by altitude band,
-  plus a message-rate/position-rate trend over 24h/7d/30d.
+  a distance-vs-signal-strength (RSSI) heatmap, plus a message-rate/
+  position-rate trend over 24h/7d/30d.
 - **Daily report** (`/static/daily.html`) — one day's summary (unique
   aircraft, max concurrent, message count, farthest/closest/most-observed)
-  with day-over-day and same-weekday-last-week comparisons. Optionally
-  posted once a day to a Slack- or Discord-compatible webhook.
+  with day-over-day and same-weekday-last-week comparisons, plus a top-10
+  aircraft-type chart. Optionally posted once a day to a Slack- or
+  Discord-compatible webhook.
 - **Aircraft revisit history** (`/static/history.html`) — which aircraft
   come back the most, with a per-aircraft first/last-seen, pass count, and
   callsign history; supports a browser-local (no account, no server write)
@@ -216,24 +220,39 @@ erroring, or has no data yet. Four cards show currently-received aircraft,
 aircraft with a position, unique aircraft in the last 24h, and time since
 the last successful fetch. Below that: a track map (1h/6h/24h, with an
 optional density heatmap filterable by altitude band / hour of day / day
-of week), a traffic chart with day/week/month zoom and a CSV download
-link, distribution charts (by hour of day, altitude, speed), and
-farthest/closest/recently-observed tables. Everything refreshes
-automatically and pauses while the browser tab is hidden.
+of week — also available full-screen at `/static/fullmap.html`), a
+traffic chart with day/week/month zoom and a CSV download link,
+distribution charts (by hour of day, altitude, speed), and
+farthest/closest/recently-observed tables. Click any aircraft's callsign
+to look up its registration/type and photo (see
+[Security & Privacy](#security--privacy)). Everything refreshes
+automatically (every 5s for status/rankings, 30s for the map/traffic) and
+pauses while the browser tab is hidden.
 
 ### Receiver performance (`/static/receiver.html`)
 
 Answers "how good is my antenna/siting, really?" — a bearing-vs-range
-chart (max distance received per compass sector) and an altitude-vs-range
-chart, plus a message-count/position-rate trend, over 24h/7d/30d.
+chart (max distance received per compass sector), an altitude-vs-range
+chart, a distance-vs-RSSI heatmap (how signal strength falls off with
+range), plus a message-count/position-rate trend, over 24h/7d/30d.
 
 ### Daily report (`/static/daily.html`)
 
 One calendar day's numbers with comparisons: vs. yesterday and vs. the
-same weekday last week. If you enable the webhook
-(`NOTIFY_WEBHOOK_ENABLED=true` / `NOTIFY_WEBHOOK_URL=...`), this same
-summary is posted once a day (after the previous day's rollup completes,
-around 00:10 in `DISPLAY_TIMEZONE`) to Slack or Discord automatically.
+same weekday last week, plus a "top 10 aircraft type" chart. If you
+enable the webhook (`NOTIFY_WEBHOOK_ENABLED=true` /
+`NOTIFY_WEBHOOK_URL=...`), the summary (not the type chart) is posted
+once a day (after the previous day's rollup completes, around 00:10 in
+`DISPLAY_TIMEZONE`) to Slack or Discord automatically.
+
+The aircraft-type chart reads from a small self-populating cache
+(`aircraft_type_cache`): once a day, right after the rollup,
+`adsb-daily-rollup` looks up any aircraft it hasn't seen before against
+`api.adsbdb.com` and caches the result permanently (a type/registration
+essentially never changes). Brand-new aircraft won't show up in the chart
+until the *next* day's rollup cycle has run — the same "not populated
+until the first rollup" caveat as the rest of this page.
+
 Manual invocation for backfilling a specific past day:
 
 ```bash
@@ -275,9 +294,11 @@ running.
 | `GET /api/receiver/bearing-range` | `hours` | Max reception distance per compass sector |
 | `GET /api/receiver/altitude-range` | `hours` | Max reception distance per altitude band |
 | `GET /api/receiver/reception` | `hours` | Message-count / position-rate trend |
+| `GET /api/receiver/rssi-by-distance` | `hours` | Reception-strength (RSSI) vs. distance heatmap cells |
 | `GET /api/distribution/hour-of-day` | `days` | Unique aircraft per hour of day |
 | `GET /api/distribution/altitude` | `hours` | Altitude histogram |
 | `GET /api/distribution/speed` | `hours` | Ground-speed histogram |
+| `GET /api/distribution/aircraft-type` | `day`, `limit` | Top aircraft types for a day (from `aircraft_type_cache`) |
 | `GET /api/heatmap` | `hours`, `altitude_band`, `hour_of_day`, `day_of_week` | Position-density grid cells |
 
 ## Operations

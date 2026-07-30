@@ -233,6 +233,18 @@ class FrequentAircraftResponse(BaseModel):
     aircraft: list[FrequentAircraftEntryResponse]
 
 
+class AircraftTypeCountResponse(BaseModel):
+    type_code: str
+    type_name: str | None
+    aircraft_count: int
+
+
+class AircraftTypeDistributionResponse(BaseModel):
+    day: date
+    limit: int
+    types: list[AircraftTypeCountResponse]
+
+
 class GridCellResponse(BaseModel):
     lat: float
     lon: float

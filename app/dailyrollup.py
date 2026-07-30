@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 import asyncpg
 
+from app.aircraft_lookup import refresh_uncached_aircraft_types
 from app.config import Settings
 from app.db.pool import close_pool, create_pool
 from app.db.queries.period import compute_daily_summary, get_traffic_day
@@ -261,6 +262,16 @@ async def _run_loop(settings: Settings, *, hour: int, minute: int) -> None:
                         await send_daily_notification(settings, summary)
             except Exception:
                 logger.exception("dailyrollup: run failed, will retry next cycle")
+
+            # Best-effort, independent of the rollup above: a lookup
+            # failure (or the whole batch failing) must never break the
+            # rollup or its webhook, and vice versa.
+            try:
+                await refresh_uncached_aircraft_types(pool)
+            except Exception:
+                logger.exception(
+                    "dailyrollup: aircraft type cache refresh failed, will retry next cycle"
+                )
     finally:
         await close_pool(pool)
     logger.info("dailyrollup: loop stopped")

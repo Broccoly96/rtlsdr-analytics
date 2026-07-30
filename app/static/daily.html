@@ -52,6 +52,17 @@
 
   <p class="traffic-deltas" id="daily-deltas" aria-live="polite"></p>
 
+  <section class="main-area" style="grid-template-columns: 1fr;">
+    <div class="panel panel--chart">
+      <div class="panel__header" id="aircraft-type-heading">機種別 機数 (Top10)</div>
+      <div id="aircraft-type-chart" class="chart-container" role="img" aria-labelledby="aircraft-type-heading"></div>
+      <div id="aircraft-type-chart-error" class="panel__error" hidden></div>
+      <p class="panel__empty" id="aircraft-type-empty" hidden>
+        機種データはまだありません(adsb-daily-rollupが未実行の機体は集計対象外です)
+      </p>
+    </div>
+  </section>
+
   <section class="bottom-area" aria-label="今日のランキング">
     <div class="panel">
       <div class="panel__header">最遠</div>
@@ -73,6 +84,7 @@
 
 </div>
 
+<script src="/static/js/vendor/echarts/echarts.min.js"></script>
 <script type="module" src="/static/js/daily.js"></script>
 </body>
 </html>

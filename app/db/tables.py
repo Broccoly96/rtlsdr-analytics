@@ -15,4 +15,5 @@ ALL_TABLES: tuple[str, ...] = (
     "traffic_day",
     "aircraft_day",
     "aircraft_callsign_history",
+    "aircraft_type_cache",
 )

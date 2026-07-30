@@ -6,6 +6,7 @@
 
 import { api } from "./api.js";
 import { createAircraftInfoTrigger } from "./aircraftinfo.js";
+import { axisStyle, baseChartOption, CHART_COLORS, createChart } from "./chart.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -61,6 +62,26 @@ function renderHighlight(elId, icao, valueText) {
   el.replaceChildren(icaoEl, metaEl);
 }
 
+function createAircraftTypeChart(containerId) {
+  return createChart(containerId, "aircraft-type-chart-error", (data) => ({
+    ...baseChartOption(),
+    tooltip: { trigger: "axis" },
+    xAxis: {
+      type: "category",
+      data: data.types.map((t) => t.type_code),
+      ...axisStyle(),
+    },
+    yAxis: { type: "value", minInterval: 1, ...axisStyle() },
+    series: [
+      {
+        type: "bar",
+        data: data.types.map((t) => t.aircraft_count),
+        itemStyle: { color: CHART_COLORS.seriesA },
+      },
+    ],
+  }));
+}
+
 async function main() {
   let config;
   try {
@@ -71,8 +92,12 @@ async function main() {
   }
   renderVersion(config);
 
+  const aircraftTypeChart = createAircraftTypeChart("aircraft-type-chart");
+  let todayDay = null;
+
   try {
     const today = await api.getTrafficDailySummary();
+    todayDay = today.day;
     setText("summary-day", today.day);
     setText("card-unique", String(today.unique_aircraft_count));
     setText("card-concurrent", String(today.max_concurrent_count));
@@ -109,6 +134,18 @@ async function main() {
     }
   } catch (err) {
     console.error("daily summary refresh failed", err);
+  }
+
+  try {
+    const aircraftTypes = await api.getAircraftTypeDistribution(todayDay, 10);
+    const hasData = aircraftTypes.types.length > 0;
+    const chartContainer = document.getElementById("aircraft-type-chart");
+    const emptyEl = document.getElementById("aircraft-type-empty");
+    if (chartContainer) chartContainer.hidden = !hasData;
+    if (emptyEl) emptyEl.hidden = hasData;
+    if (hasData) aircraftTypeChart.setData(aircraftTypes);
+  } catch (err) {
+    console.error("aircraft type distribution refresh failed", err);
   }
 }
 

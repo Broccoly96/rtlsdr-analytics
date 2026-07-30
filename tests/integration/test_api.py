@@ -741,6 +741,156 @@ async def test_hour_of_day_with_seeded_data(postgres_url, client: AsyncClient) -
     assert hour5["unique_aircraft_count"] == 1
 
 
+async def _insert_aircraft_type_cache(
+    postgres_url: str, icao: str, type_code: str, type_name: str = "Airbus A330"
+) -> None:
+    conn = await asyncpg.connect(postgres_url)
+    try:
+        await conn.execute(
+            """
+            INSERT INTO aircraft_type_cache (icao, type_code, type_name, manufacturer)
+            VALUES ($1, $2, $3, 'Airbus')
+            """,
+            icao,
+            type_code,
+            type_name,
+        )
+    finally:
+        await conn.close()
+
+
+async def test_aircraft_type_distribution_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/distribution/aircraft-type")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["types"] == []
+
+
+async def test_aircraft_type_distribution_future_day_rejected(client: AsyncClient) -> None:
+    tomorrow = today_in_tz("Asia/Tokyo") + timedelta(days=1)
+    response = await client.get(
+        "/api/distribution/aircraft-type", params={"day": tomorrow.isoformat()}
+    )
+    assert response.status_code == 422
+
+
+async def test_aircraft_type_distribution_excludes_uncached_aircraft(
+    postgres_url, client: AsyncClient
+) -> None:
+    # An aircraft observed today but with no aircraft_type_cache row yet
+    # (cache not populated until the next adsb-daily-rollup cycle) must be
+    # excluded from the chart, not shown as an "unknown" bucket.
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10000.0,
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=50.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/distribution/aircraft-type")
+    assert response.json()["types"] == []
+
+
+async def test_aircraft_type_distribution_with_seeded_data(
+    postgres_url, client: AsyncClient
+) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        for icao in ("aaaaaa", "bbbbbb", "cccccc"):
+            await store.upsert_aircraft(icao, now, "TEST")
+            await store.insert_observation(
+                AircraftObservation(
+                    icao=icao,
+                    observed_at=now,
+                    callsign="TEST",
+                    lat=35.0,
+                    lon=139.0,
+                    altitude_ft=10000.0,
+                    ground_speed_kt=400.0,
+                    track_deg=90.0,
+                    vertical_rate_fpm=0.0,
+                    rssi=-20.0,
+                    distance_km=50.0,
+                    bearing_deg=45.0,
+                    source_age_seconds=0.5,
+                    reception_state=ReceptionState.POSITION_ACQUIRED,
+                )
+            )
+    finally:
+        await store.close()
+
+    await _insert_aircraft_type_cache(postgres_url, "aaaaaa", "A333")
+    await _insert_aircraft_type_cache(postgres_url, "bbbbbb", "A333")
+    await _insert_aircraft_type_cache(postgres_url, "cccccc", "B738", "Boeing 737-800")
+
+    response = await client.get("/api/distribution/aircraft-type", params={"limit": 10})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["types"][0] == {
+        "type_code": "A333",
+        "type_name": "Airbus A330",
+        "aircraft_count": 2,
+    }
+    assert body["types"][1] == {
+        "type_code": "B738",
+        "type_name": "Boeing 737-800",
+        "aircraft_count": 1,
+    }
+
+
+async def test_aircraft_type_distribution_limit_respected(
+    postgres_url, client: AsyncClient
+) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        for icao, type_code in (("aaaaaa", "A333"), ("bbbbbb", "B738")):
+            await store.upsert_aircraft(icao, now, "TEST")
+            await store.insert_observation(
+                AircraftObservation(
+                    icao=icao,
+                    observed_at=now,
+                    callsign="TEST",
+                    lat=35.0,
+                    lon=139.0,
+                    altitude_ft=10000.0,
+                    ground_speed_kt=400.0,
+                    track_deg=90.0,
+                    vertical_rate_fpm=0.0,
+                    rssi=-20.0,
+                    distance_km=50.0,
+                    bearing_deg=45.0,
+                    source_age_seconds=0.5,
+                    reception_state=ReceptionState.POSITION_ACQUIRED,
+                )
+            )
+            await _insert_aircraft_type_cache(postgres_url, icao, type_code)
+    finally:
+        await store.close()
+
+    response = await client.get("/api/distribution/aircraft-type", params={"limit": 1})
+    assert len(response.json()["types"]) == 1
+
+
 # --- traffic.csv --------------------------------------------------------------
 
 
@@ -982,6 +1132,7 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/distribution/hour-of-day",
         "/api/distribution/altitude",
         "/api/distribution/speed",
+        "/api/distribution/aircraft-type",
         "/api/heatmap",
         "/api/traffic/daily",
         "/api/traffic/daily-summary",

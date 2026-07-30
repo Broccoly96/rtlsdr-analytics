@@ -4,18 +4,23 @@ speed histograms."""
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.dependencies import get_pool
+from app.api.dependencies import get_pool, get_settings
 from app.api.schemas import (
+    AircraftTypeCountResponse,
+    AircraftTypeDistributionResponse,
     AltitudeHistogramResponse,
     HistogramBucketResponse,
     HourOfDayEntryResponse,
     HourOfDayResponse,
     SpeedHistogramResponse,
 )
+from app.db.queries.aircraft_type import top_aircraft_types
 from app.db.queries.distribution import altitude_histogram, hour_of_day_unique, speed_histogram
+from app.domain.daytime import day_bounds_utc, today_in_tz
 
 router = APIRouter(prefix="/api/distribution", tags=["distribution"])
 
@@ -58,4 +63,25 @@ async def get_speed_histogram(
         hours=hours,
         bucket_kt=DEFAULT_SPEED_BUCKET_KT,
         buckets=[HistogramBucketResponse(**asdict(bucket)) for bucket in buckets],
+    )
+
+
+@router.get("/aircraft-type", response_model=AircraftTypeDistributionResponse)
+async def get_aircraft_type_distribution(
+    day: date | None = Query(None),
+    limit: int = Query(10, ge=1, le=100),
+    pool=Depends(get_pool),
+    settings=Depends(get_settings),
+) -> AircraftTypeDistributionResponse:
+    today = today_in_tz(settings.display_timezone)
+    target_day = day if day is not None else today
+    if target_day > today:
+        raise HTTPException(status_code=422, detail="day cannot be in the future")
+
+    start_utc, end_utc = day_bounds_utc(target_day, settings.display_timezone)
+    counts = await top_aircraft_types(pool, start_utc, end_utc, limit)
+    return AircraftTypeDistributionResponse(
+        day=target_day,
+        limit=limit,
+        types=[AircraftTypeCountResponse(**asdict(count)) for count in counts],
     )

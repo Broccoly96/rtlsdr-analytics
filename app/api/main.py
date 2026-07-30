@@ -20,6 +20,7 @@ from app.api.routers import (
     aircraft,
     aircraft_history,
     aircraft_live,
+    aircraft_positions,
     config,
     distribution,
     health,
@@ -31,6 +32,7 @@ from app.api.routers import (
     tracks,
     traffic,
 )
+from app.api.routers.aircraft_positions import PositionBroadcaster
 from app.config import Settings
 from app.db.pool import close_pool, create_pool
 
@@ -44,9 +46,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.settings = resolved_settings
         app.state.pool = await create_pool(resolved_settings.database_url)
+        app.state.position_broadcaster = PositionBroadcaster(
+            resolved_settings.readsb_aircraft_url, resolved_settings.poll_interval_seconds
+        )
+        await app.state.position_broadcaster.start()
         try:
             yield
         finally:
+            await app.state.position_broadcaster.stop()
             await close_pool(app.state.pool)
 
     app = FastAPI(title="ADS-B Analytics API", lifespan=lifespan)
@@ -64,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(heatmap.router)
     app.include_router(rawdata.router)
     app.include_router(aircraft_live.router)
+    app.include_router(aircraft_positions.router)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

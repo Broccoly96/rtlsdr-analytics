@@ -486,6 +486,55 @@ async def test_receiver_reception_empty(client: AsyncClient) -> None:
     assert all(b["message_count"] == 0 and b["position_rate"] is None for b in body["buckets"])
 
 
+async def test_receiver_bearing_elevation_range_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/receiver/bearing-elevation-range")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["entries"] == []
+    assert body["sector_width_deg"] > 0
+    assert body["elevation_band_width_deg"] > 0
+
+
+async def test_receiver_bearing_elevation_range_with_seeded_data(
+    postgres_url, client: AsyncClient
+) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        # bearing 11.25 -> sector 0; altitude 10000ft (~3.048km) at 3.048km
+        # ground distance -> elevation = atan(3.048/3.048) = 45 deg -> band 4.
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10000.0,
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=3.048,
+                bearing_deg=11.25,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/receiver/bearing-elevation-range", params={"hours": 24})
+    body = response.json()
+    assert len(body["entries"]) == 1
+    entry = body["entries"][0]
+    assert entry["sector_index"] == 0
+    assert entry["elevation_index"] == 4
+    assert entry["max_distance_km"] == 3.048
+    assert entry["sample_count"] == 1
+
+
 async def test_receiver_rssi_by_distance_empty(client: AsyncClient) -> None:
     response = await client.get("/api/receiver/rssi-by-distance")
     assert response.status_code == 200
@@ -501,6 +550,7 @@ async def test_receiver_bounds_rejected(client: AsyncClient) -> None:
         "/api/receiver/altitude-range",
         "/api/receiver/reception",
         "/api/receiver/rssi-by-distance",
+        "/api/receiver/bearing-elevation-range",
     ):
         assert (await client.get(path, params={"hours": 0})).status_code == 422
         assert (await client.get(path, params={"hours": 721})).status_code == 422
@@ -1129,6 +1179,7 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/receiver/altitude-range",
         "/api/receiver/reception",
         "/api/receiver/rssi-by-distance",
+        "/api/receiver/bearing-elevation-range",
         "/api/distribution/hour-of-day",
         "/api/distribution/altitude",
         "/api/distribution/speed",

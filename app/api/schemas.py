@@ -141,6 +141,22 @@ class BearingRangeResponse(BaseModel):
     sectors: list[BearingRangeEntryResponse]
 
 
+class BearingElevationEntryResponse(BaseModel):
+    sector_index: int
+    sector_center_deg: float
+    elevation_index: int
+    elevation_center_deg: float
+    max_distance_km: float | None
+    sample_count: int
+
+
+class BearingElevationRangeResponse(BaseModel):
+    hours: int
+    sector_width_deg: float
+    elevation_band_width_deg: float
+    entries: list[BearingElevationEntryResponse]
+
+
 class AltitudeBandRangeEntryResponse(BaseModel):
     band_key: str
     max_distance_km: float | None

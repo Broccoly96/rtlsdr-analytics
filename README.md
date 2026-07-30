@@ -27,8 +27,9 @@ reference for AI coding agents working in this repo.
   registration/type/photo (see [Security & Privacy](#security--privacy)).
 - **Receiver performance** (`/static/receiver.html`) — how far you're
   actually receiving, broken down by compass bearing and by altitude band,
-  a distance-vs-signal-strength (RSSI) heatmap, plus a message-rate/
-  position-rate trend over 24h/7d/30d.
+  a distance-vs-signal-strength (RSSI) heatmap, an interactive 3D
+  "reception hemisphere" (bearing/elevation/distance, drag to rotate),
+  plus a message-rate/position-rate trend over 24h/7d/30d.
 - **Daily report** (`/static/daily.html`) — one day's summary (unique
   aircraft, max concurrent, message count, farthest/closest/most-observed)
   with day-over-day and same-weekday-last-week comparisons, plus a top-10
@@ -242,7 +243,13 @@ pauses while the browser tab is hidden.
 Answers "how good is my antenna/siting, really?" — a bearing-vs-range
 chart (max distance received per compass sector), an altitude-vs-range
 chart, a distance-vs-RSSI heatmap (how signal strength falls off with
-range), plus a message-count/position-rate trend, over 24h/7d/30d.
+range), a message-count/position-rate trend, and a 3D "reception
+hemisphere": every (bearing, elevation) direction's max reception
+distance plotted as a point around the receiver at the center — drag to
+rotate, color shows distance. Built with
+[`echarts-gl`](https://github.com/ecomfe/echarts-gl) (BSD-3-Clause,
+vendored the same way as `echarts`/`maplibre-gl` — no CDN). All over
+24h/7d/30d.
 
 ### Daily report (`/static/daily.html`)
 
@@ -318,6 +325,7 @@ OpenAPI doesn't describe WebSocket routes).
 | `GET /api/receiver/altitude-range` | `hours` | Max reception distance per altitude band |
 | `GET /api/receiver/reception` | `hours` | Message-count / position-rate trend |
 | `GET /api/receiver/rssi-by-distance` | `hours` | Reception-strength (RSSI) vs. distance heatmap cells |
+| `GET /api/receiver/bearing-elevation-range` | `hours` | Max reception distance per (bearing, elevation) cell, for the 3D chart |
 | `GET /api/distribution/hour-of-day` | `days` | Unique aircraft per hour of day |
 | `GET /api/distribution/altitude` | `hours` | Altitude histogram |
 | `GET /api/distribution/speed` | `hours` | Ground-speed histogram |
@@ -446,6 +454,13 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
 - No mutating API routes exist. The one destructive tool
   (`scripts/reset_db.py`) is a manual, confirmation-gated CLI script, never
   reachable over the network.
+- `/static/receiver.html`'s Content-Security-Policy adds `'unsafe-eval'`
+  to `script-src` — every other page stays without it. `echarts-gl`'s
+  internal shader/expression compiler needs it for the 3D reception
+  chart (confirmed by reproducing and fixing the exact failure). This app
+  never uses `eval()`/`Function()` itself and never renders API/user data
+  as HTML (always `textContent`), so the realistic added risk is narrow —
+  worth knowing if you're auditing this page specifically.
 - Your receiver's coordinates are used server-side for distance
   calculations and are never returned at full precision by the API; the
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off

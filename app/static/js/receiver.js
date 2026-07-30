@@ -130,6 +130,60 @@ function createRssiHeatmapChart(containerId) {
   });
 }
 
+// Converts (bearing, elevation, max distance) per cell into a Cartesian
+// XYZ point cloud for echarts-gl's scatter3D -- compass bearing (0=North,
+// clockwise) and elevation angle (0=horizon, 90=zenith) both in degrees.
+// East/North/Up axes, matching a standard local-tangent-plane convention.
+function createHemisphereChart(containerId) {
+  return createChart(containerId, "hemisphere-chart-error", (data) => {
+    let maxDistance = 0;
+    const points = data.entries
+      .filter((e) => e.max_distance_km != null)
+      .map((e) => {
+        const bearingRad = (e.sector_center_deg * Math.PI) / 180;
+        const elevationRad = (e.elevation_center_deg * Math.PI) / 180;
+        const horizontal = e.max_distance_km * Math.cos(elevationRad);
+        const x = horizontal * Math.sin(bearingRad);
+        const y = horizontal * Math.cos(bearingRad);
+        const z = e.max_distance_km * Math.sin(elevationRad);
+        maxDistance = Math.max(maxDistance, e.max_distance_km);
+        return [x, y, z, e.max_distance_km];
+      });
+
+    return {
+      ...baseChartOption(),
+      tooltip: {
+        formatter: (p) => `距離: ${p.value[3].toFixed(1)} km`,
+      },
+      visualMap: {
+        dimension: 3,
+        min: 0,
+        max: maxDistance || 1,
+        calculable: true,
+        inRange: { color: RSSI_HEATMAP_COLOR_RAMP },
+        textStyle: { color: CHART_COLORS.axisLabel },
+        left: "right",
+        top: "middle",
+      },
+      grid3D: {
+        axisLine: { lineStyle: { color: CHART_COLORS.axisLine } },
+        axisLabel: { color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { color: CHART_COLORS.splitLine } },
+      },
+      xAxis3D: { type: "value", name: "東西 (km)" },
+      yAxis3D: { type: "value", name: "南北 (km)" },
+      zAxis3D: { type: "value", name: "高度 (km)", min: 0 },
+      series: [
+        {
+          type: "scatter3D",
+          data: points,
+          symbolSize: 8,
+        },
+      ],
+    };
+  });
+}
+
 function createReceptionChart(containerId) {
   return createChart(containerId, "reception-chart-error", (data) => {
     const times = data.buckets.map((b) => formatAxisTime(b.bucket_at));
@@ -195,6 +249,12 @@ async function refreshAll(charts, bandLabels, hours) {
   } catch (err) {
     console.error("rssi-by-distance refresh failed", err);
   }
+  try {
+    const hemisphere = await api.getBearingElevationRange(hours);
+    charts.hemisphere.setData(hemisphere);
+  } catch (err) {
+    console.error("bearing-elevation-range refresh failed", err);
+  }
 }
 
 async function main() {
@@ -219,6 +279,7 @@ async function main() {
     altitude: createAltitudeChart("altitude-chart", bandLabels),
     reception: createReceptionChart("reception-chart"),
     rssi: createRssiHeatmapChart("rssi-chart"),
+    hemisphere: createHemisphereChart("hemisphere-chart"),
   };
 
   let currentHours = 24;
@@ -239,6 +300,7 @@ async function main() {
     charts.altitude.resize();
     charts.reception.resize();
     charts.rssi.resize();
+    charts.hemisphere.resize();
   });
 }
 

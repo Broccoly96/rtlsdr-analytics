@@ -38,6 +38,21 @@ class AltitudeBandRangeEntry:
     sample_count: int
 
 
+ELEVATION_BAND_COUNT = 9
+ELEVATION_BAND_WIDTH_DEG = 90.0 / ELEVATION_BAND_COUNT
+FT_TO_KM = 0.0003048
+
+
+@dataclass(frozen=True, slots=True)
+class BearingElevationEntry:
+    sector_index: int  # 0-15, same sectors as BearingRangeEntry
+    sector_center_deg: float
+    elevation_index: int  # 0-8; band covers [index*10, (index+1)*10) degrees above horizon
+    elevation_center_deg: float
+    max_distance_km: float | None
+    sample_count: int
+
+
 @dataclass(frozen=True, slots=True)
 class ReceptionBucket:
     bucket_at: datetime
@@ -86,6 +101,53 @@ async def bearing_range(pool: asyncpg.Pool, hours: int) -> list[BearingRangeEntr
             )
         )
     return entries
+
+
+async def bearing_elevation_range(pool: asyncpg.Pool, hours: int) -> list[BearingElevationEntry]:
+    """Max reception distance per (bearing sector x elevation band) cell,
+    for the 3D reception-hemisphere chart. Elevation angle (0 deg =
+    horizon, 90 deg = straight up) is computed from altitude and ground
+    distance, both converted to km: atan2(altitude_km, distance_km) --
+    `distance_km` is the great-circle ground distance already used
+    everywhere else in this app, treated as the horizontal leg of the
+    triangle (an approximation that's fine at these ranges/altitudes; not
+    worth a slant-range correction for a chart, not a precision instrument).
+    Sparse like distribution.py's histograms -- only occupied cells are
+    returned, not zero-filled across the full 16x9 grid."""
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    rows = await pool.fetch(
+        f"""
+        SELECT
+            ((width_bucket(bearing_deg, 0, 360, {BEARING_SECTOR_COUNT}) - 1)
+                % {BEARING_SECTOR_COUNT}) AS sector_index,
+            (width_bucket(
+                degrees(atan2(altitude_ft * {FT_TO_KM}, distance_km)), 0, 90, {ELEVATION_BAND_COUNT}
+            ) - 1) AS elevation_index,
+            max(distance_km) AS max_distance_km,
+            count(*) AS sample_count
+        FROM observations
+        WHERE observed_at >= $1 AND bearing_deg IS NOT NULL AND altitude_ft IS NOT NULL
+          AND distance_km IS NOT NULL AND distance_km > 0
+        GROUP BY sector_index, elevation_index
+        HAVING (width_bucket(
+            degrees(atan2(altitude_ft * {FT_TO_KM}, distance_km)), 0, 90, {ELEVATION_BAND_COUNT}
+        ) - 1) BETWEEN 0 AND {ELEVATION_BAND_COUNT - 1}
+        """,
+        since,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    return [
+        BearingElevationEntry(
+            sector_index=row["sector_index"],
+            sector_center_deg=row["sector_index"] * SECTOR_WIDTH_DEG + SECTOR_WIDTH_DEG / 2,
+            elevation_index=row["elevation_index"],
+            elevation_center_deg=row["elevation_index"] * ELEVATION_BAND_WIDTH_DEG
+            + ELEVATION_BAND_WIDTH_DEG / 2,
+            max_distance_km=row["max_distance_km"],
+            sample_count=row["sample_count"],
+        )
+        for row in rows
+    ]
 
 
 async def altitude_band_range(pool: asyncpg.Pool, hours: int) -> list[AltitudeBandRangeEntry]:

@@ -15,8 +15,17 @@ from app.api.schemas import (
     BearingRangeResponse,
     ReceptionBucketResponse,
     ReceptionResponse,
+    RssiByDistanceResponse,
+    RssiDistanceCellResponse,
 )
-from app.db.queries.receiver import altitude_band_range, bearing_range, reception_timeseries
+from app.db.queries.receiver import (
+    DEFAULT_DISTANCE_BUCKET_KM,
+    DEFAULT_RSSI_BUCKET_DB,
+    altitude_band_range,
+    bearing_range,
+    reception_timeseries,
+    rssi_by_distance,
+)
 
 router = APIRouter(prefix="/api/receiver", tags=["receiver"])
 
@@ -54,4 +63,18 @@ async def get_reception(
     return ReceptionResponse(
         hours=hours,
         buckets=[ReceptionBucketResponse(**asdict(bucket)) for bucket in buckets],
+    )
+
+
+@router.get("/rssi-by-distance", response_model=RssiByDistanceResponse)
+async def get_rssi_by_distance(
+    hours: int = Query(24, ge=1, le=720),
+    pool=Depends(get_pool),
+) -> RssiByDistanceResponse:
+    cells = await rssi_by_distance(pool, hours)
+    return RssiByDistanceResponse(
+        hours=hours,
+        distance_bucket_km=DEFAULT_DISTANCE_BUCKET_KM,
+        rssi_bucket_db=DEFAULT_RSSI_BUCKET_DB,
+        cells=[RssiDistanceCellResponse(**asdict(cell)) for cell in cells],
     )

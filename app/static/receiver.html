@@ -18,6 +18,7 @@
     <a href="/static/receiver.html" aria-current="page">受信性能</a>
     <a href="/static/daily.html">今日の空</a>
     <a href="/static/history.html">機体履歴</a>
+    <a href="/static/fullmap.html">フルスクリーン地図</a>
   </nav>
 
   <header class="app-header">
@@ -50,6 +51,14 @@
       <div class="panel__header" id="reception-heading">メッセージ数・位置取得率の推移</div>
       <div id="reception-chart" class="chart-container" role="img" aria-labelledby="reception-heading"></div>
       <div id="reception-chart-error" class="panel__error" hidden></div>
+    </div>
+  </section>
+
+  <section class="main-area">
+    <div class="panel panel--chart" style="grid-column: 1 / -1;">
+      <div class="panel__header" id="rssi-heading">距離別受信強度(RSSI)ヒートマップ</div>
+      <div id="rssi-chart" class="chart-container" role="img" aria-labelledby="rssi-heading"></div>
+      <div id="rssi-chart-error" class="panel__error" hidden></div>
     </div>
   </section>
 

@@ -356,6 +356,20 @@ button {
   background: var(--surface-raised);
 }
 
+/* Full-viewport map page (fullmap.html): the dashboard's map panel is
+   squeezed to 1.3fr of a two-column grid alongside the traffic chart;
+   this page exists solely to show it large. */
+.map-container--full {
+  height: calc(100vh - 220px);
+  min-height: 320px;
+}
+
+@media (max-width: 480px) {
+  .map-container--full {
+    height: calc(100vh - 260px);
+  }
+}
+
 .panel__error {
   position: absolute;
   inset: 40px 12px 12px 12px;
@@ -408,6 +422,16 @@ button {
   color: var(--text-muted);
   font-size: 0.85rem;
   padding: 8px;
+}
+
+/* --- map popup ------------------------------------------------------------ */
+
+/* MapLibre's default popup keeps its own white background regardless of
+   this app's dark theme; without this, the popup content inherits
+   `color: var(--text)` (near-white) from body and becomes unreadable on
+   that white background. */
+.maplibregl-popup-content {
+  color: #1a1a1a;
 }
 
 /* --- footer --------------------------------------------------------------- */

@@ -69,6 +69,67 @@ function createAltitudeChart(containerId, bandLabels) {
   }));
 }
 
+// Same density ramp as map.js's HEATMAP_COLOR_RAMP (this app's one
+// "density/intensity" color convention), reused here for consistency.
+const RSSI_HEATMAP_COLOR_RAMP = ["#60a5fa", "#22d3ee", "#34d399", "#fbbf24", "#fb7185"];
+
+function createRssiHeatmapChart(containerId) {
+  return createChart(containerId, "rssi-chart-error", (data) => {
+    const distanceValues = [...new Set(data.cells.map((c) => c.distance_bucket_km))].sort(
+      (a, b) => a - b
+    );
+    const rssiValues = [...new Set(data.cells.map((c) => c.rssi_bucket_db))].sort((a, b) => a - b);
+    const maxCount = data.cells.reduce((max, c) => Math.max(max, c.count), 0);
+
+    const points = data.cells.map((c) => [
+      distanceValues.indexOf(c.distance_bucket_km),
+      rssiValues.indexOf(c.rssi_bucket_db),
+      c.count,
+    ]);
+
+    return {
+      ...baseChartOption(),
+      tooltip: {
+        position: "top",
+        formatter: (p) =>
+          `距離 ${distanceValues[p.value[0]]}〜${distanceValues[p.value[0]] + data.distance_bucket_km} km` +
+          `<br/>RSSI ${rssiValues[p.value[1]]}〜${rssiValues[p.value[1]] + data.rssi_bucket_db} dB` +
+          `<br/>件数: ${p.value[2]}`,
+      },
+      grid: { left: 60, right: 16, top: 30, bottom: 40 },
+      xAxis: {
+        type: "category",
+        name: "距離 (km)",
+        data: distanceValues.map((v) => Math.round(v)),
+        ...axisStyle(),
+      },
+      yAxis: {
+        type: "category",
+        name: "RSSI (dB)",
+        data: rssiValues.map((v) => Math.round(v)),
+        ...axisStyle(),
+      },
+      visualMap: {
+        min: 0,
+        max: maxCount || 1,
+        calculable: true,
+        orient: "horizontal",
+        left: "center",
+        bottom: 0,
+        inRange: { color: RSSI_HEATMAP_COLOR_RAMP },
+        textStyle: { color: CHART_COLORS.axisLabel },
+      },
+      series: [
+        {
+          type: "heatmap",
+          data: points,
+          progressive: 0,
+        },
+      ],
+    };
+  });
+}
+
 function createReceptionChart(containerId) {
   return createChart(containerId, "reception-chart-error", (data) => {
     const times = data.buckets.map((b) => formatAxisTime(b.bucket_at));
@@ -128,6 +189,12 @@ async function refreshAll(charts, bandLabels, hours) {
   } catch (err) {
     console.error("reception refresh failed", err);
   }
+  try {
+    const rssi = await api.getRssiByDistance(hours);
+    charts.rssi.setData(rssi);
+  } catch (err) {
+    console.error("rssi-by-distance refresh failed", err);
+  }
 }
 
 async function main() {
@@ -151,6 +218,7 @@ async function main() {
     bearing: createBearingChart("bearing-chart"),
     altitude: createAltitudeChart("altitude-chart", bandLabels),
     reception: createReceptionChart("reception-chart"),
+    rssi: createRssiHeatmapChart("rssi-chart"),
   };
 
   let currentHours = 24;
@@ -170,6 +238,7 @@ async function main() {
     charts.bearing.resize();
     charts.altitude.resize();
     charts.reception.resize();
+    charts.rssi.resize();
   });
 }
 

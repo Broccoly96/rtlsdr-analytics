@@ -163,6 +163,19 @@ class ReceptionResponse(BaseModel):
     buckets: list[ReceptionBucketResponse]
 
 
+class RssiDistanceCellResponse(BaseModel):
+    distance_bucket_km: float
+    rssi_bucket_db: float
+    count: int
+
+
+class RssiByDistanceResponse(BaseModel):
+    hours: int
+    distance_bucket_km: float
+    rssi_bucket_db: float
+    cells: list[RssiDistanceCellResponse]
+
+
 class HourOfDayEntryResponse(BaseModel):
     hour: int
     unique_aircraft_count: int

@@ -4,7 +4,10 @@
 
 import { api } from "./api.js";
 
-const REFRESH_INTERVAL_MS = 10000;
+// Matches the collector's default POLL_INTERVAL_SECONDS (5s) -- the
+// active-aircraft count can't actually change any faster than that, so
+// polling faster than this would just add load without fresher data.
+const REFRESH_INTERVAL_MS = 5000;
 const INGESTION_STATE_LABELS = {
   ok: "正常",
   stale: "データ取得停止中",

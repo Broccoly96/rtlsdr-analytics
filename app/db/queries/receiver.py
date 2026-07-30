@@ -45,6 +45,17 @@ class ReceptionBucket:
     position_rate: float | None  # position_aircraft_count / active_aircraft_count
 
 
+@dataclass(frozen=True, slots=True)
+class RssiDistanceCell:
+    distance_bucket_km: float
+    rssi_bucket_db: float
+    count: int
+
+
+DEFAULT_DISTANCE_BUCKET_KM = 20.0
+DEFAULT_RSSI_BUCKET_DB = 5.0
+
+
 async def bearing_range(pool: asyncpg.Pool, hours: int) -> list[BearingRangeEntry]:
     since = datetime.now(UTC) - timedelta(hours=hours)
     rows = await pool.fetch(
@@ -159,3 +170,35 @@ async def reception_timeseries(pool: asyncpg.Pool, hours: int) -> list[Reception
         buckets.append(ReceptionBucket(cursor, message_count, position_rate))
         cursor += step
     return buckets
+
+
+async def rssi_by_distance(
+    pool: asyncpg.Pool,
+    hours: int,
+    distance_bucket_km: float = DEFAULT_DISTANCE_BUCKET_KM,
+    rssi_bucket_db: float = DEFAULT_RSSI_BUCKET_DB,
+) -> list[RssiDistanceCell]:
+    """Sparse (distance, RSSI) bucket counts -- like distribution.py's
+    histograms, only occupied cells are returned rather than zero-filling a
+    fixed grid, since a client-side heatmap plots a sparse cell list fine."""
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    rows = await pool.fetch(
+        """
+        SELECT
+            floor(distance_km / $2) * $2 AS distance_bucket,
+            floor(rssi / $3) * $3 AS rssi_bucket,
+            count(*) AS cell_count
+        FROM observations
+        WHERE observed_at >= $1 AND distance_km IS NOT NULL AND rssi IS NOT NULL
+        GROUP BY distance_bucket, rssi_bucket
+        ORDER BY distance_bucket, rssi_bucket
+        """,
+        since,
+        distance_bucket_km,
+        rssi_bucket_db,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    return [
+        RssiDistanceCell(row["distance_bucket"], row["rssi_bucket"], row["cell_count"])
+        for row in rows
+    ]

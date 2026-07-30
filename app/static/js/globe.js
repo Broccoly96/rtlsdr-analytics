@@ -7,6 +7,7 @@
 // -- see README Security & Privacy. Nothing here is persisted.
 
 import { api } from "./api.js";
+import { openAircraftSidebar } from "./aircraftinfo.js";
 
 const FT_TO_M = 0.3048;
 const DEFAULT_HOURS = 6;
@@ -69,6 +70,7 @@ async function populateAircraftSelect(select) {
     for (const row of recent) {
       const option = document.createElement("option");
       option.value = row.icao;
+      option.dataset.callsign = row.callsign || "";
       option.textContent = row.callsign ? `${row.callsign} (${row.icao})` : row.icao;
       select.appendChild(option);
     }
@@ -80,6 +82,7 @@ async function populateAircraftSelect(select) {
 
 let liveEntity = null;
 let socket = null;
+let currentIcao = null;
 
 function clearSelection(viewer) {
   if (socket) {
@@ -88,6 +91,7 @@ function clearSelection(viewer) {
   }
   viewer.entities.removeAll();
   liveEntity = null;
+  currentIcao = null;
 }
 
 function segmentToCartesians(segment) {
@@ -96,10 +100,11 @@ function segmentToCartesians(segment) {
   );
 }
 
-async function selectAircraft(viewer, icao) {
+async function selectAircraft(viewer, icao, callsign) {
   hideError();
   clearSelection(viewer);
   if (!icao) return;
+  currentIcao = icao;
 
   let lastPoint = null;
   try {
@@ -121,6 +126,11 @@ async function selectAircraft(viewer, icao) {
     showError("軌跡データの取得に失敗しました。ライブ更新は続行します。");
   }
 
+  // Grows as live WS updates arrive below; CallbackProperty re-reads this
+  // array on every render frame instead of needing the polyline entity
+  // itself to be recreated each time a new point comes in.
+  const liveTrackPositions = [];
+
   liveEntity = viewer.entities.add({
     point: {
       pixelSize: 10,
@@ -129,19 +139,29 @@ async function selectAircraft(viewer, icao) {
       outlineWidth: 2,
     },
     label: {
-      text: icao,
+      text: callsign || icao,
       font: "14px sans-serif",
       pixelOffset: new Cesium.Cartesian2(0, -16),
       fillColor: Cesium.Color.WHITE,
     },
   });
 
+  viewer.entities.add({
+    polyline: {
+      positions: new Cesium.CallbackProperty(() => liveTrackPositions, false),
+      width: 3,
+      material: Cesium.Color.YELLOW,
+    },
+  });
+
   if (lastPoint) {
-    liveEntity.position = Cesium.Cartesian3.fromDegrees(
+    const lastPosition = Cesium.Cartesian3.fromDegrees(
       lastPoint.lon,
       lastPoint.lat,
       (lastPoint.altitude_ft || 0) * FT_TO_M
     );
+    liveEntity.position = lastPosition;
+    liveTrackPositions.push(lastPosition);
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(
         lastPoint.lon,
@@ -165,7 +185,9 @@ async function selectAircraft(viewer, icao) {
     }
     if (!liveEntity || !data.received || data.lat == null || data.lon == null) return;
     const altitudeFt = data.alt_geom != null ? data.alt_geom : data.alt_baro || 0;
-    liveEntity.position = Cesium.Cartesian3.fromDegrees(data.lon, data.lat, altitudeFt * FT_TO_M);
+    const newPosition = Cesium.Cartesian3.fromDegrees(data.lon, data.lat, altitudeFt * FT_TO_M);
+    liveEntity.position = newPosition;
+    liveTrackPositions.push(newPosition);
   });
   socket.addEventListener("error", () => showError("ライブ接続エラー"));
 }
@@ -195,8 +217,20 @@ async function main() {
   const refreshButton = document.getElementById("aircraft-refresh");
   await populateAircraftSelect(select);
 
-  select.addEventListener("change", () => selectAircraft(viewer, select.value));
+  select.addEventListener("change", () => {
+    const option = select.selectedOptions[0];
+    selectAircraft(viewer, select.value, option && option.dataset.callsign);
+  });
   refreshButton.addEventListener("click", () => populateAircraftSelect(select));
+
+  const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+  clickHandler.setInputAction((movement) => {
+    if (!currentIcao) return;
+    const picked = viewer.scene.pick(movement.position);
+    if (Cesium.defined(picked) && picked.id === liveEntity) {
+      openAircraftSidebar(currentIcao);
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 }
 
 main().catch((err) => {

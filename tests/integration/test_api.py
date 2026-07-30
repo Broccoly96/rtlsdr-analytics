@@ -292,6 +292,9 @@ async def test_traffic_daily_summary_today_is_computed_live(
     assert body["day"] == today_in_tz("Asia/Tokyo").isoformat()
     assert body["unique_aircraft_count"] == 1
     assert body["farthest_icao"] == "aaaaaa"
+    assert body["farthest_callsign"] == "TEST001"
+    assert body["closest_callsign"] == "TEST001"
+    assert body["most_observed_callsign"] == "TEST001"
 
 
 async def test_traffic_daily_summary_past_day_reads_persisted_row(
@@ -309,6 +312,7 @@ async def test_traffic_daily_summary_past_day_reads_persisted_row(
     assert response.status_code == 200
     body = response.json()
     assert body["most_observed_count"] == 777
+    assert body["most_observed_callsign"] is None
 
 
 async def test_traffic_daily_summary_future_day_rejected(client: AsyncClient) -> None:

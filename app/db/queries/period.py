@@ -30,6 +30,14 @@ class DailyTrafficSummary:
     closest_distance_km: float | None
     most_observed_icao: str | None
     most_observed_count: int | None
+    # Only populated by compute_daily_summary ("today", always computed
+    # live) -- None for get_traffic_day's past-day path, since traffic_day
+    # has no callsign columns and was never asked to carry them (no
+    # migration needed: these all have defaults, so **dict(row) from that
+    # table's narrower column set still constructs fine).
+    farthest_callsign: str | None = None
+    closest_callsign: str | None = None
+    most_observed_callsign: str | None = None
 
 
 async def compute_daily_summary(
@@ -57,9 +65,12 @@ async def compute_daily_summary(
     )
     # Same ORDER BY distance_km {ASC,DESC} LIMIT shape rankings.py already
     # uses successfully against ix_observations_distance_observed_at.
+    # callsign comes from the exact same row (the observation actually
+    # farthest/closest that day), not the aircraft's current/latest
+    # callsign, which can differ for a busy aircraft with rotating flights.
     farthest = await pool.fetchrow(
         """
-        SELECT icao, distance_km FROM observations
+        SELECT icao, callsign, distance_km FROM observations
         WHERE observed_at >= $1 AND observed_at < $2 AND distance_km IS NOT NULL
         ORDER BY distance_km DESC LIMIT 1
         """,
@@ -69,7 +80,7 @@ async def compute_daily_summary(
     )
     closest = await pool.fetchrow(
         """
-        SELECT icao, distance_km FROM observations
+        SELECT icao, callsign, distance_km FROM observations
         WHERE observed_at >= $1 AND observed_at < $2 AND distance_km IS NOT NULL
         ORDER BY distance_km ASC LIMIT 1
         """,
@@ -77,9 +88,14 @@ async def compute_daily_summary(
         end_utc,
         timeout=QUERY_TIMEOUT_SECONDS,
     )
+    # callsign here is that aircraft's most recent callsign *within this
+    # day* (not the aircraft table's all-time last_callsign), consistent
+    # with farthest/closest above being scoped to the day too.
     most_observed = await pool.fetchrow(
         """
-        SELECT icao, count(*) AS observation_count FROM observations
+        SELECT icao, count(*) AS observation_count,
+               (array_agg(callsign ORDER BY observed_at DESC))[1] AS callsign
+        FROM observations
         WHERE observed_at >= $1 AND observed_at < $2
         GROUP BY icao ORDER BY observation_count DESC LIMIT 1
         """,
@@ -95,10 +111,13 @@ async def compute_daily_summary(
         position_aircraft_count_max=minute_row["position_max"],
         farthest_icao=farthest["icao"] if farthest else None,
         farthest_distance_km=farthest["distance_km"] if farthest else None,
+        farthest_callsign=farthest["callsign"] if farthest else None,
         closest_icao=closest["icao"] if closest else None,
         closest_distance_km=closest["distance_km"] if closest else None,
+        closest_callsign=closest["callsign"] if closest else None,
         most_observed_icao=most_observed["icao"] if most_observed else None,
         most_observed_count=most_observed["observation_count"] if most_observed else None,
+        most_observed_callsign=most_observed["callsign"] if most_observed else None,
     )
 
 

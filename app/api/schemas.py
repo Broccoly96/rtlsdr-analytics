@@ -70,10 +70,13 @@ class DailyTrafficSummaryResponse(BaseModel):
     position_aircraft_count_max: int
     farthest_icao: str | None
     farthest_distance_km: float | None
+    farthest_callsign: str | None = None
     closest_icao: str | None
     closest_distance_km: float | None
+    closest_callsign: str | None = None
     most_observed_icao: str | None
     most_observed_count: int | None
+    most_observed_callsign: str | None = None
 
 
 class TrafficDailyResponse(BaseModel):

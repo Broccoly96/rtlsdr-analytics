@@ -46,7 +46,7 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
-function renderHighlight(elId, icao, valueText) {
+function renderHighlight(elId, icao, callsign, valueText) {
   const el = document.getElementById(elId);
   if (!el) return;
   if (!icao) {
@@ -55,7 +55,7 @@ function renderHighlight(elId, icao, valueText) {
   }
   const icaoEl = document.createElement("div");
   icaoEl.className = "daily-highlight__icao";
-  icaoEl.appendChild(createAircraftInfoTrigger(icao));
+  icaoEl.appendChild(createAircraftInfoTrigger(icao, callsign || icao));
   const metaEl = document.createElement("div");
   metaEl.className = "daily-highlight__meta";
   metaEl.textContent = valueText;
@@ -107,16 +107,19 @@ async function main() {
     renderHighlight(
       "highlight-farthest",
       today.farthest_icao,
+      today.farthest_callsign,
       today.farthest_distance_km != null ? `${today.farthest_distance_km.toFixed(1)} km` : ""
     );
     renderHighlight(
       "highlight-closest",
       today.closest_icao,
+      today.closest_callsign,
       today.closest_distance_km != null ? `${today.closest_distance_km.toFixed(1)} km` : ""
     );
     renderHighlight(
       "highlight-most-observed",
       today.most_observed_icao,
+      today.most_observed_callsign,
       today.most_observed_count != null ? `${today.most_observed_count}回観測` : ""
     );
 

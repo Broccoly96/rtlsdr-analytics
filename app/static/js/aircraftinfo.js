@@ -1,14 +1,36 @@
-// aircraftinfo.js -- click-triggered aircraft registration/type/photo
-// lookup. Both api.adsbdb.com (registration/type/manufacturer) and
-// api.planespotters.net (photo + photographer credit) are third-party
-// services called directly from the browser -- only when the user
-// explicitly clicks, never auto-fetched or prefetched, never proxied or
-// cached server-side. This is this app's one deliberate exception to
-// "no calling home" (see README Security & Privacy); every other call in
-// this app goes to its own origin.
+// aircraftinfo.js -- tar1090-style aircraft detail sidebar. Clicking any
+// aircraft's callsign/icao anywhere in the app opens ONE shared, persistent
+// left sidebar (injected into document.body lazily, not per-button) with:
+//   - this app's own last-known position/speed/distance/RSSI (instant,
+//     from GET /api/aircraft/{icao}/history -- our own DB)
+//   - registration/type from api.adsbdb.com, fetched client-side (opening
+//     the sidebar IS the click -- never auto-fetched elsewhere); a photo
+//     from GET /api/aircraft/{icao}/photo, this app's own server-side
+//     proxy to api.planespotters.net -- Planespotters requires a
+//     descriptive User-Agent with a contact URL, which a browser's own
+//     fetch() can never send (forbidden header), so this one call can't
+//     be direct-from-browser the way the type lookup is. See README
+//     Security & Privacy.
+//   - live tar1090-parity fields (squawk, NAC/SIL/NIC, FMS-selected
+//     altitude/heading, wind, mach, ...) via WS /ws/aircraft/{icao} -- a
+//     deliberate, narrow real-time exception for one explicitly-selected
+//     aircraft (see CLAUDE.md and README Security & Privacy)
+//
+// Never uses innerHTML with API/aircraft data -- always textContent,
+// matching this app's existing convention (callsigns/ICAOs are
+// externally-sourced strings).
+
+import { api } from "./api.js";
 
 const ADSBDB_TIMEOUT_MS = 6000;
-const PLANESPOTTERS_TIMEOUT_MS = 6000;
+
+let sidebarEl = null;
+let currentIcao = null;
+let currentSocket = null;
+
+export function isAnyAircraftInfoPanelOpen() {
+  return currentIcao !== null;
+}
 
 async function fetchJsonWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
@@ -34,15 +56,50 @@ async function fetchAircraftType(icao) {
 }
 
 async function fetchAircraftPhoto(icao) {
-  const data = await fetchJsonWithTimeout(
-    `https://api.planespotters.net/pub/photos/hex/${encodeURIComponent(icao)}`,
-    PLANESPOTTERS_TIMEOUT_MS
-  );
-  return data && Array.isArray(data.photos) && data.photos.length > 0 ? data.photos[0] : null;
+  try {
+    return await api.getAircraftPhoto(icao);
+  } catch (err) {
+    console.error("aircraft photo fetch failed", err);
+    return null;
+  }
 }
 
-function renderResult(panel, aircraft, photo) {
-  panel.replaceChildren();
+function fmt(value, suffix = "") {
+  return value == null ? "--" : `${value}${suffix}`;
+}
+
+function fmtRound(value, suffix = "") {
+  return value == null ? "--" : `${Math.round(value)}${suffix}`;
+}
+
+function buildTable(rows) {
+  const table = document.createElement("table");
+  table.className = "aircraft-sidebar__table";
+  const tbody = document.createElement("tbody");
+  for (const [label, value] of rows) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.textContent = label;
+    const td = document.createElement("td");
+    td.textContent = value;
+    tr.append(th, td);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  return table;
+}
+
+function buildSection(title, rows) {
+  const section = document.createElement("section");
+  section.className = "aircraft-sidebar__section";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  section.append(heading, buildTable(rows));
+  return section;
+}
+
+function renderTypeAndPhoto(container, aircraft, photo) {
+  container.replaceChildren();
 
   const typeLine = document.createElement("div");
   if (aircraft) {
@@ -53,22 +110,20 @@ function renderResult(panel, aircraft, photo) {
     typeLine.className = "aircraft-info__meta";
     typeLine.textContent = "機体情報は見つかりませんでした(adsbdb.com)";
   }
-  panel.appendChild(typeLine);
+  container.appendChild(typeLine);
 
   if (aircraft && aircraft.registered_owner) {
     const ownerLine = document.createElement("div");
     ownerLine.className = "aircraft-info__meta";
     ownerLine.textContent = aircraft.registered_owner;
-    panel.appendChild(ownerLine);
+    container.appendChild(ownerLine);
   }
 
-  if (photo && photo.thumbnail && photo.thumbnail.src) {
+  if (photo && photo.thumbnail_url) {
     const img = document.createElement("img");
-    img.src = photo.thumbnail.src;
-    if (photo.thumbnail.size) {
-      img.width = photo.thumbnail.size.width;
-      img.height = photo.thumbnail.size.height;
-    }
+    img.src = photo.thumbnail_url;
+    if (photo.thumbnail_width) img.width = photo.thumbnail_width;
+    if (photo.thumbnail_height) img.height = photo.thumbnail_height;
     img.alt = "機体写真";
     img.className = "aircraft-info__photo";
     img.loading = "lazy";
@@ -80,58 +135,195 @@ function renderResult(panel, aircraft, photo) {
     credit.className = "aircraft-info__credit";
     credit.textContent = `撮影: ${photo.photographer || "unknown"} (Planespotters.net)`;
 
-    panel.append(img, credit);
+    container.append(img, credit);
   } else {
     const noPhoto = document.createElement("div");
     noPhoto.className = "aircraft-info__meta";
     noPhoto.textContent = "写真は見つかりませんでした(Planespotters.net)";
-    panel.appendChild(noPhoto);
+    container.appendChild(noPhoto);
   }
 }
 
-// Tracks how many info panels are currently open, so a page that rebuilds
-// its DOM on a refresh timer (ui.js's ranking/recent tables) can pause
-// that rebuild while the user has a panel open to read -- otherwise an
-// open popup (and its already-fetched data) gets yanked away and reset
-// mid-read on the next poll.
-let openPanelCount = 0;
-
-export function isAnyAircraftInfoPanelOpen() {
-  return openPanelCount > 0;
+function renderOwnData(container, latest) {
+  container.replaceChildren();
+  if (!latest) {
+    const empty = document.createElement("p");
+    empty.className = "panel__empty";
+    empty.textContent = "自局での観測データはまだありません";
+    container.appendChild(empty);
+    return;
+  }
+  container.appendChild(
+    buildSection("自局データ", [
+      ["高度", fmt(latest.altitude_ft, " ft")],
+      ["地速", fmt(latest.ground_speed_kt, " kt")],
+      ["Track", fmtRound(latest.track_deg, "°")],
+      ["昇降率", fmt(latest.vertical_rate_fpm, " fpm")],
+      ["距離", latest.distance_km != null ? `${latest.distance_km.toFixed(1)} km` : "--"],
+      ["方位", fmtRound(latest.bearing_deg, "°")],
+      ["RSSI", fmt(latest.rssi, " dB")],
+    ])
+  );
 }
 
-// Returns a <button> that toggles an inline info panel on click, fetching
-// (in parallel, once, cached in closure) from adsbdb.com and
-// Planespotters.net the first time it's opened. `label` defaults to the
-// icao itself so callers embedding this in a compact table cell (the
-// ranking/recent tables) can pass the existing callsign/icao text as the
-// trigger rather than adding extra chrome.
+function renderLive(container, data) {
+  container.replaceChildren();
+  if (!data || data.received === false) {
+    const empty = document.createElement("p");
+    empty.className = "panel__empty";
+    empty.textContent = "現在readsbから受信していません";
+    container.appendChild(empty);
+    return;
+  }
+
+  container.append(
+    buildSection("SIGNAL", [
+      ["スコーク", fmt(data.squawk)],
+      ["メッセージ数", fmt(data.messages)],
+      ["最終位置", fmt(data.seen_pos, " 秒前")],
+      ["MLAT/TIS-B", `${data.mlat ? "MLAT" : ""}${data.mlat && data.tisb ? " / " : ""}${data.tisb ? "TIS-B" : ""}` || "--"],
+    ]),
+    buildSection("SPATIAL", [
+      ["気圧高度", fmt(data.alt_baro, " ft")],
+      ["幾何高度", fmt(data.alt_geom, " ft")],
+      ["地速", fmt(data.gs, " kt")],
+      ["対気速度(IAS/TAS)", `${fmt(data.ias)} / ${fmt(data.tas)}`],
+      ["マッハ", fmt(data.mach)],
+      ["Track / 磁方位", `${fmtRound(data.track, "°")} / ${fmtRound(data.mag_heading, "°")}`],
+      ["ロール", fmt(data.roll, "°")],
+      ["昇降率(baro/geom)", `${fmt(data.baro_rate)} / ${fmt(data.geom_rate)} fpm`],
+      ["カテゴリ", fmt(data.category)],
+    ]),
+    buildSection("FMS選択値", [
+      ["選択高度", fmt(data.nav_altitude_mcp, " ft")],
+      ["選択方位", fmt(data.nav_heading, "°")],
+      ["QNH", fmt(data.nav_qnh, " hPa")],
+    ]),
+    buildSection("精度指標(ACCURACY)", [
+      ["NIC / NIC_baro", `${fmt(data.nic)} / ${fmt(data.nic_baro)}`],
+      ["NACp / NACv", `${fmt(data.nac_p)} / ${fmt(data.nac_v)}`],
+      ["SIL", `${fmt(data.sil)} (${fmt(data.sil_type)})`],
+      ["Rc", fmt(data.rc, " m")],
+    ]),
+    buildSection("風・気温", [
+      ["風向/風速", `${fmt(data.wd, "°")} / ${fmt(data.ws, " kt")}`],
+      ["OAT / TAT", `${fmt(data.oat, "°C")} / ${fmt(data.tat, "°C")}`],
+    ])
+  );
+}
+
+function ensureSidebar() {
+  if (sidebarEl) return sidebarEl;
+  sidebarEl = document.createElement("aside");
+  sidebarEl.className = "aircraft-sidebar";
+  sidebarEl.hidden = true;
+  document.body.appendChild(sidebarEl);
+  return sidebarEl;
+}
+
+export function closeAircraftSidebar() {
+  if (currentSocket) {
+    currentSocket.close();
+    currentSocket = null;
+  }
+  currentIcao = null;
+  if (sidebarEl) sidebarEl.hidden = true;
+}
+
+export function openAircraftSidebar(icao) {
+  if (currentIcao === icao) {
+    closeAircraftSidebar();
+    return;
+  }
+  if (currentSocket) {
+    currentSocket.close();
+    currentSocket = null;
+  }
+  currentIcao = icao;
+
+  const sidebar = ensureSidebar();
+  sidebar.hidden = false;
+  sidebar.replaceChildren();
+
+  const header = document.createElement("div");
+  header.className = "aircraft-sidebar__header";
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "aircraft-sidebar__close";
+  closeButton.textContent = "×";
+  closeButton.setAttribute("aria-label", "閉じる");
+  closeButton.addEventListener("click", closeAircraftSidebar);
+  const title = document.createElement("h2");
+  title.textContent = icao;
+  const hexLabel = document.createElement("div");
+  hexLabel.className = "aircraft-sidebar__hex";
+  hexLabel.textContent = `Hex: ${icao}`;
+  header.append(closeButton, title, hexLabel);
+  sidebar.appendChild(header);
+
+  const typePhotoSection = document.createElement("div");
+  typePhotoSection.className = "aircraft-sidebar__type-photo";
+  typePhotoSection.textContent = "読み込み中…";
+  sidebar.appendChild(typePhotoSection);
+
+  const ownDataSection = document.createElement("div");
+  ownDataSection.textContent = "読み込み中…";
+  sidebar.appendChild(ownDataSection);
+
+  const liveSection = document.createElement("div");
+  liveSection.textContent = "接続中…";
+  sidebar.appendChild(liveSection);
+
+  Promise.all([fetchAircraftType(icao), fetchAircraftPhoto(icao)]).then(([aircraft, photo]) => {
+    if (currentIcao !== icao) return;
+    renderTypeAndPhoto(typePhotoSection, aircraft, photo);
+  });
+
+  api
+    .getAircraftHistory(icao)
+    .then((history) => {
+      if (currentIcao !== icao) return;
+      if (history.last_callsign) title.textContent = history.last_callsign;
+      renderOwnData(ownDataSection, history.latest_observation);
+    })
+    .catch((err) => {
+      console.error("aircraft history fetch failed", err);
+      if (currentIcao !== icao) return;
+      ownDataSection.textContent =
+        err && err.status === 404 ? "自局での観測データはありません" : "自局データの取得に失敗しました";
+    });
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${window.location.host}/ws/aircraft/${encodeURIComponent(icao)}`);
+  currentSocket = socket;
+  socket.addEventListener("message", (event) => {
+    if (currentIcao !== icao) return;
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch (err) {
+      console.error("aircraft live message parse failed", err);
+      return;
+    }
+    renderLive(liveSection, data);
+  });
+  socket.addEventListener("close", () => {
+    if (currentIcao === icao) liveSection.textContent = "ライブ接続が切断されました";
+  });
+  socket.addEventListener("error", () => {
+    if (currentIcao === icao) liveSection.textContent = "ライブ接続エラー";
+  });
+}
+
+// Returns a <button> that opens the shared sidebar for `icao` on click.
+// `label` defaults to the icao itself so callers embedding this in a
+// compact table cell (the ranking/recent tables) can pass the existing
+// callsign/icao text as the trigger rather than adding extra chrome.
 export function createAircraftInfoTrigger(icao, label = icao) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "aircraft-info-trigger";
   button.textContent = label;
-
-  let panel = null;
-  let loaded = false;
-
-  button.addEventListener("click", async () => {
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.className = "aircraft-info";
-      panel.hidden = true;
-      button.insertAdjacentElement("afterend", panel);
-    }
-
-    panel.hidden = !panel.hidden;
-    openPanelCount += panel.hidden ? -1 : 1;
-    if (panel.hidden || loaded) return;
-
-    loaded = true;
-    panel.textContent = "読み込み中…(adsbdb.com / Planespotters.netへ問い合わせています)";
-    const [aircraft, photo] = await Promise.all([fetchAircraftType(icao), fetchAircraftPhoto(icao)]);
-    renderResult(panel, aircraft, photo);
-  });
-
+  button.addEventListener("click", () => openAircraftSidebar(icao));
   return button;
 }

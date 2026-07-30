@@ -1095,6 +1095,127 @@ async def test_aircraft_history_with_seeded_data(postgres_url, client: AsyncClie
     assert body["total_pass_count"] == 3
     assert body["total_observation_count"] == 15
     assert [c["callsign"] for c in body["callsign_history"]] == ["AAA002", "AAA001"]
+    assert body["latest_observation"] is None  # no observations rows seeded in this test
+
+
+async def test_aircraft_history_includes_latest_observation_when_present(
+    postgres_url, client: AsyncClient
+) -> None:
+    now = datetime.now(UTC)
+    store = await PostgresStore.connect(postgres_url)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "AAA001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="AAA001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=15000.0,
+                ground_speed_kt=300.0,
+                track_deg=90.0,
+                vertical_rate_fpm=500.0,
+                rssi=-18.0,
+                distance_km=42.0,
+                bearing_deg=100.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/aircraft/aaaaaa/history")
+    body = response.json()
+    assert body["latest_observation"]["altitude_ft"] == 15000.0
+    assert body["latest_observation"]["distance_km"] == 42.0
+    assert body["latest_observation"]["rssi"] == -18.0
+
+
+async def test_aircraft_photo_invalid_format_is_422(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/not-an-icao/photo")
+    assert response.status_code == 422
+
+
+async def test_aircraft_positions_invalid_format_is_422(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/not-an-icao/positions")
+    assert response.status_code == 422
+
+
+async def test_aircraft_positions_bounds_rejected(client: AsyncClient) -> None:
+    assert (
+        await client.get("/api/aircraft/aaaaaa/positions", params={"hours": 0})
+    ).status_code == 422
+    assert (
+        await client.get("/api/aircraft/aaaaaa/positions", params={"hours": 721})
+    ).status_code == 422
+
+
+async def test_aircraft_positions_unknown_icao_returns_empty_segments(
+    client: AsyncClient,
+) -> None:
+    response = await client.get("/api/aircraft/aaaaaa/positions")
+    assert response.status_code == 200
+    assert response.json()["segments"] == []
+
+
+async def test_aircraft_positions_with_seeded_data(postgres_url, client: AsyncClient) -> None:
+    now = datetime.now(UTC)
+    store = await PostgresStore.connect(postgres_url)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "AAA001")
+        # Two points close together (one segment), then a third point
+        # after a long gap -- must split into two segments, same
+        # MAX_GAP_SECONDS rule get_tracks already uses.
+        for minutes_ago, lat in ((10, 35.0), (9, 35.01)):
+            await store.insert_observation(
+                AircraftObservation(
+                    icao="aaaaaa",
+                    observed_at=now - timedelta(minutes=minutes_ago),
+                    callsign="AAA001",
+                    lat=lat,
+                    lon=139.0,
+                    altitude_ft=10000.0,
+                    ground_speed_kt=300.0,
+                    track_deg=90.0,
+                    vertical_rate_fpm=0.0,
+                    rssi=-20.0,
+                    distance_km=10.0,
+                    bearing_deg=45.0,
+                    source_age_seconds=0.5,
+                    reception_state=ReceptionState.POSITION_ACQUIRED,
+                )
+            )
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="AAA001",
+                lat=35.5,
+                lon=139.5,
+                altitude_ft=12000.0,
+                ground_speed_kt=300.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=20.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/aircraft/aaaaaa/positions", params={"hours": 1})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["icao"] == "aaaaaa"
+    assert len(body["segments"]) == 2
+    assert len(body["segments"][0]) == 2
+    assert len(body["segments"][1]) == 1
+    assert body["segments"][1][0]["altitude_ft"] == 12000.0
 
 
 async def test_aircraft_frequent_empty(client: AsyncClient) -> None:
@@ -1174,6 +1295,8 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/tracks",
         "/api/rankings",
         "/api/aircraft/recent",
+        "/api/aircraft/{icao}/positions",
+        "/api/aircraft/{icao}/photo",
         "/api/config",
         "/api/receiver/bearing-range",
         "/api/receiver/altitude-range",

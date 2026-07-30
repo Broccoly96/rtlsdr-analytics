@@ -15,6 +15,20 @@ QUERY_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass(frozen=True, slots=True)
+class LatestObservation:
+    observed_at: datetime
+    lat: float | None
+    lon: float | None
+    altitude_ft: float | None
+    ground_speed_kt: float | None
+    track_deg: float | None
+    vertical_rate_fpm: float | None
+    rssi: float | None
+    distance_km: float | None
+    bearing_deg: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class AircraftSummary:
     icao: str
     first_seen_at: datetime
@@ -70,6 +84,27 @@ async def aircraft_summary(pool: asyncpg.Pool, icao: str) -> AircraftSummary | N
         total_pass_count=agg_row["total_pass_count"],
         total_observation_count=agg_row["total_observation_count"],
     )
+
+
+async def latest_observation(pool: asyncpg.Pool, icao: str) -> LatestObservation | None:
+    """Our own most recent stored observation for one aircraft -- backs
+    the aircraft-detail sidebar's instant, DB-backed section (as opposed
+    to the live readsb pass-through in app/api/routers/aircraft_live.py,
+    which is fresher but not persisted). None if retention has already
+    pruned every observation for this aircraft."""
+    row = await pool.fetchrow(
+        """
+        SELECT observed_at, lat, lon, altitude_ft, ground_speed_kt, track_deg,
+               vertical_rate_fpm, rssi, distance_km, bearing_deg
+        FROM observations
+        WHERE icao = $1
+        ORDER BY observed_at DESC
+        LIMIT 1
+        """,
+        icao,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    return LatestObservation(**dict(row)) if row else None
 
 
 async def callsign_history(pool: asyncpg.Pool, icao: str) -> list[CallsignHistoryEntry]:

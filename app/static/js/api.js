@@ -54,4 +54,7 @@ export const api = {
   getAircraftTypeDistribution: (day, limit) => getJSON("/api/distribution/aircraft-type", { day, limit }),
   getAircraftFrequent: (days, limit) => getJSON("/api/aircraft/frequent", { days, limit }),
   getAircraftHistory: (icao) => getJSON(`/api/aircraft/${encodeURIComponent(icao)}/history`),
+  getAircraftPhoto: (icao) => getJSON(`/api/aircraft/${encodeURIComponent(icao)}/photo`),
+  getAircraftPositions: (icao, hours) =>
+    getJSON(`/api/aircraft/${encodeURIComponent(icao)}/positions`, { hours }),
 };

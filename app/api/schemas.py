@@ -225,6 +225,19 @@ class CallsignHistoryEntryResponse(BaseModel):
     last_seen_at: datetime
 
 
+class LatestObservationResponse(BaseModel):
+    observed_at: datetime
+    lat: float | None
+    lon: float | None
+    altitude_ft: float | None
+    ground_speed_kt: float | None
+    track_deg: float | None
+    vertical_rate_fpm: float | None
+    rssi: float | None
+    distance_km: float | None
+    bearing_deg: float | None
+
+
 class AircraftHistoryResponse(BaseModel):
     icao: str
     first_seen_at: datetime
@@ -234,6 +247,28 @@ class AircraftHistoryResponse(BaseModel):
     total_pass_count: int
     total_observation_count: int
     callsign_history: list[CallsignHistoryEntryResponse]
+    latest_observation: LatestObservationResponse | None = None
+
+
+class AircraftPhotoResponse(BaseModel):
+    thumbnail_url: str | None
+    thumbnail_width: int | None
+    thumbnail_height: int | None
+    photographer: str | None
+    link: str | None
+
+
+class TrackPointResponse(BaseModel):
+    observed_at: datetime
+    lat: float
+    lon: float
+    altitude_ft: float | None
+
+
+class AircraftPositionsResponse(BaseModel):
+    icao: str
+    hours: int
+    segments: list[list[TrackPointResponse]]
 
 
 class FrequentAircraftEntryResponse(BaseModel):

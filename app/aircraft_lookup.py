@@ -18,6 +18,8 @@ from dataclasses import dataclass
 import asyncpg
 import httpx
 
+from app.version import get_user_agent
+
 logger = logging.getLogger(__name__)
 
 ADSBDB_BASE_URL = "https://api.adsbdb.com/v0/aircraft/"
@@ -107,7 +109,7 @@ async def refresh_uncached_aircraft_types(
         return 0
 
     owns_client = client is None
-    http_client = client or httpx.AsyncClient()
+    http_client = client or httpx.AsyncClient(headers={"User-Agent": get_user_agent()})
     looked_up = 0
     try:
         for row in rows:

@@ -23,8 +23,13 @@ reference for AI coding agents working in this repo.
   (also available full-screen at `/static/fullmap.html`), a traffic chart
   (day/week/month granularity, CSV export), and hour-of-day / altitude /
   speed distribution charts, plus farthest/closest/recently-observed
-  tables — click an aircraft's callsign anywhere in the app for its
-  registration/type/photo (see [Security & Privacy](#security--privacy)).
+  tables.
+- **Aircraft detail sidebar** — click any aircraft's callsign anywhere in
+  the app (dashboard, daily report, history) for a tar1090-style detail
+  panel: registration/type/photo, this app's own last-known position/
+  speed/distance/RSSI, and a live feed of squawk, NAC/SIL/NIC accuracy,
+  FMS-selected altitude/heading, wind, and mach straight from readsb (see
+  [Security & Privacy](#security--privacy)).
 - **Receiver performance** (`/static/receiver.html`) — how far you're
   actually receiving, broken down by compass bearing and by altitude band,
   a distance-vs-signal-strength (RSSI) heatmap, an interactive 3D
@@ -50,11 +55,12 @@ reference for AI coding agents working in this repo.
   internet only when you ask it to: map tiles (always, to render the map
   — see [Configuration](#configuration-reference) to point that at a
   self-hosted style instead), and, only if you click an aircraft's "機体
-  情報を見る" link, registration/type from adsbdb.com and a photo from
-  Planespotters.net. The server itself only ever talks to your own
-  `readsb` instance and (once a day, at most, per newly-seen aircraft)
-  `api.adsbdb.com` — see [Security & Privacy](#security--privacy) for the
-  exact scope of each.
+  情報を見る" link, registration/type from adsbdb.com (the photo comes
+  from this app's own server instead — see below). The server itself
+  only ever talks to your own `readsb` instance, `api.adsbdb.com` (once a
+  day per newly-seen aircraft, plus proxying the photo lookup on click),
+  and `api.planespotters.net` (proxying the photo lookup on click) — see
+  [Security & Privacy](#security--privacy) for the exact scope of each.
 
 ## Architecture
 
@@ -233,10 +239,32 @@ of week — also available full-screen at `/static/fullmap.html`), a
 traffic chart with day/week/month zoom and a CSV download link,
 distribution charts (by hour of day, altitude, speed), and
 farthest/closest/recently-observed tables. Click any aircraft's callsign
-to look up its registration/type and photo (see
+to open its detail sidebar (see
+[Aircraft detail sidebar](#aircraft-detail-sidebar) below and
 [Security & Privacy](#security--privacy)). Everything refreshes
 automatically (every 5s for status/rankings, 30s for the map/traffic) and
 pauses while the browser tab is hidden.
+
+### Aircraft detail sidebar
+
+Click any aircraft's callsign anywhere in the app (dashboard, daily
+report, history) to open a persistent left sidebar, styled after
+tar1090's own info panel:
+
+- **Registration / type / photo** — registration, ICAO type code, and
+  manufacturer from adsbdb.com; a photo with photographer credit from
+  Planespotters.net (proxied through this app's own server — see
+  [Security & Privacy](#security--privacy) for why).
+- **自局データ (this app's own data)** — this receiver's last-known
+  altitude, ground speed, track, vertical rate, distance, bearing, and
+  RSSI for that aircraft, straight from this app's own database.
+- **Live data** — squawk, message count, last-position age, MLAT/TIS-B
+  flags, barometric/geometric altitude, ground/air speed, mach, track/
+  magnetic heading, roll, climb rate, FMS-selected altitude/heading, QNH,
+  NIC/NACp/NACv/SIL accuracy indicators, and wind/OAT/TAT where the
+  aircraft broadcasts them — streamed live from readsb while the sidebar
+  is open (not everything is available for every aircraft; unavailable
+  fields show `--`, same as tar1090).
 
 ### Receiver performance (`/static/receiver.html`)
 
@@ -302,9 +330,13 @@ it reconnects automatically if the connection drops.
 All HTTP endpoints are `GET`-only, unauthenticated (intended for
 localhost/LAN use — see [Security & Privacy](#security--privacy)), and
 input-bounded with server-side timeouts. Interactive docs at `/docs` once
-running. There's also one WebSocket endpoint, `WS /ws/rawdata` (backing
-the [raw data](#raw-data-staticrawdatahtml) page — not in `/docs`, since
-OpenAPI doesn't describe WebSocket routes).
+running. There are also two WebSocket endpoints (not in `/docs`, since
+OpenAPI doesn't describe WebSocket routes): `WS /ws/rawdata` (backing the
+[raw data](#raw-data-staticrawdatahtml) page) and
+`WS /ws/aircraft/{icao}` (backing the
+[aircraft detail sidebar](#aircraft-detail-sidebar) and the 3D flight
+globe — live tar1090-parity fields for one aircraft, polled from readsb
+independently at the collector's own cadence, never persisted).
 
 | Endpoint | Query params | Returns |
 |---|---|---|
@@ -318,7 +350,9 @@ OpenAPI doesn't describe WebSocket routes).
 | `GET /api/tracks` | `hours` (1–24, default 6) | Decimated per-aircraft track lines (capped at 100 aircraft / 10k points) |
 | `GET /api/rankings` | `hours`, `limit` | Farthest / closest aircraft |
 | `GET /api/aircraft/recent` | `hours`, `limit`, `offset` | Recently-seen aircraft |
-| `GET /api/aircraft/{icao}/history` | — | One aircraft's revisit history |
+| `GET /api/aircraft/{icao}/history` | — | One aircraft's revisit history (includes this app's own last-known position/speed/RSSI) |
+| `GET /api/aircraft/{icao}/positions` | `hours` (1–720, default 6) | One aircraft's own position history (gap-segmented, unlike `/api/tracks`'s all-aircraft view) |
+| `GET /api/aircraft/{icao}/photo` | — | Server-side proxy to Planespotters.net (see Security & Privacy) |
 | `GET /api/aircraft/frequent` | `days`, `limit` | Most frequently observed aircraft |
 | `GET /api/config` | — | Non-secret UI config (map style, timezone, version) |
 | `GET /api/receiver/bearing-range` | `hours` | Max reception distance per compass sector |
@@ -466,15 +500,32 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off
   by default (`MAP_SHOW_RECEIVER_MARKER=false`).
 - Clicking an aircraft's "機体情報を見る" (aircraft info) link fetches
-  registration/type from `api.adsbdb.com` and a photo from
-  `api.planespotters.net` **directly from your browser** — the server is
-  never involved and never sees which aircraft you looked up. This is
-  strictly opt-in per click; nothing is prefetched, and results aren't
-  cached server-side.
-- The daily-report's aircraft-type chart is the one exception where the
-  *server* calls a third party: once a day, `adsb-daily-rollup` looks up
-  any newly-seen aircraft's type against `api.adsbdb.com` and caches the
-  result permanently in its own database — never per page view, never
+  registration/type from `api.adsbdb.com` **directly from your browser**
+  — the server is never involved and never sees which aircraft you
+  looked up for this part. This is strictly opt-in per click; nothing is
+  prefetched, and results aren't cached server-side.
+- The **photo** lookup (`api.planespotters.net`) is different: it's
+  proxied through this app's own server (`GET /api/aircraft/{icao}/photo`)
+  rather than called directly from your browser. This was discovered
+  during real-browser testing, not decided upfront: Planespotters
+  requires a descriptive User-Agent with a contact URL and rejects
+  generic ones, and a browser's own `fetch()` can never override its
+  User-Agent (a forbidden header) — so the original direct-from-browser
+  version shipped silently non-functional for every user. The trade-off:
+  the server now sees which aircraft's photo you requested (still nothing
+  persisted, still strictly opt-in per click) — narrower than before, but
+  the feature actually works now.
+- The **aircraft detail sidebar**'s live section
+  (`WS /ws/aircraft/{icao}`) is a second, separate real-time exception:
+  while the sidebar (or the 3D flight globe) is open for a specific
+  aircraft, the server independently polls your own `readsb` instance at
+  the same cadence as the collector and streams the result to your
+  browser. Nothing is persisted; this is scoped to one explicitly-selected
+  aircraft, not a live map of everything (see `CLAUDE.md`).
+- The daily-report's aircraft-type chart is a third, narrower server-side
+  exception: once a day, `adsb-daily-rollup` looks up any newly-seen
+  aircraft's type against `api.adsbdb.com` and caches the result
+  permanently in its own database — never per page view, never
   re-queried once cached.
 - The raw-data page (`/static/rawdata.html`) has the server open a plain
   TCP connection to your own `readsb` instance's Beast port

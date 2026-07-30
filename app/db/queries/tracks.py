@@ -75,6 +75,30 @@ async def get_tracks(pool: asyncpg.Pool, hours: int) -> list[AircraftTrack]:
     return _decimate_to_budget(tracks, MAX_TOTAL_POINTS)
 
 
+async def get_aircraft_track(pool: asyncpg.Pool, icao: str, hours: int) -> AircraftTrack | None:
+    """Same segmentation/shape as get_tracks, but for one aircraft rather
+    than the top-N most recently active -- backs the 3D flight globe's
+    historical track and could enrich the aircraft-detail sidebar later.
+    None if the aircraft has no positions in the window (not necessarily
+    unknown -- an aircraft can exist in `aircraft` with no `observations`
+    rows in a short window, same as get_tracks never 404s either)."""
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    rows = await pool.fetch(
+        """
+        SELECT icao, callsign, observed_at, lat, lon, altitude_ft, ground_speed_kt, distance_km
+        FROM observations
+        WHERE icao = $1 AND observed_at >= $2 AND lat IS NOT NULL AND lon IS NOT NULL
+        ORDER BY observed_at
+        """,
+        icao,
+        since,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    if not rows:
+        return None
+    return _build_track(icao, rows)
+
+
 def _build_track(icao: str, rows: list) -> AircraftTrack:
     segments: list[list[TrackPoint]] = []
     current: list[TrackPoint] = []

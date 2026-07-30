@@ -177,7 +177,22 @@ def _network_ports():
         match = re.search(r":(\d+)$", columns[3])
         if match:
             listening_ports.add(int(match.group(1)))
-    return {"listening_ports": sorted(listening_ports)}
+
+    # Who (if anyone) is publishing APP_PORT, so probe_readsb.py can tell
+    # "this app's own already-running adsb-api container" apart from a real
+    # conflict with an unrelated process.
+    app_port = os.environ.get("APP_PORT", "8088")
+    port_owner_container_names = []
+    if shutil.which("docker"):
+        _, owners_out, _ = _run(
+            ["docker", "ps", "--filter", f"publish={app_port}", "--format", "{{.Names}}"]
+        )
+        port_owner_container_names = [n for n in owners_out.splitlines() if n]
+
+    return {
+        "listening_ports": sorted(listening_ports),
+        "port_owner_container_names": port_owner_container_names,
+    }
 
 
 facts = {

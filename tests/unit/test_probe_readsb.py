@@ -337,6 +337,36 @@ def test_check_network_ports_fail_when_occupied():
     assert result.verdict == Verdict.FAIL
 
 
+def test_check_network_ports_pass_when_occupied_by_own_deployment():
+    result = check_network_ports(
+        {
+            "network_ports": {
+                "listening_ports": [22, 80, 8088],
+                "port_owner_container_names": ["rtlsdr-analytics-adsb-api-1"],
+            }
+        },
+        app_port=8088,
+        readsb_reachable=True,
+    )
+    assert result.verdict == Verdict.PASS
+    assert result.details["port_owned_by_own_deployment"] is True
+
+
+def test_check_network_ports_fail_when_occupied_by_unrelated_container():
+    result = check_network_ports(
+        {
+            "network_ports": {
+                "listening_ports": [22, 80, 8088],
+                "port_owner_container_names": ["some-other-app-1"],
+            }
+        },
+        app_port=8088,
+        readsb_reachable=True,
+    )
+    assert result.verdict == Verdict.FAIL
+    assert result.details["port_owned_by_own_deployment"] is False
+
+
 def test_check_existing_services_pass_when_unchanged():
     before = {"readsb": "active", "tar1090": "active", "fr24feed": "active"}
     after = dict(before)

@@ -84,6 +84,9 @@ a read-only environment check, then builds and starts everything. It
 prints the dashboard URL when the stack is healthy. Re-running it later
 (e.g. after `git pull`) skips the wizard and just rebuilds/restarts.
 
+To bring everything back down: `./teardown.sh` (see
+[Stopping](#operations)).
+
 ## Prerequisites
 
 - A Linux x86-64 host with Docker Engine + Docker Compose v2
@@ -328,9 +331,14 @@ git pull
 **Stopping:**
 
 ```bash
-docker compose down          # stops containers, keeps the data volume
-docker compose down -v       # also deletes the database volume (destructive)
+./teardown.sh                # stops everything, keeps the data volume
+./teardown.sh --volumes      # also deletes the database volume (destructive,
+                              # confirmation-gated) -- everything collected
+                              # is gone unless you ran scripts/backup.sh first
 ```
+
+Equivalent to `docker compose down` / `docker compose down -v` directly, if
+you'd rather skip the wrapper.
 
 ## Development
 

@@ -626,6 +626,14 @@ def check_time(
     )
 
 
+# Matches this app's own adsb-api container regardless of Compose project
+# name (which follows the clone directory name and so varies): Compose v2's
+# default naming is "<project>-adsb-api-<n>", v1-style/COMPOSE_COMPATIBILITY
+# uses "<project>_adsb-api_<n>". A `container_name:` override isn't used in
+# compose.yaml, so this pattern is expected to match reliably.
+_ADSB_API_CONTAINER_PATTERN = re.compile(r"(?:^|[-_])adsb-api(?:[-_]|$)")
+
+
 def check_network_ports(
     facts: Mapping[str, Any], app_port: int, readsb_reachable: bool
 ) -> CheckResult:
@@ -642,8 +650,29 @@ def check_network_ports(
     listening = set(info.get("listening_ports", []))
     port_free = app_port not in listening
 
+    owner_names = [n for n in info.get("port_owner_container_names", []) if n]
+    own_deployment_owns_port = any(
+        _ADSB_API_CONTAINER_PATTERN.search(name) for name in owner_names
+    )
+
     notes = []
-    if not port_free:
+    if not port_free and own_deployment_owns_port:
+        # Re-running the check against an already-running deployment of this
+        # same app: the port is "in use" by our own adsb-api container, which
+        # `docker compose up -d` will simply recreate in place. That's not
+        # the "some unrelated process/service is squatting on this port"
+        # conflict this check exists to catch, so it isn't a FAIL.
+        verdict = Verdict.PASS if readsb_reachable else Verdict.WARN
+        notes.append(
+            f"port {app_port} is in use by this project's own adsb-api "
+            f"container ({', '.join(owner_names)}) -- expected on a redeploy, "
+            "not a conflict"
+        )
+        if not readsb_reachable:
+            notes.append(
+                "readsb was not reachable during this check; network conclusions are partial"
+            )
+    elif not port_free:
         verdict = Verdict.FAIL
         notes.append(f"port {app_port} is already in use; choose a different APP_PORT")
     elif not readsb_reachable:
@@ -661,6 +690,7 @@ def check_network_ports(
             "app_port": app_port,
             "app_port_free": port_free,
             "listening_ports": sorted(listening),
+            "port_owned_by_own_deployment": own_deployment_owns_port,
         },
         notes=notes,
     )

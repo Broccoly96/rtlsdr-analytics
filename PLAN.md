@@ -1648,3 +1648,54 @@ Milestone Qのクリック方式では1日分の集計ができないため、�
 ユーザー判断が必要な事項: なし。
 ```
 
+## 18. tar1090風サイドバー + リアルタイム3D航跡(Milestone V〜W)
+
+ダッシュボード利用後のユーザーからの追加フィードバック2件(4.機体情報をtar1090風の左サイドバーに、8.受信範囲3D半球とは別に、地球儀を遠くから操作する感覚のリアルタイム3D航跡タブを新設)を受けて実施。着手前にコードベースを調査した上でユーザーと議論(AskUserQuestion)し、以下を決定:
+
+- **サイドバーの情報深度**: tar1090はスコーク・NAC/SIL/NIC精度指標・FMS選択高度/方位・風向風速・TAT/OAT・マッハ・磁方位などを表示しているが、`observations`テーブルにはこれらが一切ない(確認済み)。ユーザーは「readsbへのライブ問い合わせを追加する」方式(B)を選択 — 選択中の1機体に限定した、意図的かつ narrow なリアルタイム例外として扱う。
+- **3D実装方式**: 既に導入済みのecharts-glの`globe`コンポーネントは地球全体に1枚のテクスチャを貼る仕様で、受信局周辺だけの精細な衛星画像には不向きと判明。ユーザーはCesiumJS(Apache-2.0、npm packageの`Build/Cesium/`がビルド不要の即利用可能な配布物であることを確認済み)の新規導入を選択。
+- **衛星画像ソース**: ArcGIS World Imagery。「ArcGIS Onlineライセンスが必要」という矛盾する二次情報があったが、curlで実際に無認証・無キーでHTTP 200 + 実JPEGタイル + `Access-Control-Allow-Origin: *`が返ることを直接確認し採用。表示中は常時通信(クリック時のみではない)することをユーザーが承認。
+- **3D空間内の軌跡範囲**: 過去履歴(既存`/api/tracks`相当のデータをこの1機体用に取得)+ タブを開いてからのリアルタイム更新の両方。
+
+### Milestone V:ライブ機体データ基盤 + tar1090風サイドバー
+
+- [x] `WS /ws/aircraft/{icao}`(`app/api/routers/aircraft_live.py`新規)を追加: readsbを収集側と同じ周期で独立ポーリングし、該当機体のみフィルタして、`observations`に無いtar1090相当フィールド(スコーク、NAC/SIL/NIC、FMS選択値、風、マッハ等)+ `lat`/`lon`(生の5秒周期、3D航跡のライブマーカー用)をプッシュ。DB保存なし。
+- [x] `app/db/queries/tracks.py`に`get_aircraft_track()`追加(既存`_build_track`のギャップ分割ロジックを1機体用に再利用)、`GET /api/aircraft/{icao}/positions?hours=`新設。
+- [x] `app/db/queries/aircraft_history.py`に`latest_observation()`追加、`GET /api/aircraft/{icao}/history`のレスポンスに自局の最新観測(高度・速度・距離・RSSI等)を含めるよう拡張。
+- [x] `app/static/js/aircraftinfo.js`を全面刷新: クリックした要素直下のトグルパネル方式から、`document.body`に遅延生成する単一の共有左サイドバー方式に変更。`createAircraftInfoTrigger(icao, label)`のシグネチャは不変のため、`history.js`/`ui.js`/`daily.js`は無変更で動作。
+- [x] **実ブラウザ検証で発見・修正した既存バグ(Milestone Q由来)**: Planespotters.netの`/pub/`写真APIが「連絡先付きの説明的なUser-Agent」を要求するようになっており、ブラウザの`fetch()`はUser-Agentを上書きできない(禁止ヘッダー)ため、直接ブラウザから呼ぶ方式は全ユーザーにとって無言で機能しない状態だった。ユーザーと相談の上、`GET /api/aircraft/{icao}/photo`としてサーバー側プロキシ化(適切なUser-Agentを付与)して解決。adsbdb.com側にも同じUser-Agentを追加(既存動作への実害はないが行儀の良い対応として)。
+- [x] `CLAUDE.md`の「リアルタイム追跡はしない」を、選択中の1機体に限定した2つの意図的な例外(生データWS、機体ライブWS)として明記するよう修正。
+- [x] テスト: `tests/unit/test_aircraft_photo.py`(新規、httpx.MockTransportで4ケース)、`tests/integration/test_api.py`に positions/photo/history拡張分のテスト追加。全282件green。
+- [x] 実環境で実際のWebSocketクライアントから複数機体のライブデータ(スコーク・NAC・FMS選択値・マッハ等)を確認、Playwrightで実際のサイドバー(写真含む)をスクリーンショットしconsole errorゼロを確認。
+
+### Milestone W:3D航跡タブ(CesiumJS)
+
+- [x] CesiumJS 1.143.0(Apache-2.0、GitHub/npmで確認済み)のnpm tarballから`Build/Cesium/`(23MB、392ファイル)を抽出し`app/static/js/vendor/cesium/`に配置(ビルド不要)。
+- [x] `app/static/globe.html` + `app/static/js/globe.js`新規作成: 機体セレクタ(`/api/aircraft/recent`から生成)、選択時に`/api/aircraft/{icao}/positions`で過去軌跡を3Dポリラインとして即座に描画、`WS /ws/aircraft/{icao}`(Milestone Vと共有)でライブ位置マーカーを更新し続ける。地面はArcGIS World Imagery。
+- [x] **実ブラウザ検証で発見・解決した問題が2つ**:
+  1. CesiumJS自身のスクリプトが地形/画像デコード用にWebAssemblyを即座にコンパイルしようとし、CSPの`script-src`に`'unsafe-eval'`が無いとCesiumのトップレベルスクリプトが実行途中で例外を投げ、`window.Cesium`自体が未定義のままになる(receiver.htmlのecharts-gl問題と同種だが別ページ固有)。
+  2. Cesiumはweb workerをblob:スクリプト経由でブートストラップしており、そのworker内の`importScripts()`が`script-src`に`blob:`が無いとブロックされる(`worker-src`だけでは不十分 — worker自体の生成元は制御するが、worker内から`importScripts()`で読み込むスクリプトは対象外)。
+  globe.htmlのCSPにのみ`'unsafe-eval' blob:`を追加して解決(他ページは無変更)。
+- [x] 実環境で実際に機体を選択し、過去軌跡(シアン色の線)とライブ更新中の現在位置マーカー(軌跡の終端より先に進んでいることを確認 = ライブ更新が実際に機能している証拠)を実際の衛星画像上でPlaywrightスクリーンショットにより確認。選択→切替→解除でconsole/page errorゼロ。
+- [x] README/CLAUDE.mdを更新(3D航跡ページの説明、CesiumJS/ArcGIS衛星画像の常時通信に関するSecurity & Privacy追記)。
+
+### セッション記録
+
+```text
+日付: 2026-07-30
+完了したMilestone/Task: Milestone V(tar1090風サイドバー + ライブ機体データ)、Milestone W(3D航跡タブ、CesiumJS)
+変更した主要ファイル:
+  - Milestone V: app/api/routers/aircraft_live.py(新規)、app/db/queries/tracks.py、app/db/queries/aircraft_history.py、app/api/routers/aircraft_history.py、app/api/schemas.py、app/api/main.py、app/static/js/aircraftinfo.js(全面刷新)、app/static/js/api.js、app/version.py、app/aircraft_lookup.py、app/static/css/style.css、CLAUDE.md、README.md
+  - Milestone W: app/static/globe.html(新規)、app/static/js/globe.js(新規)、app/static/js/cesium-base-url.js(新規)、app/static/js/vendor/cesium/(新規、392ファイル)、app/api/routers/aircraft_live.py(lat/lon追加)、全ページのnav、README.md
+実行したテスト: pytest(フルスイート、271→282件)、ruff check
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - Milestone V: 実WebSocketクライアントで複数の実機体からライブデータ(スコーク7055・マッハ0.688・NAC/SIL等)を受信確認。Playwrightで実サイドバー(写真付き)をスクリーンショット、console/page errorゼロ。
+  - Milestone Qの写真機能が実は全ユーザーに対して無言で壊れていたことを実ブラウザテストで発見(Planespotters.netのUser-Agentポリシー変更)。サーバー側プロキシ化で修正し、実際に写真が表示されることを確認。
+  - Milestone W: echarts-gl(Milestone U)の時と同様、ドキュメント記載を鵜呑みにせず実際に検証する姿勢で2つの実バグ(CSPのunsafe-eval不足、blob:不足)を発見・修正。最終的に実データで軌跡+ライブマーカーの3D描画を確認。
+残課題:
+  - なし(両マイルストーン完了・デプロイ・検証済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+

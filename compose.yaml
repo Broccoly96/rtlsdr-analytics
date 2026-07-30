@@ -1,11 +1,13 @@
 # adsb-db never publishes a port to the host -- it is reachable only on the
 # internal Docker network. Never add a `ports:` mapping to it.
 #
-# adsb-collector reaches the host's readsb (bound to 0.0.0.0:80, confirmed
-# read-only via `ss -ltn`) through host.docker.internal, added explicitly
-# via extra_hosts since this is Docker Engine on Linux, not Docker Desktop
-# (which provides that hostname automatically). READSB_AIRCRAFT_URL in
-# .env must point at host.docker.internal, not 127.0.0.1 -- from inside a
+# adsb-collector and adsb-api both reach the host's readsb through
+# host.docker.internal, added explicitly via extra_hosts since this is
+# Docker Engine on Linux, not Docker Desktop (which provides that
+# hostname automatically): adsb-collector for aircraft.json (confirmed
+# read-only via `ss -ltn`), adsb-api for the raw-data page's Beast-format
+# TCP relay (app/api/routers/rawdata.py). READSB_AIRCRAFT_URL in .env
+# must point at host.docker.internal, not 127.0.0.1 -- from inside a
 # container, 127.0.0.1 means the container itself.
 
 services:
@@ -102,6 +104,8 @@ services:
     env_file: .env
     ports:
       - "${APP_BIND_HOST}:${APP_PORT}:8088"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       adsb-migrate:
         condition: service_completed_successfully

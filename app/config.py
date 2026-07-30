@@ -7,6 +7,7 @@ confusing runtime error later (PLAN.md SS6.3).
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import field_validator, model_validator
@@ -23,6 +24,14 @@ class Settings(BaseSettings):
     poll_interval_seconds: float = 5.0
     track_sample_seconds: float = 30.0
     raw_retention_days: int = 30
+    # Raw Beast-format TCP stream (app/api/routers/rawdata.py's live,
+    # display-only "raw data" tab -- CLAUDE.md's original "no raw Beast"
+    # scope, revisited at the user's explicit request). Host defaults to
+    # READSB_AIRCRAFT_URL's own hostname in a model_validator below, since
+    # it's normally the same readsb instance -- only needs overriding if
+    # Beast is served from a different host than aircraft.json.
+    readsb_beast_host: str | None = None
+    readsb_beast_port: int = 30005
     database_url: str
     app_bind_host: str = "127.0.0.1"
     app_port: int = 8088
@@ -91,11 +100,27 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_URL must be a postgres:// or postgresql:// URL")
         return value
 
-    @field_validator("app_port")
+    @field_validator("readsb_beast_host", mode="before")
+    @classmethod
+    def _empty_beast_host_is_unset(cls, value: str | None) -> str | None:
+        # An empty string (READSB_BEAST_HOST=, .env.example's documented
+        # "leave unset" convention) means "derive it", same as the env var
+        # being absent entirely -- see _default_readsb_beast_host below.
+        return None if value == "" else value
+
+    @field_validator("readsb_beast_port", mode="before")
+    @classmethod
+    def _empty_beast_port_is_default(cls, value: object) -> object:
+        # Must run before int coercion: an empty string can't be parsed as
+        # int at all, so this has to intercept it pre-coercion rather than
+        # follow the "" -> None pattern used for the (nullable) host above.
+        return 30005 if value == "" else value
+
+    @field_validator("app_port", "readsb_beast_port")
     @classmethod
     def _validate_port(cls, value: int) -> int:
         if not 1 <= value <= 65535:
-            raise ValueError("APP_PORT must be between 1 and 65535")
+            raise ValueError("port must be between 1 and 65535")
         return value
 
     @field_validator("notify_webhook_url")
@@ -114,4 +139,16 @@ class Settings(BaseSettings):
     def _validate_notify_webhook_enabled_has_url(self) -> Settings:
         if self.notify_webhook_enabled and not self.notify_webhook_url:
             raise ValueError("NOTIFY_WEBHOOK_URL must be set when NOTIFY_WEBHOOK_ENABLED is true")
+        return self
+
+    @model_validator(mode="after")
+    def _default_readsb_beast_host(self) -> Settings:
+        if self.readsb_beast_host is None:
+            hostname = urlparse(self.readsb_aircraft_url).hostname
+            if not hostname:
+                raise ValueError(
+                    "could not derive READSB_BEAST_HOST from READSB_AIRCRAFT_URL "
+                    "-- set READSB_BEAST_HOST explicitly"
+                )
+            self.readsb_beast_host = hostname
         return self

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生データ - ADS-B Analytics</title>
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: ws: wss:; font-src 'self' https: data:; worker-src 'self' blob:;"
+>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+
+  <nav class="app-nav" aria-label="ページ">
+    <a href="/">ダッシュボード</a>
+    <a href="/static/receiver.html">受信性能</a>
+    <a href="/static/daily.html">今日の空</a>
+    <a href="/static/history.html">機体履歴</a>
+    <a href="/static/fullmap.html">フルスクリーン地図</a>
+    <a href="/static/rawdata.html" aria-current="page">生データ</a>
+  </nav>
+
+  <header class="app-header">
+    <div class="app-header__title">
+      <h1>生データ (Beastストリーム)</h1>
+      <span class="app-header__version" id="app-version"></span>
+    </div>
+    <div class="app-header__status" id="connection-badge" role="status" aria-live="polite">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span class="status-text">接続中…</span>
+    </div>
+    <div class="app-header__period" role="group" aria-label="表示制御">
+      <button type="button" id="pause-toggle" class="period-btn" aria-pressed="false">一時停止</button>
+      <button type="button" id="clear-button" class="period-btn">クリア</button>
+    </div>
+  </header>
+
+  <p class="panel__empty" style="padding: 0;">
+    readsbの生のBeastフォーマットストリームを表示しています。サーバーには保存されません
+    (ブラウザを閉じれば消えます)。DF/ICAO/種別は簡易デコードです — 位置・速度などの本格的な
+    デコードはreadsb自身が正しく行っているものをこのダッシュボードの他のページで表示しています。
+  </p>
+
+  <section class="main-area" style="grid-template-columns: 1fr;">
+    <div class="panel">
+      <div class="panel__header">
+        フレーム (直近<span id="row-count">0</span>件、最大500件)
+      </div>
+      <div style="max-height: 70vh; overflow-y: auto;">
+        <table class="ranking-table" id="rawdata-table">
+          <caption class="sr-only">受信した生のBeastフレーム</caption>
+          <thead>
+            <tr>
+              <th scope="col">時刻</th>
+              <th scope="col">種別</th>
+              <th scope="col">DF</th>
+              <th scope="col">ICAO</th>
+              <th scope="col">CA</th>
+              <th scope="col">メッセージ種類</th>
+              <th scope="col">生データ (hex)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="panel__empty" id="rawdata-empty">まだフレームを受信していません…</p>
+    </div>
+  </section>
+
+  <footer class="app-footer">
+    <span>ADS-B Analytics</span>
+  </footer>
+
+</div>
+
+<script type="module" src="/static/js/rawdata.js"></script>
+</body>
+</html>

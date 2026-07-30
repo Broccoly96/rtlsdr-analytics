@@ -38,16 +38,22 @@ reference for AI coding agents working in this repo.
   come back the most, with a per-aircraft first/last-seen, pass count, and
   callsign history; supports a browser-local (no account, no server write)
   favorites list.
+- **Raw data** (`/static/rawdata.html`) — a live, ephemeral view of
+  readsb's raw Beast-format stream with a simple decode (downlink format,
+  ICAO24, ADS-B message-type category), for learning the frame structure.
+  Nothing shown here is stored anywhere.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
-- No accounts, no auth, no telemetry. The server itself never calls out
-  anywhere. Your browser fetches from the internet only when you ask it
-  to: map tiles (always, to render the map — see
-  [Configuration](#configuration-reference) to point that at a
+- No accounts, no auth, no telemetry. Your browser fetches from the
+  internet only when you ask it to: map tiles (always, to render the map
+  — see [Configuration](#configuration-reference) to point that at a
   self-hosted style instead), and, only if you click an aircraft's "機体
   情報を見る" link, registration/type from adsbdb.com and a photo from
-  Planespotters.net (see [Security & Privacy](#security--privacy)).
+  Planespotters.net. The server itself only ever talks to your own
+  `readsb` instance and (once a day, at most, per newly-seen aircraft)
+  `api.adsbdb.com` — see [Security & Privacy](#security--privacy) for the
+  exact scope of each.
 
 ## Architecture
 
@@ -202,6 +208,8 @@ start with a clear error rather than running misconfigured.
 | `MAP_RECEIVER_MARKER_PRECISION` | `1` | Decimal places shown if the marker is enabled. |
 | `NOTIFY_WEBHOOK_ENABLED` | `false` | Enables the daily-summary webhook. Requires `NOTIFY_WEBHOOK_URL` if `true`. |
 | `NOTIFY_WEBHOOK_URL` | unset | Slack "Incoming Webhook" URL, or a Discord webhook URL with `/slack` appended (both accept this app's `{"text": "..."}` payload). |
+| `READSB_BEAST_HOST` | `READSB_AIRCRAFT_URL`'s hostname | Only needed if readsb's Beast-format output (used by `/static/rawdata.html`) is served from a different host. |
+| `READSB_BEAST_PORT` | `30005` | readsb's standard Beast-out port. |
 
 **Also read directly from the environment (not part of app `Settings`):**
 
@@ -269,12 +277,27 @@ favorites star — favorites are stored only in your browser's
 `?icao=<hex>`) for its first/last-seen, days observed, pass count, and
 callsign history.
 
+### Raw data (`/static/rawdata.html`)
+
+A live table of readsb's raw Beast-format frames as they arrive, decoded
+just enough to be readable — downlink format (DF), ICAO24 address,
+capability (CA), and, for ADS-B extended squitters (DF17/18), the message
+category (identification / position / velocity / etc.). This is
+intentionally a *simple* decode for learning the frame structure, not a
+replacement for readsb's own (correct, complete) decoding — no
+CPR position or velocity math happens here. Nothing is stored: closing
+the tab loses the history, and the server never writes any of it to the
+database. Pause to read, or clear the table, with the buttons at the top;
+it reconnects automatically if the connection drops.
+
 ### API
 
-All endpoints are `GET`-only, unauthenticated (intended for
+All HTTP endpoints are `GET`-only, unauthenticated (intended for
 localhost/LAN use — see [Security & Privacy](#security--privacy)), and
 input-bounded with server-side timeouts. Interactive docs at `/docs` once
-running.
+running. There's also one WebSocket endpoint, `WS /ws/rawdata` (backing
+the [raw data](#raw-data-staticrawdatahtml) page — not in `/docs`, since
+OpenAPI doesn't describe WebSocket routes).
 
 | Endpoint | Query params | Returns |
 |---|---|---|
@@ -400,6 +423,12 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   directly from `MAP_STYLE_URL` (OpenFreeMap by default); check the
   browser's own network connectivity. The traffic chart and rankings work
   independently of the map.
+- **Raw data page shows a connection error**: `readsb`'s Beast-format
+  output (default port `30005`) either isn't enabled or isn't reachable
+  at `READSB_BEAST_HOST`/`READSB_BEAST_PORT`. This is a separate port
+  from `READSB_AIRCRAFT_URL` (HTTP, for `aircraft.json`) — confirm it's
+  actually listening on the host (`ss -ltn | grep 30005`) before assuming
+  it's a container-networking issue.
 - **After a host reboot, `adsb-api` exits immediately**: if `APP_BIND_HOST`
   is bound to an interface that isn't up yet at boot (e.g. a VPN/Tailscale
   address assigned after Docker starts), the container can fail to bind
@@ -426,13 +455,18 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   `api.planespotters.net` **directly from your browser** — the server is
   never involved and never sees which aircraft you looked up. This is
   strictly opt-in per click; nothing is prefetched, and results aren't
-  cached server-side. It's the only outbound call this app makes besides
-  map tiles.
+  cached server-side.
 - The daily-report's aircraft-type chart is the one exception where the
-  *server* calls out: once a day, `adsb-daily-rollup` looks up any
-  newly-seen aircraft's type against `api.adsbdb.com` and caches the
+  *server* calls a third party: once a day, `adsb-daily-rollup` looks up
+  any newly-seen aircraft's type against `api.adsbdb.com` and caches the
   result permanently in its own database — never per page view, never
   re-queried once cached.
+- The raw-data page (`/static/rawdata.html`) has the server open a plain
+  TCP connection to your own `readsb` instance's Beast port
+  (`READSB_BEAST_HOST`/`READSB_BEAST_PORT`) and relay it live over a
+  WebSocket — this isn't a third-party call (it's the same `readsb` this
+  app already depends on), and nothing from it is ever written to the
+  database.
 - `.env` is gitignored — never commit it. Only `.env.example` (with blank
   lat/lon and a placeholder password) is tracked.
 - Backups (`scripts/backup.sh`) are written `chmod 600` into a `chmod 700`
@@ -442,14 +476,19 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
 
 Both the original Phase 1 MVP (collector, storage, API, dashboard) and a
 set of Phase 2 extensions (receiver performance, distributions, heatmap,
-daily rollups + webhook, aircraft revisit history) are implemented — see
-`PLAN.md` for the full milestone-by-milestone history.
+daily rollups + webhook, aircraft revisit history, live raw-data view,
+aircraft photo/type lookup) are implemented — see `PLAN.md` for the full
+milestone-by-milestone history.
 
-Explicitly out of scope: raw Beast/Mode-S frame storage or a custom
-decoder, aircraft/airline metadata enrichment, runway/arrival/departure
-inference, go-around/holding detection, ML anomaly detection, user
-accounts, multi-receiver support, public hosting, replacing
-tar1090/fr24feed, Kubernetes.
+Explicitly out of scope: runway/arrival/departure inference, go-around/
+holding detection, ML anomaly detection, user accounts, multi-receiver
+support, public hosting, replacing tar1090/fr24feed, Kubernetes, storing
+raw Beast frames or a full position/velocity decoder (the raw-data page
+is live/display-only with a simple DF/ICAO/category-only decode — see
+[Raw data](#raw-data-staticrawdatahtml)), and bundling/redistributing an
+offline aircraft metadata database (the realistic options turned out
+unlicensed for redistribution — see
+[Security & Privacy](#security--privacy) for what's used instead).
 
 ## Contributing
 

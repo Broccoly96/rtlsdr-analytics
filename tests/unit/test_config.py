@@ -116,6 +116,50 @@ def test_settings_accepts_valid_notify_webhook_config(monkeypatch):
     assert settings.notify_webhook_url == "https://hooks.example.invalid/webhook"
 
 
+def test_settings_defaults_beast_host_from_aircraft_url(monkeypatch):
+    _set_env(
+        monkeypatch,
+        {"READSB_AIRCRAFT_URL": "http://host.docker.internal/tar1090/data/aircraft.json"},
+    )
+    settings = Settings()
+    assert settings.readsb_beast_host == "host.docker.internal"
+    assert settings.readsb_beast_port == 30005
+
+
+def test_settings_readsb_beast_host_override_respected(monkeypatch):
+    _set_env(monkeypatch, {"READSB_BEAST_HOST": "beast.example.invalid"})
+    settings = Settings()
+    assert settings.readsb_beast_host == "beast.example.invalid"
+
+
+def test_settings_rejects_out_of_range_beast_port(monkeypatch):
+    _set_env(monkeypatch, {"READSB_BEAST_PORT": "0"})
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_accepts_empty_string_beast_host_as_unset(monkeypatch):
+    # READSB_BEAST_HOST= (empty, matching .env.example's documented "leave
+    # unset" convention) must derive from READSB_AIRCRAFT_URL, not become a
+    # literal empty-string host.
+    _set_env(
+        monkeypatch,
+        {
+            "READSB_AIRCRAFT_URL": "http://host.docker.internal/tar1090/data/aircraft.json",
+            "READSB_BEAST_HOST": "",
+        },
+    )
+    settings = Settings()
+    assert settings.readsb_beast_host == "host.docker.internal"
+
+
+def test_settings_accepts_empty_string_beast_port_as_default(monkeypatch):
+    # READSB_BEAST_PORT= must not crash trying to parse "" as int.
+    _set_env(monkeypatch, {"READSB_BEAST_PORT": ""})
+    settings = Settings()
+    assert settings.readsb_beast_port == 30005
+
+
 def test_settings_missing_required_field_raises(monkeypatch):
     for key in BASE_ENV:
         monkeypatch.delenv(key, raising=False)

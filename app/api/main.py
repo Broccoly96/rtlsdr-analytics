@@ -24,6 +24,7 @@ from app.api.routers import (
     health,
     heatmap,
     rankings,
+    rawdata,
     receiver,
     status,
     tracks,
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(receiver.router)
     app.include_router(distribution.router)
     app.include_router(heatmap.router)
+    app.include_router(rawdata.router)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

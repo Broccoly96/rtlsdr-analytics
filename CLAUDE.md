@@ -101,7 +101,11 @@ Raw observations: 30 days default. Minute aggregates: kept long-term (1+ year). 
 x86-64 Linux with systemd, Docker Engine + Compose v2, PostgreSQL, Python + FastAPI, plain HTML/JS frontend with Apache ECharts and MapLibre GL JS, UTC storage with display-side timezone conversion.
 
 ### Explicitly out of scope for this MVP
-Raw Beast/Mode-S frame storage or a custom decoder, aircraft/airline metadata enrichment, runway/arrival/departure inference, go-around/holding detection, ML anomaly detection, user accounts, multi-receiver support, public hosting, replacing tar1090/fr24feed, Kubernetes.
+Runway/arrival/departure inference, go-around/holding detection, ML anomaly detection, user accounts, multi-receiver support, public hosting, replacing tar1090/fr24feed, Kubernetes.
+
+Two items from the original MVP scope were revisited later, at the user's explicit request, and are now *partially* in scope — read the qualification before assuming either is fully open-ended:
+- **Raw Beast frame storage or a full decoder**: still out of scope. What exists instead (`/static/rawdata.html`, `app/domain/beast.py`, `app/api/routers/rawdata.py`) is a live, ephemeral, display-only relay with a deliberately *simple* decode (DF/ICAO24/CA/ADS-B type-code category only) — nothing is ever persisted to the DB, and CPR position/velocity decoding remains readsb's job, not this app's.
+- **Aircraft/airline metadata enrichment**: still out of scope as an *offline bundled dataset* (the realistic options turned out unlicensed for redistribution — see `aircraft_lookup.py`'s docstring). What exists instead is registration/type/photo lookup against two free third-party APIs (`api.adsbdb.com`, `api.planespotters.net`) — click-triggered from the browser almost everywhere, plus one narrow server-side cache (`aircraft_type_cache`, populated once per aircraft ever, only from `app/dailyrollup.py`'s loop) backing the daily aircraft-type chart. See README's Security & Privacy section for the exact scope of each.
 
 ## Testing expectations once implemented
 

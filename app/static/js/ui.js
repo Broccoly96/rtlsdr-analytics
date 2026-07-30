@@ -4,6 +4,7 @@
 
 import { api } from "./api.js";
 import { createAircraftInfoTrigger, isAnyAircraftInfoPanelOpen } from "./aircraftinfo.js";
+import { formatDistance, formatAltitude } from "./units.js";
 
 // Matches the collector's default POLL_INTERVAL_SECONDS (5s) -- the
 // active-aircraft count can't actually change any faster than that, so
@@ -113,8 +114,8 @@ function renderRankingTable(tableId, entries, buildRow) {
 function distanceRankingRow(entry) {
   return [
     createAircraftInfoTrigger(entry.icao, entry.callsign || entry.icao),
-    `${entry.distance_km.toFixed(1)} km`,
-    entry.altitude_ft != null ? `${Math.round(entry.altitude_ft)} ft` : "--",
+    formatDistance(entry.distance_km),
+    formatAltitude(entry.altitude_ft),
     formatTime(entry.observed_at),
   ];
 }

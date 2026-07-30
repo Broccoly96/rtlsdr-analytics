@@ -7,6 +7,7 @@
 import { api } from "./api.js";
 import { createAircraftInfoTrigger } from "./aircraftinfo.js";
 import { axisStyle, baseChartOption, CHART_COLORS, createChart } from "./chart.js";
+import { formatDistance } from "./units.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -108,13 +109,13 @@ async function main() {
       "highlight-farthest",
       today.farthest_icao,
       today.farthest_callsign,
-      today.farthest_distance_km != null ? `${today.farthest_distance_km.toFixed(1)} km` : ""
+      today.farthest_distance_km != null ? formatDistance(today.farthest_distance_km) : ""
     );
     renderHighlight(
       "highlight-closest",
       today.closest_icao,
       today.closest_callsign,
-      today.closest_distance_km != null ? `${today.closest_distance_km.toFixed(1)} km` : ""
+      today.closest_distance_km != null ? formatDistance(today.closest_distance_km) : ""
     );
     renderHighlight(
       "highlight-most-observed",

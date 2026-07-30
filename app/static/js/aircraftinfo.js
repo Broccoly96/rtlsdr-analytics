@@ -21,6 +21,7 @@
 // externally-sourced strings).
 
 import { api } from "./api.js";
+import { formatDistance, formatAltitude } from "./units.js";
 
 const ADSBDB_TIMEOUT_MS = 6000;
 
@@ -155,11 +156,11 @@ function renderOwnData(container, latest) {
   }
   container.appendChild(
     buildSection("自局データ", [
-      ["高度", fmt(latest.altitude_ft, " ft")],
+      ["高度", formatAltitude(latest.altitude_ft)],
       ["地速", fmt(latest.ground_speed_kt, " kt")],
       ["Track", fmtRound(latest.track_deg, "°")],
       ["昇降率", fmt(latest.vertical_rate_fpm, " fpm")],
-      ["距離", latest.distance_km != null ? `${latest.distance_km.toFixed(1)} km` : "--"],
+      ["距離", formatDistance(latest.distance_km)],
       ["方位", fmtRound(latest.bearing_deg, "°")],
       ["RSSI", fmt(latest.rssi, " dB")],
     ])
@@ -184,8 +185,8 @@ function renderLive(container, data) {
       ["MLAT/TIS-B", `${data.mlat ? "MLAT" : ""}${data.mlat && data.tisb ? " / " : ""}${data.tisb ? "TIS-B" : ""}` || "--"],
     ]),
     buildSection("SPATIAL", [
-      ["気圧高度", fmt(data.alt_baro, " ft")],
-      ["幾何高度", fmt(data.alt_geom, " ft")],
+      ["気圧高度", formatAltitude(data.alt_baro)],
+      ["幾何高度", formatAltitude(data.alt_geom)],
       ["地速", fmt(data.gs, " kt")],
       ["対気速度(IAS/TAS)", `${fmt(data.ias)} / ${fmt(data.tas)}`],
       ["マッハ", fmt(data.mach)],
@@ -195,7 +196,7 @@ function renderLive(container, data) {
       ["カテゴリ", fmt(data.category)],
     ]),
     buildSection("FMS選択値", [
-      ["選択高度", fmt(data.nav_altitude_mcp, " ft")],
+      ["選択高度", formatAltitude(data.nav_altitude_mcp)],
       ["選択方位", fmt(data.nav_heading, "°")],
       ["QNH", fmt(data.nav_qnh, " hPa")],
     ]),

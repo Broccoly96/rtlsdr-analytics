@@ -331,18 +331,31 @@ it reconnects automatically if the connection drops.
 
 ### 3D flight globe (`/static/globe.html`)
 
-Pick an aircraft from the dropdown (recently-seen aircraft, refreshable)
-and see it in a real 3D scene: satellite imagery on the ground (ArcGIS
-World Imagery), its last several hours of track drawn immediately as a
-line, and a marker that keeps moving live while the page stays open (the
-same `WS /ws/aircraft/{icao}` connection the
-[aircraft detail sidebar](#aircraft-detail-sidebar) uses). Drag to orbit,
-scroll to zoom, click the home icon to reset the view. Unlike the
-receiver-performance page's 3D reception-hemisphere chart (which is
-`echarts-gl`, an aggregate view of reception range), this is
-[CesiumJS](https://github.com/CesiumGS/cesium) — built for exactly this
-"one real aircraft's real track in a real 3D scene" use case. Nothing
-here is persisted.
+Pick an aircraft from the dropdown (recently-seen aircraft, refreshable,
+labeled by callsign) and see it in a real 3D scene: satellite imagery on
+the ground (ArcGIS World Imagery), its last several hours of track drawn
+immediately as a cyan line, and a marker that keeps moving live while the
+page stays open (the same `WS /ws/aircraft/{icao}` connection the
+[aircraft detail sidebar](#aircraft-detail-sidebar) uses) — the live
+track extends in yellow, picking up exactly where the historical track
+left off. Click the marker to open the same shared aircraft detail
+sidebar every other page uses. Drag to orbit, scroll to zoom, click the
+home icon to reset the view. Unlike the receiver-performance page's 3D
+reception-hemisphere chart (which is `echarts-gl`, an aggregate view of
+reception range), this is [CesiumJS](https://github.com/CesiumGS/cesium)
+— built for exactly this "one real aircraft's real track in a real 3D
+scene" use case. Nothing here is persisted.
+
+### Settings (`/static/settings.html`)
+
+Distance unit (kilometers / nautical miles) and altitude unit (feet /
+meters), applied everywhere a distance or altitude is displayed
+(dashboard rankings, daily report, aircraft detail sidebar, receiver
+performance charts, map popups). Pure client-side `localStorage`, same
+zero-backend precedent as [aircraft revisit history](#aircraft-revisit-history-statichistoryhtml)'s
+favorites — nothing is sent to the server, and already-open tabs need a
+reload to pick up a change. Language selection was considered but
+deferred (would require i18n-keying every string across every page).
 
 ### API
 

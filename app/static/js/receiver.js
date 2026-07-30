@@ -6,6 +6,7 @@
 
 import { api } from "./api.js";
 import { axisStyle, baseChartOption, CHART_COLORS, createChart, formatAxisTime, setTimezone } from "./chart.js";
+import { distanceUnitLabel, formatDistance, toDisplayDistance } from "./units.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -22,7 +23,8 @@ function createBearingChart(containerId) {
     ...baseChartOption(),
     tooltip: {
       trigger: "item",
-      formatter: (p) => `${p.name}: ${p.value != null ? p.value.toFixed(1) + " km" : "データなし"}`,
+      formatter: (p) =>
+        `${p.name}: ${data.sectors[p.dataIndex].max_distance_km != null ? formatDistance(data.sectors[p.dataIndex].max_distance_km) : "データなし"}`,
     },
     polar: {},
     angleAxis: {
@@ -36,7 +38,7 @@ function createBearingChart(containerId) {
       {
         type: "bar",
         coordinateSystem: "polar",
-        data: data.sectors.map((s) => s.max_distance_km),
+        data: data.sectors.map((s) => toDisplayDistance(s.max_distance_km)),
         itemStyle: { color: CHART_COLORS.seriesA },
       },
     ],
@@ -50,7 +52,8 @@ function createAltitudeChart(containerId, bandLabels) {
       trigger: "axis",
       formatter: (p) => {
         const point = p[0];
-        return `${point.name}: ${point.data != null ? point.data.toFixed(1) + " km" : "データなし"}`;
+        const raw = data.bands[point.dataIndex].max_distance_km;
+        return `${point.name}: ${raw != null ? formatDistance(raw) : "データなし"}`;
       },
     },
     xAxis: { type: "value", ...axisStyle() },
@@ -62,7 +65,7 @@ function createAltitudeChart(containerId, bandLabels) {
     series: [
       {
         type: "bar",
-        data: data.bands.map((b) => b.max_distance_km),
+        data: data.bands.map((b) => toDisplayDistance(b.max_distance_km)),
         itemStyle: { color: CHART_COLORS.seriesB },
       },
     ],
@@ -91,16 +94,21 @@ function createRssiHeatmapChart(containerId) {
       ...baseChartOption(),
       tooltip: {
         position: "top",
-        formatter: (p) =>
-          `距離 ${distanceValues[p.value[0]]}〜${distanceValues[p.value[0]] + data.distance_bucket_km} km` +
-          `<br/>RSSI ${rssiValues[p.value[1]]}〜${rssiValues[p.value[1]] + data.rssi_bucket_db} dB` +
-          `<br/>件数: ${p.value[2]}`,
+        formatter: (p) => {
+          const bucketStartKm = distanceValues[p.value[0]];
+          const bucketEndKm = bucketStartKm + data.distance_bucket_km;
+          return (
+            `距離 ${formatDistance(bucketStartKm)}〜${formatDistance(bucketEndKm)}` +
+            `<br/>RSSI ${rssiValues[p.value[1]]}〜${rssiValues[p.value[1]] + data.rssi_bucket_db} dB` +
+            `<br/>件数: ${p.value[2]}`
+          );
+        },
       },
       grid: { left: 60, right: 16, top: 30, bottom: 40 },
       xAxis: {
         type: "category",
-        name: "距離 (km)",
-        data: distanceValues.map((v) => Math.round(v)),
+        name: `距離 (${distanceUnitLabel()})`,
+        data: distanceValues.map((v) => Math.round(toDisplayDistance(v))),
         ...axisStyle(),
       },
       yAxis: {
@@ -142,18 +150,22 @@ function createHemisphereChart(containerId) {
       .map((e) => {
         const bearingRad = (e.sector_center_deg * Math.PI) / 180;
         const elevationRad = (e.elevation_center_deg * Math.PI) / 180;
-        const horizontal = e.max_distance_km * Math.cos(elevationRad);
+        const displayDistance = toDisplayDistance(e.max_distance_km);
+        const horizontal = displayDistance * Math.cos(elevationRad);
         const x = horizontal * Math.sin(bearingRad);
         const y = horizontal * Math.cos(bearingRad);
-        const z = e.max_distance_km * Math.sin(elevationRad);
+        const z = displayDistance * Math.sin(elevationRad);
         maxDistance = Math.max(maxDistance, e.max_distance_km);
+        // 4th component (color/tooltip) stays raw km -- formatDistance
+        // converts+labels it; x/y/z are already in the display unit so
+        // the spatial layout matches the axis names below.
         return [x, y, z, e.max_distance_km];
       });
 
     return {
       ...baseChartOption(),
       tooltip: {
-        formatter: (p) => `距離: ${p.value[3].toFixed(1)} km`,
+        formatter: (p) => `距離: ${formatDistance(p.value[3])}`,
       },
       visualMap: {
         dimension: 3,
@@ -170,9 +182,9 @@ function createHemisphereChart(containerId) {
         axisLabel: { color: CHART_COLORS.axisLabel },
         splitLine: { lineStyle: { color: CHART_COLORS.splitLine } },
       },
-      xAxis3D: { type: "value", name: "東西 (km)" },
-      yAxis3D: { type: "value", name: "南北 (km)" },
-      zAxis3D: { type: "value", name: "高度 (km)", min: 0 },
+      xAxis3D: { type: "value", name: `東西 (${distanceUnitLabel()})` },
+      yAxis3D: { type: "value", name: `南北 (${distanceUnitLabel()})` },
+      zAxis3D: { type: "value", name: `高度 (${distanceUnitLabel()})`, min: 0 },
       series: [
         {
           type: "scatter3D",

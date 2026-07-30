@@ -19,6 +19,7 @@
 import * as maplibregl from "./vendor/maplibre-gl/maplibre-gl.mjs";
 
 import { api } from "./api.js";
+import { formatDistance, formatAltitude } from "./units.js";
 
 // Populated from GET /api/config (see setAltitudeBands below) -- Python
 // (app/domain/bands.py) is the single source of truth so this can't drift
@@ -258,11 +259,10 @@ export function createTrackMap({ containerId, styleUrl }) {
       title.textContent = props.callsign || props.icao;
 
       const altitude =
-        props.last_altitude_ft != null ? `${Math.round(props.last_altitude_ft)} ft` : "高度不明";
+        props.last_altitude_ft != null ? formatAltitude(props.last_altitude_ft) : "高度不明";
       const speed =
         props.last_ground_speed_kt != null ? `${Math.round(props.last_ground_speed_kt)} kt` : null;
-      const distance =
-        props.last_distance_km != null ? `${props.last_distance_km.toFixed(1)} km` : null;
+      const distance = props.last_distance_km != null ? formatDistance(props.last_distance_km) : null;
 
       const line1 = document.createElement("div");
       line1.textContent = [altitude, speed].filter(Boolean).join(" / ");

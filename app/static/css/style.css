@@ -624,6 +624,39 @@ button {
   white-space: nowrap;
 }
 
+/* --- range slider (app/static/settings.html) ------------------------------ */
+
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  max-width: 320px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.range-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
 /* --- footer --------------------------------------------------------------- */
 
 .app-footer {

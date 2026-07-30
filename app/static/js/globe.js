@@ -1,13 +1,19 @@
 // globe.js -- entrypoint for globe.html: a 3D scene (CesiumJS) showing every
 // currently-live aircraft's position over the shared broadcast WS
-// /ws/aircraft-positions (Milestone Z; app/api/routers/aircraft_positions.py
-// -- one background readsb poll fanned out to every connected client,
-// replacing "one poll per selected aircraft" now that the default view
-// shows everything at once). Dots are color-coded by altitude band, same
-// bands/colors as map.js's 2D track coloring. Shift+click isolates one
-// aircraft: hides every other dot and draws its historical track (GET
-// /api/aircraft/{icao}/positions) plus a live-extending polyline fed by
-// the same broadcast stream (no separate per-aircraft WS needed here --
+// /ws/aircraft-positions (app/api/routers/aircraft_positions.py -- one
+// background readsb poll fanned out to every connected client, replacing
+// "one poll per selected aircraft" now that the default view shows
+// everything at once). Each aircraft is a 3D model (app/static/models/
+// aircraft.glb, CesiumGS/cesium's own Apache-2.0 sample aircraft),
+// color-tinted by altitude band (same bands/colors as map.js's 2D track
+// coloring) and oriented by heading (track_deg) + roll (readsb's `roll`,
+// often absent) + an approximated pitch (from vertical rate + ground
+// speed -- readsb has no real pitch field). Every currently-tracked
+// aircraft draws its own historical track (GET /api/aircraft/{icao}/positions,
+// cyan) plus a live-extending polyline (yellow) fed by the same broadcast
+// stream, at a user-configurable opacity (Settings tab, default 50%).
+// Shift+click isolates one aircraft: hides every other one (model + track)
+// and flies the camera to it (no separate per-aircraft WS needed here --
 // that connection is still used by aircraftinfo.js's sidebar for its
 // deeper tar1090-parity fields). Ground imagery (ArcGIS World Imagery) is
 // fetched continuously by the browser while this page is open -- see
@@ -16,10 +22,52 @@
 import { api } from "./api.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
 import { formatAltitude } from "./units.js";
+import { getTrackOpacity } from "./track-settings.js";
 
 const FT_TO_M = 0.3048;
 const DEFAULT_HOURS = 6;
 const UNKNOWN_ALTITUDE_COLOR = "#8fa3bd"; // matches style.css's --text-muted
+
+const AIRCRAFT_MODEL_URI = "/static/models/aircraft.glb";
+const KT_TO_FT_PER_S = 1.68781;
+const FPM_TO_FT_PER_S = 1 / 60;
+// Cesium_Air.glb's own forward/bank axes vs. this app's heading=track_deg,
+// roll=readsb `roll` assumption. Adjust here, not at every call site, if a
+// different model is ever swapped in.
+//
+// Heading offset empirically confirmed via a synthetic fixed-heading test
+// entity viewed top-down: a commanded heading of 0 (true north) rendered
+// with the nose visibly pointing east, i.e. 90 degrees clockwise from
+// intended -- -90 degrees corrects it.
+const MODEL_HEADING_OFFSET_RAD = Cesium.Math.toRadians(-90);
+// Roll sign is NOT independently visually confirmed the same way (no
+// aircraft with a real, non-zero `roll` happened to be turning during
+// testing to check bank direction against) -- left at 1 on the
+// assumption that Cesium's documented HeadingPitchRoll.roll convention
+// ("positive is banking to the right") already matches ADS-B's own roll
+// field convention (also positive = right bank). Flip to -1 if a real
+// turning aircraft is later observed banking the wrong way.
+const MODEL_ROLL_SIGN = 1;
+
+// readsb has no pitch field -- approximated from vertical rate (fpm) and
+// ground speed (kt), both converted to ft/s. Best-effort visual cue, not
+// real flight dynamics.
+function computePitchRad(verticalRateFpm, groundSpeedKt) {
+  if (verticalRateFpm == null || groundSpeedKt == null || groundSpeedKt <= 0) return 0;
+  const verticalFtPerS = verticalRateFpm * FPM_TO_FT_PER_S;
+  const horizontalFtPerS = groundSpeedKt * KT_TO_FT_PER_S;
+  return Math.atan2(verticalFtPerS, horizontalFtPerS);
+}
+
+function computeOrientation(cartesian, position) {
+  const headingRad = Cesium.Math.toRadians(position.track_deg || 0) + MODEL_HEADING_OFFSET_RAD;
+  const pitchRad = computePitchRad(position.vertical_rate_fpm, position.ground_speed_kt);
+  const rollRad = Cesium.Math.toRadians(position.roll_deg || 0) * MODEL_ROLL_SIGN;
+  return Cesium.Transforms.headingPitchRollQuaternion(
+    cartesian,
+    new Cesium.HeadingPitchRoll(headingRad, pitchRad, rollRad)
+  );
+}
 
 function showError(message) {
   const el = document.getElementById("globe-error");
@@ -96,17 +144,24 @@ function segmentToCartesians(segment) {
 
 let viewer = null;
 let socket = null;
-const aircraftEntities = new Map(); // icao -> Cesium.Entity (point + label)
+const aircraftEntities = new Map(); // icao -> Cesium.Entity (model + label)
 const latestPositions = new Map(); // icao -> latest broadcast entry
 const hiddenIcaos = new Set(); // user-unchecked via the picker
 const knownAircraft = new Map(); // icao -> callsign|null, for the picker list
 const pickerCheckboxes = new Map();
 const pickerLabels = new Map();
 
+// Every currently-tracked aircraft gets its own historical (cyan) +
+// live-extending (yellow, Cesium.CallbackProperty) track -- not just the
+// isolated one. icao -> { historyEntities: Entity[], liveEntity: Entity,
+// liveTrackPositions: Cartesian3[] }.
+const trackState = new Map();
+
 let isolatedIcao = null;
-let isolateHistoryEntities = [];
-let isolateLiveEntity = null;
-let isolateLiveTrackPositions = [];
+
+// Read once at load (same "reload to pick up a change" precedent as
+// every other setting in this app).
+const trackOpacity = getTrackOpacity();
 
 // Cesium's default view is the whole Earth -- without this, aircraft near
 // the receiver are too small/distant to see until the user manually
@@ -126,32 +181,98 @@ function autoFrameOnFirstData(positions) {
 
 function applyVisibility() {
   for (const [icao, entity] of aircraftEntities) {
-    entity.show = isolatedIcao ? icao === isolatedIcao : !hiddenIcaos.has(icao);
+    const visible = isolatedIcao ? icao === isolatedIcao : !hiddenIcaos.has(icao);
+    entity.show = visible;
+    const track = trackState.get(icao);
+    if (track) {
+      for (const historyEntity of track.historyEntities) historyEntity.show = visible;
+      if (track.liveEntity) track.liveEntity.show = visible;
+    }
   }
+}
+
+// One-time (per icao) historical fetch + a live-extending polyline fed by
+// every subsequent broadcast frame -- runs for every aircraft as soon as
+// it's first seen, not just an isolated one.
+function ensureTrack(icao) {
+  if (trackState.has(icao)) return;
+  const state = { historyEntities: [], liveEntity: null, liveTrackPositions: [] };
+  trackState.set(icao, state);
+
+  state.liveEntity = viewer.entities.add({
+    polyline: {
+      positions: new Cesium.CallbackProperty(() => state.liveTrackPositions, false),
+      width: 3,
+      material: Cesium.Color.YELLOW.withAlpha(trackOpacity),
+    },
+  });
+
+  api
+    .getAircraftPositions(icao, DEFAULT_HOURS)
+    .then((positions) => {
+      if (!trackState.has(icao)) return; // aircraft went stale before this resolved
+      for (const segment of positions.segments) {
+        if (segment.length < 2) continue;
+        state.historyEntities.push(
+          viewer.entities.add({
+            polyline: {
+              positions: segmentToCartesians(segment),
+              width: 3,
+              material: Cesium.Color.CYAN.withAlpha(trackOpacity),
+            },
+          })
+        );
+      }
+      applyVisibility(); // newly-added entities default to show=true
+    })
+    .catch((err) => {
+      console.error("aircraft positions fetch failed", err);
+    });
+}
+
+function removeTrack(icao) {
+  const state = trackState.get(icao);
+  if (!state) return;
+  for (const entity of state.historyEntities) viewer.entities.remove(entity);
+  if (state.liveEntity) viewer.entities.remove(state.liveEntity);
+  trackState.delete(icao);
 }
 
 function upsertEntity(position) {
   const { icao, callsign, lat, lon, altitude_ft: altitudeFt } = position;
   const color = Cesium.Color.fromCssColorString(colorForAltitude(altitudeFt));
   const cartesian = Cesium.Cartesian3.fromDegrees(lon, lat, (altitudeFt || 0) * FT_TO_M);
+  const orientation = computeOrientation(cartesian, position);
 
   let entity = aircraftEntities.get(icao);
   if (!entity) {
     entity = viewer.entities.add({
       position: cartesian,
-      point: { pixelSize: 8, color, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 },
+      orientation,
+      model: {
+        uri: AIRCRAFT_MODEL_URI,
+        minimumPixelSize: 32,
+        maximumScale: 20000,
+        color,
+        colorBlendMode: Cesium.ColorBlendMode.MIX,
+        colorBlendAmount: 0.5,
+        silhouetteColor: Cesium.Color.BLACK,
+        silhouetteSize: 1,
+      },
       label: {
         text: callsign || icao,
         font: "12px sans-serif",
-        pixelOffset: new Cesium.Cartesian2(0, -14),
+        pixelOffset: new Cesium.Cartesian2(0, -24),
         fillColor: Cesium.Color.WHITE,
       },
     });
     entity.icao = icao;
     aircraftEntities.set(icao, entity);
+    ensureTrack(icao);
   } else {
     entity.position = cartesian;
-    entity.point.color = color;
+    entity.orientation = orientation;
+    entity.model.color = color;
     entity.label.text = callsign || icao;
   }
 }
@@ -162,6 +283,7 @@ function removeStaleEntities(seenIcaos) {
     viewer.entities.remove(aircraftEntities.get(icao));
     aircraftEntities.delete(icao);
     latestPositions.delete(icao);
+    removeTrack(icao);
   }
 }
 
@@ -223,13 +345,6 @@ async function refreshPickerFromRecent() {
 
 function exitIsolate() {
   isolatedIcao = null;
-  for (const entity of isolateHistoryEntities) viewer.entities.remove(entity);
-  isolateHistoryEntities = [];
-  if (isolateLiveEntity) {
-    viewer.entities.remove(isolateLiveEntity);
-    isolateLiveEntity = null;
-  }
-  isolateLiveTrackPositions = [];
   document.getElementById("exit-isolate").hidden = true;
   if (viewer.trackedEntity) viewer.trackedEntity = undefined;
   applyVisibility();
@@ -237,35 +352,8 @@ function exitIsolate() {
 
 function enterIsolate(icao) {
   isolatedIcao = icao;
-  isolateLiveTrackPositions = [];
   applyVisibility();
   document.getElementById("exit-isolate").hidden = false;
-
-  api
-    .getAircraftPositions(icao, DEFAULT_HOURS)
-    .then((positions) => {
-      if (isolatedIcao !== icao) return; // exited/switched before this resolved
-      for (const segment of positions.segments) {
-        if (segment.length < 2) continue;
-        isolateHistoryEntities.push(
-          viewer.entities.add({
-            polyline: { positions: segmentToCartesians(segment), width: 3, material: Cesium.Color.CYAN },
-          })
-        );
-      }
-    })
-    .catch((err) => {
-      console.error("aircraft positions fetch failed", err);
-      showError("軌跡データの取得に失敗しました。ライブ更新は続行します。");
-    });
-
-  isolateLiveEntity = viewer.entities.add({
-    polyline: {
-      positions: new Cesium.CallbackProperty(() => isolateLiveTrackPositions, false),
-      width: 3,
-      material: Cesium.Color.YELLOW,
-    },
-  });
 
   const position = latestPositions.get(icao);
   if (position) {
@@ -430,8 +518,9 @@ function connectBroadcast() {
       ensurePickerEntry(position.icao, position.callsign);
       upsertEntity(position);
 
-      if (position.icao === isolatedIcao) {
-        isolateLiveTrackPositions.push(
+      const track = trackState.get(position.icao);
+      if (track) {
+        track.liveTrackPositions.push(
           Cesium.Cartesian3.fromDegrees(position.lon, position.lat, (position.altitude_ft || 0) * FT_TO_M)
         );
       }

@@ -1758,3 +1758,52 @@ Milestone V〜W(tar1090風サイドバー + 3D航跡)を実際に使ったユー
 ユーザー判断が必要な事項: なし。
 ```
 
+## 20. 3D航跡:複数機体の航跡ライン + 透明度設定 + 3D機体モデル(Milestone AA)
+
+マルチ機体3D航跡(Milestone Z)を実際に使ったユーザーからの追加フィードバック3件を受けて実施。着手前にAskUserQuestionで2点を確認:
+
+- **3Dモデルの粒度**: 機種別(737/A320等)に作り分けるか、汎用モデル1種類で統一するか → **汎用モデル1種類で統一**を選択(機種別モデルは`aircraft_type_cache`との連携・複数モデルのライセンス確認等、大幅な工数増になるため)。
+- **モデルファイルの調達方法**: ユーザー提供のURLを使うか、無償・再配布可能なモデルを探して提案するか → **探して提案**を選択。調査の結果、CesiumJS自身がSandcastleデモ用に同梱している`Cesium_Air.glb`(`CesiumGS/cesium`リポジトリの`Apps/SampleData/models/CesiumAir/`)を採用 — このアプリが既にベンダリングしているCesiumJS本体と同じApache License 2.0でカバーされており、追加のライセンスリスクなし。GitHub APIで実在確認、`strings`/バイナリ解析でDraco圧縮なし(WASMデコーダ不要)を確認済み。
+
+### Milestone AA-1:全機体の航跡ライン表示
+
+- [x] デフォルト(全機体)表示で航跡ラインが出ない挙動を調査 — バグではなく仕様通りで、単体表示(isolate)モードでのみ`isolateHistoryEntities`/`isolateLiveEntity`/`isolateLiveTrackPositions`という単一機体専用の状態変数を使って過去軌跡+ライブ延伸軌跡を描画していたことが判明。
+- [x] `app/static/js/globe.js`を全機体対応に一般化: `trackState`(icao→{historyEntities, liveEntity, liveTrackPositions})というMapに置き換え、新規機体が最初に出現した時点で`ensureTrack()`が自動的に過去軌跡取得+ライブポリラインを開始。`applyVisibility()`は機体本体だけでなく対応する航跡の表示/非表示も連動させ、`removeStaleEntities()`は航跡エンティティも解体する。isolate機能自体は「他機体を隠す+カメラを飛ばす」だけに簡素化(航跡の生成/破棄はもう担当しない)。
+
+### Milestone AA-2:航跡ラインの透明度設定(デフォルト50%)
+
+- [x] 新規`app/static/js/track-settings.js`(`units.js`と同じ形): `getTrackOpacity()`/`setTrackOpacity()`、`localStorage`キー`adsb-analytics:track-opacity`、デフォルト0.5。
+- [x] `app/static/settings.html`に「3D航跡」パネル新設、`<input type="range">`(このアプリ初のレンジスライダー、`style.css`に`::-webkit-slider-thumb`/`::-moz-range-thumb`を新規追加)+ パーセント表示ラベル。
+- [x] `globe.js`でページ読み込み時に一度だけ`getTrackOpacity()`を読み、過去軌跡(シアン)・ライブ軌跡(黄)両方のポリライン`material`に`Cesium.Color.withAlpha(opacity)`を適用。
+
+### Milestone AA-3:3D機体モデル(機首方向・傾きを反映)
+
+- [x] `Cesium_Air.glb`(Apache-2.0、上記調査で確認済み)を`app/static/models/aircraft.glb`としてダウンロード・配置。
+- [x] `app/api/routers/aircraft_positions.py`の`extract_position()`を拡張: `roll_deg`(readsbの`roll`、多くの機体で未装備のため`None`が普通)、`vertical_rate_fpm`(`baro_rate`優先、`geom_rate`フォールバック — `app/collector/normalize.py`と同じ優先順位)を追加。`track_deg`は既存の配信フィールドをそのまま流用(これまでクライアント側で未使用だった)。テスト追加(`tests/unit/test_aircraft_positions.py`)。
+- [x] `globe.js`: readsbにpitchフィールドが無いため、垂直速度(fpm)と地速(kt)から`Math.atan2`で近似算出(実飛行力学ではなく視覚的な目安と明記)。`Cesium.Transforms.headingPitchRollQuaternion`で向きのクォータニオンを構築し`entity.orientation`に設定、`point`グラフィックを`model`グラフィックに置き換え(`colorBlendMode: MIX`で高度帯色を維持)。
+- [x] **実機体では検証しづらいテストケースのため、合成テスト用エンティティを一時的に追加して検証**(この手法もこのセッションで確立した「ドキュメントを鵜呑みにせず実際に確認する」姿勢の延長): 真方位0°(北)を指定した固定エンティティを真上から見下ろすカメラで撮影した結果、機首が東(90°時計回り)を向いて描画されるバグを発見 — `MODEL_HEADING_OFFSET_RAD = -90°`で補正し、再検証して機首が正しく北を向くことを確認。ロール(バンク角)の符号は、テスト中に実際にバンクしている機体のroll値が観測できなかったため視覚的な確認はできなかったが、Cesiumの公式ドキュメント(roll正=右バンク)とADS-Bのroll規約(正=右バンク)が一致することを根拠にそのまま採用(コード内に検証状況を正直に明記)。
+- [x] `README.md`/`CLAUDE.md`を更新: モデルの出典・ライセンス表記、3D航跡ページの説明(全機体モデル表示・航跡・透明度設定)、配信フィールドにroll/vertical_rateが増えたことの反映。
+
+### セッション記録
+
+```text
+日付: 2026-07-30
+完了したMilestone/Task: Milestone AA-1(全機体航跡表示)、AA-2(航跡透明度設定)、AA-3(3D機体モデル+向き)
+変更した主要ファイル:
+  - AA-1: app/static/js/globe.js(trackState一般化)
+  - AA-2: app/static/js/track-settings.js(新規)、app/static/settings.html、app/static/js/settings.js、app/static/css/style.css(レンジスライダー)、app/static/js/globe.js
+  - AA-3: app/static/models/aircraft.glb(新規、Cesium_Air.glb由来)、app/api/routers/aircraft_positions.py、tests/unit/test_aircraft_positions.py、app/static/js/globe.js
+  - 全体: README.md、CLAUDE.md、app/static/globe.html
+実行したテスト: pytest(フルスイート、288→291件)、ruff check
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - AA-1: デフォルト全機体表示で各機体が個別のシアン(過去)+黄(ライブ延伸)航跡を持つことをPlaywrightで確認。
+  - AA-2: 設定画面でスライダーを20%に変更→`localStorage`保存→再読み込み後も反映→3D航跡ページで実際に線が薄くなることを確認。
+  - AA-3: 3Dモデルが実際にレンダリングされること(CSP変更不要、Draco/WASM問題なし)を確認。合成テストエンティティで機首方向のキャリブレーションを実施しバグを発見・修正。クリック→サイドバー、Shift+クリック→単体表示/解除が`model`グラフィックのエンティティでも引き続き動作することを`scene.pick()`直接呼び出しの手法で確認。全8ページでconsole errorゼロ。
+残課題:
+  - ロール(バンク角)の符号がCesiumのドキュメント記載に基づく想定のみで、実機体での視覚的な検証はできていない(バンクしている機体のroll値がテスト中に観測できなかったため)。将来的に実際にターンしている機体のroll値がある状況で見た目がおかしければ、`globe.js`の`MODEL_ROLL_SIGN`を`-1`に反転する。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+
+

@@ -47,6 +47,21 @@ def extract_position(raw: dict) -> dict | None:
     callsign = raw.get("flight")
     callsign = callsign.strip() if isinstance(callsign, str) else None
 
+    # Both equipage-dependent (most aircraft omit one or both) -- used
+    # client-side to orient the 3D globe's aircraft model (roll = bank
+    # angle; vertical rate approximates pitch there, readsb has no pitch
+    # field). baro_rate preferred over geom_rate, same precedence
+    # app/collector/normalize.py uses for the stored vertical_rate_fpm.
+    roll_deg = raw.get("roll")
+    if not isinstance(roll_deg, int | float):
+        roll_deg = None
+
+    vertical_rate_fpm = raw.get("baro_rate")
+    if not isinstance(vertical_rate_fpm, int | float):
+        vertical_rate_fpm = raw.get("geom_rate")
+    if not isinstance(vertical_rate_fpm, int | float):
+        vertical_rate_fpm = None
+
     return {
         "icao": icao,
         "callsign": callsign or None,
@@ -55,6 +70,8 @@ def extract_position(raw: dict) -> dict | None:
         "altitude_ft": altitude_ft,
         "track_deg": raw.get("track"),
         "ground_speed_kt": raw.get("gs"),
+        "roll_deg": roll_deg,
+        "vertical_rate_fpm": vertical_rate_fpm,
     }
 
 

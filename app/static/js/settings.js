@@ -4,6 +4,7 @@
 
 import { api } from "./api.js";
 import { getUnits, setUnits } from "./units.js";
+import { getTrackOpacity, setTrackOpacity } from "./track-settings.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -46,6 +47,20 @@ async function main() {
   wireButtonGroup("altitude-unit-group", units.altitude, (value) => {
     setUnits({ ...getUnits(), altitude: value });
   });
+
+  const slider = document.getElementById("track-opacity-slider");
+  const valueLabel = document.getElementById("track-opacity-value");
+  if (slider && valueLabel) {
+    const percent = Math.round(getTrackOpacity() * 100);
+    slider.value = String(percent);
+    valueLabel.textContent = `${percent}%`;
+    slider.addEventListener("input", () => {
+      valueLabel.textContent = `${slider.value}%`;
+    });
+    slider.addEventListener("change", () => {
+      setTrackOpacity(Number(slider.value) / 100);
+    });
+  }
 }
 
 main().catch((err) => {

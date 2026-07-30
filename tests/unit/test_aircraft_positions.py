@@ -12,6 +12,9 @@ def test_extracts_position_with_geometric_altitude():
             "alt_baro": 4900,
             "track": 90,
             "gs": 400,
+            "roll": -12.5,
+            "baro_rate": -800,
+            "geom_rate": -750,
         }
     )
     assert result == {
@@ -22,7 +25,24 @@ def test_extracts_position_with_geometric_altitude():
         "altitude_ft": 5000,
         "track_deg": 90,
         "ground_speed_kt": 400,
+        "roll_deg": -12.5,
+        "vertical_rate_fpm": -800,
     }
+
+
+def test_roll_absent_becomes_none():
+    result = extract_position({"hex": "aaaaab", "lat": 1.0, "lon": 2.0})
+    assert result["roll_deg"] is None
+
+
+def test_vertical_rate_falls_back_to_geom_rate():
+    result = extract_position({"hex": "aaaaac", "lat": 1.0, "lon": 2.0, "geom_rate": 640})
+    assert result["vertical_rate_fpm"] == 640
+
+
+def test_vertical_rate_absent_becomes_none():
+    result = extract_position({"hex": "aaaaad", "lat": 1.0, "lon": 2.0})
+    assert result["vertical_rate_fpm"] is None
 
 
 def test_falls_back_to_barometric_altitude():

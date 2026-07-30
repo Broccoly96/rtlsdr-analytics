@@ -55,6 +55,28 @@
         </div>
       </div>
     </div>
+
+    <div class="panel">
+      <div class="panel__header">3D航跡</div>
+      <p class="panel__empty" style="padding: 0 0 12px;">
+        この端末のブラウザにのみ保存されます(サーバーには送信されません)。
+        既に開いているタブには反映されません -- 再読み込みしてください。
+      </p>
+      <div>
+        <label for="track-opacity-slider" style="display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 0.85rem;">
+          航跡ラインの透明度: <span id="track-opacity-value">50%</span>
+        </label>
+        <input
+          type="range"
+          id="track-opacity-slider"
+          class="range-slider"
+          min="0"
+          max="100"
+          step="5"
+          value="50"
+        >
+      </div>
+    </div>
   </section>
 
   <footer class="app-footer">

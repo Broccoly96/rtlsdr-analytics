@@ -49,10 +49,12 @@ reference for AI coding agents working in this repo.
   ICAO24, ADS-B message-type category), for learning the frame structure.
   Nothing shown here is stored anywhere.
 - **3D flight globe** (`/static/globe.html`) — every currently-live aircraft
-  shown at once in a real 3D scene (satellite imagery ground, CesiumJS),
-  color-coded by altitude band, drag to orbit. Shift+click one aircraft to
-  isolate it and see its historical track extend live; hover for a
-  callsign/altitude/speed tooltip; a checkbox picker filters which
+  shown at once in a real 3D scene (satellite imagery ground, CesiumJS) as
+  a 3D aircraft model, color-tinted by altitude band and oriented by
+  heading/roll (and an approximated pitch), drag to orbit. Every aircraft
+  draws its own historical + live-extending track (opacity configurable in
+  Settings, default 50%). Shift+click one aircraft to isolate it; hover
+  for a callsign/altitude/speed tooltip; a checkbox picker filters which
   aircraft are shown; an optional camera-follow mode locks onto whichever
   aircraft is isolated.
 - **Health checks** that actually mean something — `/health/ready` reflects
@@ -334,21 +336,27 @@ it reconnects automatically if the connection drops.
 
 ### 3D flight globe (`/static/globe.html`)
 
-By default, every currently-live aircraft is shown at once as a
-color-coded dot (same altitude bands/colors as the 2D map) over satellite
-imagery (ArcGIS World Imagery), streamed from a single shared
-`WS /ws/aircraft-positions` broadcast connection (one server-side readsb
-poll, fanned out to every open tab — see
-[Security & Privacy](#security--privacy)):
+By default, every currently-live aircraft is shown at once as a 3D
+aircraft model (color-tinted by altitude band, same bands/colors as the
+2D map) over satellite imagery (ArcGIS World Imagery), streamed from a
+single shared `WS /ws/aircraft-positions` broadcast connection (one
+server-side readsb poll, fanned out to every open tab — see
+[Security & Privacy](#security--privacy)). Each model is oriented by
+heading (compass track) and roll/bank angle when readsb reports it
+(often absent — equipage-dependent); pitch has no equivalent readsb
+field and is approximated from vertical rate and ground speed, so treat
+it as a visual cue, not real flight dynamics. Every aircraft draws its
+own historical track (last several hours, cyan) plus a live-extending
+track (yellow) picking up exactly where the historical one left off, at
+an opacity you can change on the [Settings](#settings-staticsettingshtml)
+page (default 50%):
 
-- **Click** a dot to open the same shared aircraft detail sidebar every
-  other page uses.
-- **Shift+click** a dot to isolate it: every other aircraft is hidden and
-  its historical track (last several hours, drawn as a cyan line) appears
-  immediately, with a yellow line extending live from exactly where the
-  historical track left off. Shift+click it again, or use the
-  "全機体表示に戻す" button, to return to the full view.
-- **Hover** a dot for a callsign/altitude/speed tooltip.
+- **Click** an aircraft to open the same shared aircraft detail sidebar
+  every other page uses.
+- **Shift+click** an aircraft to isolate it: every other aircraft (model
+  and track) is hidden and the camera flies to it. Shift+click it again,
+  or use the "全機体表示に戻す" button, to return to the full view.
+- **Hover** an aircraft for a callsign/altitude/speed tooltip.
 - **機体選択** opens a checkbox picker to show/hide specific aircraft
   (defaults to all shown); **一覧更新** refreshes it against recently-seen
   aircraft.
@@ -362,13 +370,21 @@ Unlike the receiver-performance page's 3D reception-hemisphere chart
 [CesiumJS](https://github.com/CesiumGS/cesium) — built for exactly this
 "real aircraft, real 3D scene" use case. Nothing here is persisted.
 
+The aircraft model (`app/static/models/aircraft.glb`) is Cesium's own
+`Cesium_Air.glb` sample model from the
+[CesiumGS/cesium](https://github.com/CesiumGS/cesium) repository
+(`Apps/SampleData/models/CesiumAir/`), covered by the same
+Apache License 2.0 as CesiumJS itself, which this app already vendors —
+one generic model for every aircraft, not per-type.
+
 ### Settings (`/static/settings.html`)
 
 Distance unit (kilometers / nautical miles) and altitude unit (feet /
 meters), applied everywhere a distance or altitude is displayed
 (dashboard rankings, daily report, aircraft detail sidebar, receiver
-performance charts, map popups). Pure client-side `localStorage`, same
-zero-backend precedent as [aircraft revisit history](#aircraft-revisit-history-statichistoryhtml)'s
+performance charts, map popups). Also: the 3D globe's track-line opacity
+(default 50%). Pure client-side `localStorage`, same zero-backend
+precedent as [aircraft revisit history](#aircraft-revisit-history-statichistoryhtml)'s
 favorites — nothing is sent to the server, and already-open tabs need a
 reload to pick up a change. Language selection was considered but
 deferred (would require i18n-keying every string across every page).
@@ -583,10 +599,11 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   persisted; this is scoped to one explicitly-selected aircraft.
 - The **3D flight globe**'s default view is a third, broader exception:
   it genuinely is a live map of every currently-received aircraft's
-  position/callsign/altitude/track/speed (not the sidebar's full
-  tar1090-parity field set, and confined to this one page). A single
-  shared `WS /ws/aircraft-positions` broadcast (one server-side readsb
-  poll, fanned out to every connected client — never one poll per
+  position/callsign/altitude/track/speed/roll/vertical-rate (not the
+  sidebar's full tar1090-parity field set, and confined to this one
+  page). A single shared `WS /ws/aircraft-positions` broadcast (one
+  server-side readsb poll, fanned out to every connected client — never
+  one poll per
   aircraft) drives it. Nothing is persisted (see `CLAUDE.md`).
 - The daily-report's aircraft-type chart is a third, narrower server-side
   exception: every ~15 minutes, `adsb-type-lookup` looks up any newly-seen

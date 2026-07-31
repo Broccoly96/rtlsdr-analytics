@@ -20,26 +20,31 @@ reference for AI coding agents working in this repo.
 
 - **Dashboard** (`/`) — live ingestion status, currently-received /
   position-acquired counts, a track map with an optional density heatmap
-  (also available full-screen at `/static/fullmap.html`), a traffic chart
-  (day/week/month granularity, CSV export), and hour-of-day / altitude /
-  speed distribution charts, plus farthest/closest/recently-observed
-  tables.
-- **Aircraft detail sidebar** — click any aircraft's callsign anywhere in
-  the app (dashboard, daily report, history) for a tar1090-style detail
-  panel: registration/type/photo, this app's own last-known position/
-  speed/distance/RSSI, and a live feed of squawk, NAC/SIL/NIC accuracy,
-  FMS-selected altitude/heading, wind, and mach straight from readsb (see
-  [Security & Privacy](#security--privacy)).
+  and an altitude-band color legend (also available full-screen at
+  `/static/fullmap.html`, including the same click-to-open aircraft
+  sidebar), a traffic chart (day/week/month granularity, CSV export), and
+  hour-of-day / altitude / speed distribution charts, plus
+  farthest/closest/recently-observed tables.
+- **Aircraft detail sidebar** — click any aircraft's callsign or track
+  anywhere in the app (dashboard, full-screen map, daily report, history,
+  3D globe) for a tar1090-style detail panel: registration/type/photo,
+  this app's own last-known position/speed/distance/RSSI, and a live feed
+  of squawk, NAC/SIL/NIC accuracy, FMS-selected altitude/heading, wind,
+  and mach straight from readsb (see [Security & Privacy](#security--privacy)).
 - **Receiver performance** (`/static/receiver.html`) — how far you're
   actually receiving, broken down by compass bearing and by altitude band,
   a distance-vs-signal-strength (RSSI) heatmap, an interactive 3D
-  "reception hemisphere" (bearing/elevation/distance, drag to rotate),
-  plus a message-rate/position-rate trend over 24h/7d/30d.
+  "reception dome" (CesiumJS; bearing/elevation/distance as a connected
+  mesh with compass labels and distance rings, drag to rotate, hover for
+  exact bearing/elevation/distance — see
+  [Receiver performance](#receiver-performance-staticreceiverhtml) below), plus
+  a message-rate/position-rate trend over 24h/7d/30d.
 - **Daily report** (`/static/daily.html`) — one day's summary (unique
-  aircraft, max concurrent, message count, farthest/closest/most-observed)
-  with day-over-day and same-weekday-last-week comparisons, plus a top-10
-  aircraft-type chart. Optionally posted once a day to a Slack- or
-  Discord-compatible webhook.
+  aircraft, max concurrent, message count, farthest/closest/most-observed,
+  fastest/highest-altitude), a list of aircraft first seen that day, a
+  7-day unique-aircraft trend sparkline, day-over-day and
+  same-weekday-last-week comparisons, plus a top-10 aircraft-type chart.
+  Optionally posted once a day to a Slack- or Discord-compatible webhook.
 - **Aircraft revisit history** (`/static/history.html`) — which aircraft
   come back the most, with a per-aircraft first/last-seen, pass count, and
   callsign history; supports a browser-local (no account, no server write)
@@ -53,10 +58,13 @@ reference for AI coding agents working in this repo.
   a 3D aircraft model, color-tinted by altitude band and oriented by
   heading/roll (and an approximated pitch), drag to orbit. Every aircraft
   draws its own historical + live-extending track (opacity configurable in
-  Settings, default 50%). Shift+click one aircraft to isolate it; hover
-  for a callsign/altitude/speed tooltip; a checkbox picker filters which
+  Settings, default 50%, applied consistently in both live and
+  history-replay mode), color-coded by altitude band with an on-screen
+  legend. Shift+click one aircraft to isolate it; hover for a
+  callsign/altitude/speed tooltip; a checkbox picker filters which
   aircraft are shown; an optional camera-follow mode locks onto whichever
-  aircraft is isolated.
+  aircraft is isolated. A slider (15-minute steps, up to 24h) replays each
+  aircraft's historical track for that window instead of the live feed.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
@@ -281,13 +289,26 @@ tar1090's own info panel:
 Answers "how good is my antenna/siting, really?" — a bearing-vs-range
 chart (max distance received per compass sector), an altitude-vs-range
 chart, a distance-vs-RSSI heatmap (how signal strength falls off with
-range), a message-count/position-rate trend, and a 3D "reception
-hemisphere": every (bearing, elevation) direction's max reception
-distance plotted as a point around the receiver at the center — drag to
-rotate, color shows distance. Built with
-[`echarts-gl`](https://github.com/ecomfe/echarts-gl) (BSD-3-Clause,
-vendored the same way as `echarts`/`maplibre-gl` — no CDN). All over
-24h/7d/30d.
+range), a message-count/position-rate trend (all four built with
+[`echarts`](https://echarts.apache.org/)/[`echarts-gl`](https://github.com/ecomfe/echarts-gl),
+BSD-3-Clause, vendored — no CDN), and a 3D "reception dome": a CesiumJS
+scene showing every (bearing, elevation) direction's max reception
+distance as a single connected, color-graded mesh (not scattered
+points) — drag to rotate, hover any point on the mesh for its exact
+bearing/elevation/distance, four compass labels (N/E/S/W) and
+concentric distance rings for orientation, and a caption stating what
+the color scale means in your configured distance unit (km or nm). All
+over 24h/7d/30d.
+
+The dome's scene is anchored at a fixed, clearly-arbitrary placeholder
+point (Null Island, 0°N/0°E) rather than this app's real (never
+exposed) receiver location — a Cesium local East-North-Up frame is
+correctly true-north-oriented at *any* point on the WGS84 ellipsoid, so
+the already receiver-relative bearing/elevation/distance data renders
+with identical geometric accuracy regardless of anchor. This keeps the
+"never expose real receiver coordinates" rule (see
+[Security & Privacy](#security--privacy)) intact while still giving a
+real geo-referenced 3D scene instead of an abstract chart.
 
 ### Daily report (`/static/daily.html`)
 
@@ -349,7 +370,8 @@ it as a visual cue, not real flight dynamics. Every aircraft draws its
 own historical track (last several hours, cyan) plus a live-extending
 track (yellow) picking up exactly where the historical one left off, at
 an opacity you can change on the [Settings](#settings-staticsettingshtml)
-page (default 50%):
+page (default 50%, applied the same way in history-replay mode below).
+A legend in the corner of the scene explains the altitude-band colors:
 
 - **Click** an aircraft to open the same shared aircraft detail sidebar
   every other page uses.
@@ -372,14 +394,15 @@ page (default 50%):
   [Security & Privacy](#security--privacy) for why 1Hz is a reasonable
   choice here.
 
-The header's mode selector (**ライブ**/**1h**/**6h**/**24h**) can switch
-away from the live view entirely to a historical-track mode: every
-aircraft's past track over the selected window (same `GET /api/tracks`
-endpoint and data the [flat map](#the-dashboard-) uses), drawn with real
-altitude (not flattened to the ground) but no 3D aircraft models — hover
-for a callsign/altitude/speed/distance/time popup, click to open the
-sidebar, same as live mode. Switching back to **ライブ** restores the
-live broadcast view.
+The header's mode selector (**ライブ** button + a slider, 15-minute
+steps up to 24h) can switch away from the live view entirely to a
+historical-track mode: every aircraft's past track over the selected
+window (same `GET /api/tracks` endpoint and data the
+[flat map](#the-dashboard-) uses, now accepting fractional hours down to
+0.25), drawn with real altitude (not flattened to the ground) but no 3D
+aircraft models — hover for a callsign/altitude/speed/distance/time
+popup, click to open the sidebar, same as live mode. Switching back to
+**ライブ** restores the live broadcast view.
 
 Drag to orbit, scroll to zoom, click the home icon to reset the view.
 Unlike the receiver-performance page's 3D reception-hemisphere chart
@@ -571,9 +594,13 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   (`scripts/reset_db.py`) is a manual, confirmation-gated CLI script, never
   reachable over the network.
 - `/static/receiver.html`'s Content-Security-Policy adds `'unsafe-eval'`
-  to `script-src` — every other page stays without it. `echarts-gl`'s
-  internal shader/expression compiler needs it for the 3D reception
-  chart (confirmed by reproducing and fixing the exact failure). This app
+  and `blob:` to `script-src` — every other page except `globe.html`
+  stays without them. `echarts-gl`'s internal shader/expression compiler
+  needs `'unsafe-eval'` for the bearing/altitude/RSSI charts (confirmed
+  by reproducing and fixing the exact failure); the 3D reception dome
+  (CesiumJS, same vendored bundle `globe.html` uses) needs `'unsafe-eval'`
+  for its own WebAssembly compilation at startup and `blob:` for its
+  worker-loaded scripts, same root cause as `globe.html` below. This app
   never uses `eval()`/`Function()` itself and never renders API/user data
   as HTML (always `textContent`), so the realistic added risk is narrow —
   worth knowing if you're auditing this page specifically.
@@ -582,12 +609,16 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   without it, Cesium's own top-level script throws mid-execution and
   never finishes loading at all) and `blob:` to `script-src` (Cesium
   bootstraps its web workers via a small in-memory blob: script) — again,
-  only this one page, confirmed by reproducing and fixing the exact
+  only these two pages, confirmed by reproducing and fixing the exact
   failure rather than added speculatively.
-- `/static/globe.html` fetches satellite imagery (ArcGIS World Imagery,
-  attribution shown on-page) continuously while it's open — not just on
-  click, the same posture as the dashboard's map tiles, just a different
-  provider and only on this one page.
+- `/static/globe.html` and `/static/receiver.html`'s 3D reception dome
+  both fetch satellite imagery (ArcGIS World Imagery, attribution shown
+  on-page) continuously while open — not just on click, the same posture
+  as the dashboard's map tiles, just a different provider and only on
+  these two pages. The reception dome's imagery is centered on a fixed,
+  clearly-arbitrary placeholder point (Null Island, 0°N/0°E), never your
+  real receiver location — see [Receiver performance](#receiver-performance-staticreceiverhtml)
+  for why an arbitrary anchor doesn't affect the geometry's correctness.
 - Your receiver's coordinates are used server-side for distance
   calculations and are never returned at full precision by the API; the
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off

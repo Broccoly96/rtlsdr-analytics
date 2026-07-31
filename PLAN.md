@@ -2129,3 +2129,30 @@ Milestone EE完了後の細かいフィードバック4件に対応。
 ユーザー判断が必要な事項: Cloudflareアカウント/ドメイン/Tunnel/Accessポリシーの設定(README記載の手順を参照)。
 ```
 
+## 27. Cloudflare Tunnelを撤回し、tailscale serveに変更(Milestone GG補遺)
+
+Milestone GG-3で用意したCloudflare Tunnelを、ユーザーが実際にTunnel作成・トークン取得・`cloudflared`起動まで試した上で撤回し、代わりにTailscale本体の機能である`tailscale serve`(tailnet内のみHTTPS化、公開インターネットには出さない)を使う方針に変更した。`tailscale serve`と`tailscale funnel`(公開インターネット向け)のどちらを使うかをAskUserQuestionで確認し、「アプリ自体に認証機能が無い」というこのアプリの設計上の制約から、ユーザーは`tailscale serve`(tailnet内のみ)を選択した。
+
+- **実施したリバート**: `compose.yaml`から`cloudflared`サービスと`adsb-api`の`--proxy-headers`/`--forwarded-allow-ips`を削除(Milestone GG-1時点の状態に完全復元)。`.env.example`から`CLOUDFLARE_TUNNEL_TOKEN`を削除。`CLAUDE.md`の「Public hosting」に関する第3項目の但し書きを削除(`tailscale serve`はtailnet内に留まるため、そもそも「public hosting」のスコープ自体に触れないと判断)。`README.md`のCloudflare Tunnelセクションを`tailscale serve`の短い説明に置き換え(こちらはリポジトリ側のコード変更が一切不要、Tailscale側の機能のため)。
+- **実機での後片付け**: ユーザーが実際に`docker compose --profile cloudflare up -d cloudflared`を実行済みで、Cloudflareのエッジに実際に接続established(ログで確認)していたコンテナが稼働中だったため、これを停止・削除。キャッシュされていた`cloudflare/cloudflared`イメージも削除。ユーザーが`.env`に直接追記していた実トークンも削除(`.env`はgitignore対象でコミット履歴には一切含まれない)。
+- **`tailscale serve`の技術確認**: 実機で`tailscale serve --help`を確認し、インストール済みバージョン(1.98.9)での正確な構文を確認した上でREADMEに記載。`adsb-api`のDockerポート公開が`APP_BIND_HOST`(Tailscale IP自体)にのみバインドされており`127.0.0.1`では待受していないことを`curl`で実測確認し、`tailscale serve`のターゲットにTailscale IPを明示指定する形とすることで、既存の直接アクセス(`http://<tailscale-ip>:8088`)を一切変更せずに追加できることを確認した。`sudo`が必要な操作(`tailscale serve`の実行、または一度だけの`tailscale set --operator=`設定)はユーザー自身に実行してもらう(このセッションからは非対話的な`sudo`が使えないことを実機で確認済み)。
+
+### セッション記録
+
+```text
+日付: 2026-07-31
+完了したMilestone/Task: Milestone GG補遺(Cloudflare Tunnelの撤回、tailscale serveへの移行準備)
+変更した主要ファイル: compose.yaml、.env.example、CLAUDE.md、README.md
+実行したテスト: pytest(フルスイート、303件、全green)、ruff check(app tests scripts migrations)、`docker compose config`で構文検証
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - 実際に稼働していた`cloudflared`コンテナ(Cloudflareのエッジに接続確立済み)を発見し停止・削除、イメージも削除。
+  - リバート後の`compose.yaml`がMilestone GG-1完了時点の内容と完全一致することを`git diff`で確認。
+  - リバート後も8ページ全てでconsole error 0件を再確認。
+  - `tailscale serve --help`の実際の出力から正確なコマンド構文を確認し、`APP_BIND_HOST`がTailscale IP自体にバインドされている(127.0.0.1では待受していない)ことを`curl`で実測した上でREADMEの手順に反映。
+残課題:
+  - `tailscale serve`の実際の実行(`sudo`が必要なため)はユーザー自身の操作待ち。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: `sudo tailscale set --operator=$(whoami)`(一度だけ)と`tailscale serve --bg http://<tailscale-ip>:8088`の実行(README記載の手順を参照)。
+```
+

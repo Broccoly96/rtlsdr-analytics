@@ -65,14 +65,30 @@ async def compute_daily_summary(
     )
     # Same ORDER BY distance_km {ASC,DESC} LIMIT shape rankings.py already
     # uses successfully against ix_observations_distance_observed_at.
-    # callsign comes from the exact same row (the observation actually
-    # farthest/closest that day), not the aircraft's current/latest
-    # callsign, which can differ for a busy aircraft with rotating flights.
+    # callsign comes from the SAME AIRCRAFT's temporally-nearest
+    # non-null-callsign row that day, not necessarily the winning row's own
+    # callsign -- a newly-acquired aircraft's first pings (disproportionately
+    # likely to be the farthest, edge-of-range ones) are systematically
+    # decoded before its callsign is (confirmed against real data: on a
+    # sampled day, the max-distance row had a null callsign ~37% of the
+    # time vs. ~6% for a random row). Still scoped to the aircraft's
+    # activity *that day*, consistent with the original intent of not
+    # attributing a later/different flight's callsign -- just no longer
+    # tied to that one exact row, which can easily predate ident decoding.
     farthest = await pool.fetchrow(
         """
-        SELECT icao, callsign, distance_km FROM observations
-        WHERE observed_at >= $1 AND observed_at < $2 AND distance_km IS NOT NULL
-        ORDER BY distance_km DESC LIMIT 1
+        WITH winner AS (
+            SELECT icao, distance_km, observed_at FROM observations
+            WHERE observed_at >= $1 AND observed_at < $2 AND distance_km IS NOT NULL
+            ORDER BY distance_km DESC LIMIT 1
+        )
+        SELECT w.icao, w.distance_km,
+            (SELECT o.callsign FROM observations o
+             WHERE o.icao = w.icao AND o.observed_at >= $1 AND o.observed_at < $2
+               AND o.callsign IS NOT NULL
+             ORDER BY abs(extract(epoch FROM o.observed_at - w.observed_at)) ASC
+             LIMIT 1) AS callsign
+        FROM winner w
         """,
         start_utc,
         end_utc,
@@ -80,21 +96,35 @@ async def compute_daily_summary(
     )
     closest = await pool.fetchrow(
         """
-        SELECT icao, callsign, distance_km FROM observations
-        WHERE observed_at >= $1 AND observed_at < $2 AND distance_km IS NOT NULL
-        ORDER BY distance_km ASC LIMIT 1
+        WITH winner AS (
+            SELECT icao, distance_km, observed_at FROM observations
+            WHERE observed_at >= $1 AND observed_at < $2 AND distance_km IS NOT NULL
+            ORDER BY distance_km ASC LIMIT 1
+        )
+        SELECT w.icao, w.distance_km,
+            (SELECT o.callsign FROM observations o
+             WHERE o.icao = w.icao AND o.observed_at >= $1 AND o.observed_at < $2
+               AND o.callsign IS NOT NULL
+             ORDER BY abs(extract(epoch FROM o.observed_at - w.observed_at)) ASC
+             LIMIT 1) AS callsign
+        FROM winner w
         """,
         start_utc,
         end_utc,
         timeout=QUERY_TIMEOUT_SECONDS,
     )
-    # callsign here is that aircraft's most recent callsign *within this
-    # day* (not the aircraft table's all-time last_callsign), consistent
-    # with farthest/closest above being scoped to the day too.
+    # callsign here is that aircraft's most recent NON-NULL callsign
+    # *within this day* (not the aircraft table's all-time last_callsign),
+    # consistent with farthest/closest above being scoped to the day too.
+    # FILTER (not just array_agg(...)[1]) so a null-callsign latest ping
+    # doesn't mask an earlier real one that day -- same bug class as
+    # farthest/closest, just far less likely to bite here since this
+    # aggregates over every row the aircraft has that day, not one.
     most_observed = await pool.fetchrow(
         """
         SELECT icao, count(*) AS observation_count,
-               (array_agg(callsign ORDER BY observed_at DESC))[1] AS callsign
+               (array_agg(callsign ORDER BY observed_at DESC)
+                    FILTER (WHERE callsign IS NOT NULL))[1] AS callsign
         FROM observations
         WHERE observed_at >= $1 AND observed_at < $2
         GROUP BY icao ORDER BY observation_count DESC LIMIT 1

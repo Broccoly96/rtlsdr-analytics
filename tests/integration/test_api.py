@@ -297,6 +297,98 @@ async def test_traffic_daily_summary_today_is_computed_live(
     assert body["most_observed_callsign"] == "TEST001"
 
 
+async def test_traffic_daily_summary_farthest_finds_nearby_time_callsign_when_winning_row_is_null(
+    postgres_url, client: AsyncClient
+) -> None:
+    # The farthest-distance observation has no callsign yet (e.g. an
+    # edge-of-range first ping before ident decoding) -- a later observation
+    # for the SAME aircraft that same day does have one. farthest_callsign
+    # should surface it instead of staying null.
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("bbbbbb", now, None)
+        await store.insert_observation(
+            AircraftObservation(
+                icao="bbbbbb",
+                observed_at=now,
+                callsign=None,
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=35000.0,
+                ground_speed_kt=450.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-25.0,
+                distance_km=300.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+        await store.insert_observation(
+            AircraftObservation(
+                icao="bbbbbb",
+                observed_at=now + timedelta(seconds=5),
+                callsign="ANA999",
+                lat=35.01,
+                lon=139.0,
+                altitude_ft=34500.0,
+                ground_speed_kt=450.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-25.0,
+                distance_km=299.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/traffic/daily-summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["farthest_icao"] == "bbbbbb"
+    assert body["farthest_callsign"] == "ANA999"
+
+
+async def test_traffic_daily_summary_farthest_callsign_stays_null_if_never_broadcast(
+    postgres_url, client: AsyncClient
+) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("cccccc", now, None)
+        await store.insert_observation(
+            AircraftObservation(
+                icao="cccccc",
+                observed_at=now,
+                callsign=None,
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=35000.0,
+                ground_speed_kt=450.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-25.0,
+                distance_km=100.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/traffic/daily-summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["farthest_icao"] == "cccccc"
+    assert body["farthest_callsign"] is None
+
+
 async def test_traffic_daily_summary_past_day_reads_persisted_row(
     postgres_url, client: AsyncClient
 ) -> None:

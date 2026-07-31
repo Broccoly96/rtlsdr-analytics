@@ -1116,7 +1116,7 @@ async def test_heatmap_with_seeded_data_and_filters(postgres_url, client: AsyncC
                 callsign="TEST001",
                 lat=35.681,
                 lon=139.767,
-                altitude_ft=0.0,  # "ground" band (max_ft=0, inclusive)
+                altitude_ft=0.0,  # "ground" band (max_ft=5000, inclusive)
                 ground_speed_kt=200.0,
                 track_deg=90.0,
                 vertical_rate_fpm=0.0,

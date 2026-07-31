@@ -6,7 +6,8 @@ from app.domain.bands import ALTITUDE_BANDS, band_case_sql, band_key_for_altitud
 def test_band_key_for_altitude_covers_every_band():
     assert band_key_for_altitude(-500) == "ground"
     assert band_key_for_altitude(0) == "ground"
-    assert band_key_for_altitude(5000) == "low"
+    assert band_key_for_altitude(5000) == "ground"
+    assert band_key_for_altitude(7500) == "low"
     assert band_key_for_altitude(10000) == "low"
     assert band_key_for_altitude(20000) == "mid"
     assert band_key_for_altitude(30000) == "high"

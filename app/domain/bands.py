@@ -20,10 +20,10 @@ class AltitudeBand:
 
 
 ALTITUDE_BANDS: tuple[AltitudeBand, ...] = (
-    AltitudeBand("ground", "地上/低高度", 0, "#fbbf24"),
+    AltitudeBand("ground", "地上/低高度", 5000, "#fbbf24"),
     AltitudeBand("low", "低高度", 10000, "#34d399"),
-    AltitudeBand("mid", "中高度", 25000, "#60a5fa"),
-    AltitudeBand("high", "高高度", 35000, "#c084fc"),
+    AltitudeBand("mid", "中高度", 20000, "#60a5fa"),
+    AltitudeBand("high", "高高度", 30000, "#c084fc"),
     AltitudeBand("very_high", "超高高度", None, "#ef4444"),
 )
 

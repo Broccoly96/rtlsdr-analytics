@@ -258,7 +258,7 @@ export function openAircraftSidebar(icao) {
   title.textContent = icao;
   const hexLabel = document.createElement("div");
   hexLabel.className = "aircraft-sidebar__hex";
-  hexLabel.textContent = `Hex: ${icao}`;
+  hexLabel.textContent = `ICAO: ${icao}`;
   header.append(closeButton, title, hexLabel);
   sidebar.appendChild(header);
 

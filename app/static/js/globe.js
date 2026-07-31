@@ -594,14 +594,11 @@ function wireIsolateExit() {
   document.getElementById("exit-isolate").addEventListener("click", () => exitIsolate());
 }
 
-// "6時間" for whole hours, "6時間15分" / "15分" for the slider's 15-minute
-// (0.25h) steps.
+// "6.0H" / "0.3H" -- short fixed-width form, rounded to one decimal via
+// integer tenths (avoids float-rounding drift from the slider's 0.25h steps).
 function formatHoursLabel(hours) {
-  const wholeHours = Math.floor(hours);
-  const minutes = Math.round((hours - wholeHours) * 60);
-  if (minutes === 0) return `${wholeHours}時間`;
-  if (wholeHours === 0) return `${minutes}分`;
-  return `${wholeHours}時間${minutes}分`;
+  const tenths = Math.round(hours * 10);
+  return `${(tenths / 10).toFixed(1)}H`;
 }
 
 function wireModeButtons() {

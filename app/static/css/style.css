@@ -670,6 +670,17 @@ button {
   width: 160px;
 }
 
+/* Fixed (not min-) width: this label sits inside a flex item that's
+   right-aligned via margin-left: auto on .app-header__period. A width
+   that changes with the text (e.g. "6.0H" -> "15.5H" mid-drag) changes
+   how much free space that auto margin sees, which visibly shifts the
+   slider out from under the cursor while dragging. */
+.globe-history-slider #history-hours-value {
+  display: inline-block;
+  width: 5ch;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- range slider (app/static/settings.html) ------------------------------ */
 
 .range-slider {

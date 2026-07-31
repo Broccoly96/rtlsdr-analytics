@@ -45,7 +45,7 @@
     <div class="app-header__period" role="group" aria-label="表示モード">
       <button type="button" data-mode="live" class="period-btn" aria-pressed="true">ライブ</button>
       <div class="globe-history-slider">
-        <label for="history-hours-slider">過去<span id="history-hours-value">6時間</span></label>
+        <label for="history-hours-slider">過去</label>
         <input
           type="range"
           id="history-hours-slider"
@@ -55,6 +55,7 @@
           step="0.25"
           value="6"
         >
+        <span id="history-hours-value">6.0H</span>
       </div>
     </div>
     <div class="app-header__period" role="group" aria-label="表示機体" id="live-controls">

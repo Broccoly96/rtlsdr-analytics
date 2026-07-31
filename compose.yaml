@@ -126,24 +126,7 @@ services:
       # without this still work, just without a revision suffix.
       args:
         GIT_REVISION: ${GIT_REVISION:-unknown}
-    # --proxy-headers trusts X-Forwarded-For/-Proto from whatever connects
-    # to this container -- safe here because the *only* things that can
-    # reach adsb-api:8088 at all are this app's own sibling containers
-    # (the Tailscale-facing host port above, or the optional cloudflared
-    # tunnel below, both already gate who reaches this port in the first
-    # place). Needed for correct client-IP/scheme handling once traffic
-    # can arrive via cloudflared (see the cloudflared service below).
-    command:
-      [
-        "uvicorn",
-        "app.api.asgi:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8088",
-        "--proxy-headers",
-        "--forwarded-allow-ips=*",
-      ]
+    command: ["uvicorn", "app.api.asgi:app", "--host", "0.0.0.0", "--port", "8088"]
     env_file: .env
     ports:
       - "${APP_BIND_HOST}:${APP_PORT}:8088"
@@ -165,29 +148,6 @@ services:
       timeout: 5s
       retries: 5
     stop_grace_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Optional, opt-in public exposure (README's "Optional: public access via
-  # Cloudflare Tunnel" section) -- gated behind the "cloudflare" profile so
-  # `docker compose up -d` never starts this on its own; only
-  # `docker compose --profile cloudflare up -d cloudflared` does, and only
-  # once CLOUDFLARE_TUNNEL_TOKEN is actually set in .env. Reaches adsb-api
-  # by Compose service name over the default network -- no host port is
-  # published for this at all, so the existing Tailscale-only access above
-  # is completely unaffected either way.
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
-    depends_on:
-      adsb-api:
-        condition: service_healthy
-    profiles:
-      - cloudflare
     logging:
       driver: json-file
       options:

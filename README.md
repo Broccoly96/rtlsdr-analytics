@@ -82,8 +82,8 @@ reference for AI coding agents working in this repo.
   support by design (this app's data is inherently live; a cached response
   would just look stale/broken) — the install/icon experience is the whole
   point, not an offline mode. Requires HTTPS (or `localhost`) to actually
-  activate, so this becomes available once you're accessing the app over
-  the optional Cloudflare Tunnel below, not over plain Tailscale HTTP.
+  activate — see "Optional: HTTPS within your tailnet via `tailscale serve`"
+  in Operations below for a way to get that without leaving your tailnet.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
@@ -596,42 +596,31 @@ error — see [Versioning](#versioning) below).
 Equivalent to `docker compose down` / `docker compose down -v` directly, if
 you'd rather skip the wrapper.
 
-**Optional: public access via Cloudflare Tunnel.** This app has no login on
-any endpoint (see [Security & Privacy](#security--privacy)) — the default
-and recommended setup is Tailscale/LAN-only, as documented throughout this
-README. If you do want it reachable from the public internet, the
-supported path is [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-+ [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
-(both free for personal use) rather than opening a port yourself: Cloudflare
-terminates HTTPS and gates every request behind its own login (e.g. "only
-this email address") *before* it ever reaches this app, so the app's own
-lack of auth is no longer the exposed surface.
+**Optional: HTTPS within your tailnet via `tailscale serve`.** This app has
+no login on any endpoint (see [Security & Privacy](#security--privacy)), so
+it's meant to stay Tailscale/LAN-only — not exposed to the public internet.
+Within that, plain `http://<tailscale-ip>:8088` works fine, but a real
+HTTPS endpoint is worth having anyway: some browser features (this app's
+PWA "Add to Home Screen" support, for one) only activate in a secure
+context. [`tailscale serve`](https://tailscale.com/kb/1312/serve) does
+exactly that — it's a Tailscale feature, not something this repo needs any
+code for, and only reaches devices already on your tailnet (unlike
+`tailscale funnel`, its public-internet-facing sibling, which this app
+intentionally does not use, for the same no-login reason above):
 
-This repo includes the local half (a `cloudflared` service, off by default);
-the account/domain/tunnel/auth setup can only happen in your own Cloudflare
-account, which nothing here can do for you:
+```bash
+# One-time, so future `tailscale serve`/`funnel` commands don't need sudo:
+sudo tailscale set --operator=$(whoami)
 
-1. Create a free Cloudflare account and add a domain to it (an existing
-   one, or a newly-registered one — either works).
-2. Zero Trust dashboard → **Networks → Tunnels** → create a tunnel, add a
-   public hostname route pointing at `http://adsb-api:8088` (that's this
-   app's Compose service name/port — Cloudflare's dashboard just needs the
-   hostname, not a routable IP, since `cloudflared` reaches it over Compose's
-   internal network).
-3. Copy the tunnel token it gives you into `.env` as `CLOUDFLARE_TUNNEL_TOKEN`.
-4. Zero Trust dashboard → **Access → Applications** → add an application for
-   your new hostname, with a policy such as "allow: your own email only"
-   (free for up to 50 users).
-5. Start it:
-   ```bash
-   docker compose --profile cloudflare up -d cloudflared
-   ```
+# Proxies https://<this-machine>.<your-tailnet>.ts.net (443) to the
+# already-published adsb-api port — find your own hostname with
+# `tailscale status` if you're not sure what it'll be.
+tailscale serve --bg http://<tailscale-ip>:8088
+```
 
-`cloudflared` publishes **no host port at all** — it reaches `adsb-api`
-purely by Compose service name over the internal network, so none of this
-touches or weakens the existing Tailscale-only `APP_BIND_HOST`/`APP_PORT`
-setup; both can run side by side. Stop public access at any time with
-`docker compose stop cloudflared` (or just never run the command above).
+Purely additive: the existing `http://<tailscale-ip>:8088` direct access
+keeps working unchanged. Check current config with `tailscale serve status`;
+undo with `tailscale serve reset`.
 
 ## Development
 

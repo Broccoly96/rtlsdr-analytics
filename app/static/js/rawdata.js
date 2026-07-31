@@ -36,9 +36,110 @@ function formatNowTime() {
   return new Date().toLocaleTimeString("ja-JP", { hour12: false });
 }
 
+// The same string already shown in the "メッセージ種類" column -- grouping
+// the message-type filter by this (rather than by raw DF number) means the
+// filter's checkbox list matches exactly what the user sees in the table.
+function messageTypeKeyFor(frame) {
+  if (frame.frame_type === "mode_ac") return "Mode A/C";
+  const decoded = frame.decoded || {};
+  return decoded.tc_label || decoded.df_label || `DF${decoded.df ?? "?"}`;
+}
+
+// --- filtering (display-only: never affects the received/trimmed buffer) ---
+
+const hiddenMessageTypes = new Set(); // unchecked in the popover -> hidden
+const knownMessageTypes = new Map(); // key -> checkbox element
+let icaoFilterText = "";
+
+function rowPassesFilter(row) {
+  if (hiddenMessageTypes.has(row.dataset.msgType)) return false;
+  if (icaoFilterText && !row.dataset.icao.includes(icaoFilterText)) return false;
+  return true;
+}
+
+function applyFilterToAllRows(tbody) {
+  for (const row of tbody.children) {
+    row.hidden = !rowPassesFilter(row);
+  }
+}
+
+function addMessageTypePickerRow(key) {
+  const list = document.getElementById("msgtype-picker-list");
+  if (!list) return;
+
+  const row = document.createElement("div");
+  row.className = "globe-picker__item";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.id = `msgtype-${knownMessageTypes.size}`;
+  checkbox.checked = !hiddenMessageTypes.has(key);
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) hiddenMessageTypes.delete(key);
+    else hiddenMessageTypes.add(key);
+    applyFilterToAllRows(document.querySelector("#rawdata-table tbody"));
+  });
+
+  const label = document.createElement("label");
+  label.htmlFor = checkbox.id;
+  label.textContent = key;
+
+  knownMessageTypes.set(key, checkbox);
+  row.append(checkbox, label);
+  list.appendChild(row);
+}
+
+function ensureMessageTypeKnown(key) {
+  if (knownMessageTypes.has(key)) return;
+  addMessageTypePickerRow(key);
+}
+
+function setupIcaoFilterInput() {
+  const input = document.getElementById("icao-filter");
+  if (!input) return;
+  input.addEventListener("input", () => {
+    icaoFilterText = input.value.trim().toLowerCase();
+    applyFilterToAllRows(document.querySelector("#rawdata-table tbody"));
+  });
+}
+
+function setupMessageTypePicker() {
+  const toggle = document.getElementById("msgtype-picker-toggle");
+  const picker = document.getElementById("msgtype-picker");
+  if (!toggle || !picker) return;
+
+  toggle.addEventListener("click", () => {
+    const willOpen = picker.hidden;
+    picker.hidden = !willOpen;
+    toggle.setAttribute("aria-expanded", String(willOpen));
+  });
+  document.addEventListener("click", (event) => {
+    if (!picker.hidden && !picker.contains(event.target) && event.target !== toggle) {
+      picker.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  document.getElementById("msgtype-picker-all").addEventListener("click", () => {
+    hiddenMessageTypes.clear();
+    for (const checkbox of knownMessageTypes.values()) checkbox.checked = true;
+    applyFilterToAllRows(document.querySelector("#rawdata-table tbody"));
+  });
+  document.getElementById("msgtype-picker-none").addEventListener("click", () => {
+    for (const key of knownMessageTypes.keys()) hiddenMessageTypes.add(key);
+    for (const checkbox of knownMessageTypes.values()) checkbox.checked = false;
+    applyFilterToAllRows(document.querySelector("#rawdata-table tbody"));
+  });
+}
+
 function addRow(tbody, frame) {
   const decoded = frame.decoded || {};
+  const msgType = messageTypeKeyFor(frame);
+  ensureMessageTypeKnown(msgType);
+
   const row = document.createElement("tr");
+  row.dataset.msgType = msgType;
+  row.dataset.icao = (decoded.icao24 || "").toLowerCase();
   const cells = [
     formatNowTime(),
     FRAME_TYPE_LABELS[frame.frame_type] || frame.frame_type,
@@ -53,6 +154,7 @@ function addRow(tbody, frame) {
     cell.textContent = text;
     row.appendChild(cell);
   }
+  row.hidden = !rowPassesFilter(row);
   // Newest first, capped -- prepend and trim rather than letting the
   // table grow unbounded while the tab is left open.
   tbody.insertBefore(row, tbody.firstChild);
@@ -146,6 +248,8 @@ async function main() {
 
   setupPauseButton();
   setupClearButton();
+  setupIcaoFilterInput();
+  setupMessageTypePicker();
   connect();
 }
 

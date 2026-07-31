@@ -330,6 +330,16 @@ button {
   font-size: 0.75rem;
 }
 
+.filter-input {
+  padding: 4px 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  width: 140px;
+}
+
 .heatmap-controls .period-btn {
   padding: 4px 10px;
   font-size: 0.75rem;

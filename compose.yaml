@@ -171,5 +171,28 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Optional, opt-in public exposure (README's "Optional: public access via
+  # Cloudflare Tunnel" section) -- gated behind the "cloudflare" profile so
+  # `docker compose up -d` never starts this on its own; only
+  # `docker compose --profile cloudflare up -d cloudflared` does, and only
+  # once CLOUDFLARE_TUNNEL_TOKEN is actually set in .env. Reaches adsb-api
+  # by Compose service name over the default network -- no host port is
+  # published for this at all, so the existing Tailscale-only access above
+  # is completely unaffected either way.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
+    depends_on:
+      adsb-api:
+        condition: service_healthy
+    profiles:
+      - cloudflare
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   adsb-db-data:

@@ -20,17 +20,26 @@ reference for AI coding agents working in this repo.
 
 - **Dashboard** (`/`) — live ingestion status, currently-received /
   position-acquired counts, a track map with an optional density heatmap
-  and an altitude-band color legend (also available full-screen at
-  `/static/fullmap.html`, including the same click-to-open aircraft
-  sidebar), a traffic chart (day/week/month granularity, CSV export), and
-  hour-of-day / altitude / speed distribution charts, plus
-  farthest/closest/recently-observed tables.
-- **Aircraft detail sidebar** — click any aircraft's callsign or track
-  anywhere in the app (dashboard, full-screen map, daily report, history,
-  3D globe) for a tar1090-style detail panel: registration/type/photo,
-  this app's own last-known position/speed/distance/RSSI, and a live feed
-  of squawk, NAC/SIL/NIC accuracy, FMS-selected altitude/heading, wind,
-  and mach straight from readsb (see [Security & Privacy](#security--privacy)).
+  and an altitude-band color legend (also available full-screen and live
+  at `/static/fullmap.html`, see below), a traffic chart (day/week/month
+  granularity, CSV export), and hour-of-day / altitude / speed
+  distribution charts, plus farthest/closest/recently-observed tables.
+- **航跡地図 — track map** (`/static/fullmap.html`) — the dashboard's map,
+  full-screen, with a live mode: every currently-received aircraft as a
+  flat 2D icon (shape by ADS-B emitter category — jet/light/rotorcraft/
+  glider/UAV/ground vehicle, color by altitude band, rotated to its
+  heading), click for the shared aircraft detail sidebar, Shift+click to
+  isolate one, a picker to show/hide specific aircraft, and an optional
+  1Hz update rate — same broadcast connection and controls as the 3D
+  globe below, just flat icons instead of a 3D model. A slider (1-hour
+  steps, up to 72h) switches to a historical-track replay instead.
+- **Aircraft detail sidebar** — click any aircraft's callsign, track, or
+  live icon anywhere in the app (dashboard, track map, daily report,
+  history, 3D globe) for a tar1090-style detail panel: registration/type/
+  photo, this app's own last-known position/speed/distance/RSSI, and a
+  live feed of squawk, NAC/SIL/NIC accuracy, FMS-selected altitude/
+  heading, wind, and mach straight from readsb (see
+  [Security & Privacy](#security--privacy)).
 - **Receiver performance** (`/static/receiver.html`) — how far you're
   actually receiving, broken down by compass bearing and by altitude band,
   a distance-vs-signal-strength (RSSI) heatmap, and a message-rate/
@@ -47,20 +56,25 @@ reference for AI coding agents working in this repo.
   favorites list.
 - **Raw data** (`/static/rawdata.html`) — a live, ephemeral view of
   readsb's raw Beast-format stream with a simple decode (downlink format,
-  ICAO24, ADS-B message-type category), for learning the frame structure.
-  Nothing shown here is stored anywhere.
+  ICAO24, ADS-B message-type category), filterable by ICAO and message
+  type (both client-side, no effect on the 500-frame buffer or on
+  pause/clear), for learning the frame structure. Nothing shown here is
+  stored anywhere.
 - **3D flight globe** (`/static/globe.html`) — every currently-live aircraft
   shown at once in a real 3D scene (satellite imagery ground, CesiumJS) as
   a 3D aircraft model, color-tinted by altitude band and oriented by
   heading/roll (and an approximated pitch), drag to orbit. Every aircraft
   draws its own historical + live-extending track (opacity configurable in
-  Settings, default 50%, applied consistently in both live and
-  history-replay mode), color-coded by altitude band with an on-screen
-  legend. Shift+click one aircraft to isolate it; hover for a
-  callsign/altitude/speed tooltip; a checkbox picker filters which
-  aircraft are shown; an optional camera-follow mode locks onto whichever
-  aircraft is isolated. A slider (15-minute steps, up to 24h) replays each
-  aircraft's historical track for that window instead of the live feed.
+  Settings, default 50%), colored by altitude band the same way
+  everywhere in this app — including changing color along its own length
+  as an aircraft's altitude changes (e.g. climbing out or descending),
+  not one fixed color per track. An on-screen legend explains the colors
+  with their exact altitude ranges. Shift+click one aircraft to isolate
+  it; hover for a callsign/altitude/speed tooltip; a checkbox picker
+  filters which aircraft are shown; an optional camera-follow mode locks
+  onto whichever aircraft is isolated. A slider (15-minute steps, up to
+  24h) replays each aircraft's historical track for that window instead
+  of the live feed.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
@@ -249,7 +263,8 @@ erroring, or has no data yet. Four cards show currently-received aircraft,
 aircraft with a position, unique aircraft in the last 24h, and time since
 the last successful fetch. Below that: a track map (1h/6h/24h, with an
 optional density heatmap filterable by altitude band / hour of day / day
-of week — also available full-screen at `/static/fullmap.html`), a
+of week — also available full-screen and live at
+[Track map (航跡地図)](#track-map-航跡地図-staticfullmaphtml)), a
 traffic chart with day/week/month zoom and a CSV download link,
 distribution charts (by hour of day, altitude, speed), and
 farthest/closest/recently-observed tables. Click any aircraft's callsign
@@ -258,6 +273,36 @@ to open its detail sidebar (see
 [Security & Privacy](#security--privacy)). Everything refreshes
 automatically (every 5s for status/rankings, 30s for the map/traffic) and
 pauses while the browser tab is hidden.
+
+### Track map (航跡地図) (`/static/fullmap.html`)
+
+The dashboard's map, full-screen, with a live mode on top of the same
+historical-track view. Live mode connects to the same shared
+`WS /ws/aircraft-positions` broadcast the 3D globe uses (see below) —
+one server-side readsb poll fanned out to every connected client — and
+renders every currently-received aircraft as a flat 2D icon:
+
+- **Shape** — by ADS-B emitter category (readsb's `category` field):
+  distinct silhouettes for jet/large aircraft, light aircraft,
+  rotorcraft, glider/lighter-than-air, UAV, and ground vehicles, falling
+  back to a generic icon when the category is absent or unrecognized.
+  These are small hand-authored SVGs, not a per-exact-aircraft-type
+  library (tar1090/FlightRadar24-scale, hundreds of shapes) — a
+  deliberate scope choice; see
+  [Security & Privacy](#security--privacy) for the licensing/effort
+  reasoning.
+- **Color** — the same altitude-band color (and legend) every track line
+  in this app uses.
+- **Rotation** — to the aircraft's current track/heading.
+
+Click an icon for the shared aircraft detail sidebar; Shift+click to
+isolate one aircraft (Shift+click again, or "全機体表示に戻す", to
+return to the full view); "機体選択" opens a checkbox picker to
+show/hide specific aircraft; "更新頻度: 1秒" opts into the same 1Hz
+broadcast cadence the 3D globe can request. A slider (1-hour steps, up
+to 72h) switches to a historical-track replay instead of the live view
+(the same `GET /api/tracks` endpoint and data the dashboard's embedded
+map uses).
 
 ### Aircraft detail sidebar
 
@@ -342,7 +387,10 @@ replacement for readsb's own (correct, complete) decoding — no
 CPR position or velocity math happens here. Nothing is stored: closing
 the tab loses the history, and the server never writes any of it to the
 database. Pause to read, or clear the table, with the buttons at the top;
-it reconnects automatically if the connection drops.
+it reconnects automatically if the connection drops. An ICAO text filter
+and a message-type checkbox popover narrow down what's *shown*; both are
+purely client-side (every field needed already arrives per-message) and
+never affect what's received, the 500-frame buffer, or pause/clear.
 
 ### 3D flight globe (`/static/globe.html`)
 
@@ -356,11 +404,14 @@ heading (compass track) and roll/bank angle when readsb reports it
 (often absent — equipage-dependent); pitch has no equivalent readsb
 field and is approximated from vertical rate and ground speed, so treat
 it as a visual cue, not real flight dynamics. Every aircraft draws its
-own historical track (last several hours, cyan) plus a live-extending
-track (yellow) picking up exactly where the historical one left off, at
-an opacity you can change on the [Settings](#settings-staticsettingshtml)
-page (default 50%, applied the same way in history-replay mode below).
-A legend in the corner of the scene explains the altitude-band colors:
+own historical track plus a live-extending track picking up exactly
+where the historical one left off, at an opacity you can change on the
+[Settings](#settings-staticsettingshtml) page (default 50%, applied the
+same way in history-replay mode below). Both are colored by altitude
+band — including changing color along their own length as an aircraft's
+altitude changes, not one fixed color per track — matching a legend in
+the corner of the scene that also states each band's exact altitude
+range:
 
 - **Click** an aircraft to open the same shared aircraft detail sidebar
   every other page uses.
@@ -440,7 +491,7 @@ independently at the collector's own cadence, never persisted).
 | `GET /api/traffic.csv` | `hours` | Same data as a CSV download |
 | `GET /api/traffic/daily` | `days` (1–365, default 30) | Per-day summaries, ending yesterday |
 | `GET /api/traffic/daily-summary` | `day` (YYYY-MM-DD) | One day's summary; today is computed live |
-| `GET /api/tracks` | `hours` (1–24, default 6) | Decimated per-aircraft track lines (capped at 100 aircraft / 10k points) |
+| `GET /api/tracks` | `hours` (0.25–72, default 6) | Decimated per-aircraft track lines (capped at 100 aircraft / 10k points) |
 | `GET /api/rankings` | `hours`, `limit` | Farthest / closest aircraft |
 | `GET /api/aircraft/recent` | `hours`, `limit`, `offset` | Recently-seen aircraft |
 | `GET /api/aircraft/{icao}/history` | — | One aircraft's revisit history (includes this app's own last-known position/speed/RSSI) |
@@ -601,6 +652,18 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   attribution shown on-page) continuously while it's open — not just on
   click, the same posture as the dashboard's map tiles, just a different
   provider and only on this one page.
+- `/static/fullmap.html`'s CSP adds `ws:`/`wss:` to `connect-src` (the
+  same addition `globe.html` already needed) so its live mode's
+  WebSocket isn't blocked — the only other page with this addition.
+- 航跡地図's live-mode icons are hand-authored flat SVG silhouettes keyed
+  by ADS-B emitter *category* (a coarse ~7-bucket classification —
+  jet/light/rotorcraft/glider/UAV/ground vehicle/unknown), not a
+  per-exact-aircraft-type icon library. This was a deliberate scope
+  decision: a tar1090/FlightRadar24-scale library (hundreds of shapes,
+  keyed by exact type designator) would mean either vendoring
+  third-party icon assets of unclear license or a large hand-drawing
+  effort, neither a good fit for this app's existing stance on
+  third-party aircraft datasets (see `aircraft_lookup.py`'s docstring).
 - Your receiver's coordinates are used server-side for distance
   calculations and are never returned at full precision by the API; the
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off
@@ -627,13 +690,15 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   independently polls your own `readsb` instance at the same cadence as
   the collector and streams the result to your browser. Nothing is
   persisted; this is scoped to one explicitly-selected aircraft.
-- The **3D flight globe**'s default view is a third, broader exception:
-  it genuinely is a live map of every currently-received aircraft's
-  position/callsign/altitude/track/speed/roll/vertical-rate (not the
-  sidebar's full tar1090-parity field set, and confined to this one
-  page). A single shared `WS /ws/aircraft-positions` broadcast (one
-  server-side readsb poll, fanned out to every connected client — never
-  one poll per aircraft) drives it, at `POLL_INTERVAL_SECONDS` by
+- The **3D flight globe**'s default view (and 航跡地図's live mode, which
+  shares the exact same connection rather than opening a second one) is
+  a third, broader exception: it genuinely is a live map of every
+  currently-received aircraft's position/callsign/altitude/track/speed/
+  roll/vertical-rate/emitter-category (not the sidebar's full
+  tar1090-parity field set, and confined to these two pages). A single
+  shared `WS /ws/aircraft-positions` broadcast (one server-side readsb
+  poll, fanned out to every connected client across both pages — never
+  one poll per aircraft or per page) drives it, at `POLL_INTERVAL_SECONDS` by
   default. Any connected tab may opt into a faster 1Hz cadence (the
   page's "更新頻度: 1秒" button); this only changes how often *this
   broadcaster* re-reads readsb's own already-decoded state, never the

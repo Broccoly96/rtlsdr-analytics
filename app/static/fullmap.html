@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>フルスクリーン地図 - ADS-B Analytics</title>
+<title>航跡地図 - ADS-B Analytics</title>
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: ws: wss:; font-src 'self' https: data:; worker-src 'self' blob:;"
 >
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="stylesheet" href="/static/js/vendor/maplibre-gl/maplibre-gl.css">
@@ -16,12 +16,12 @@
 
   <nav class="app-nav" aria-label="ページ">
     <a href="/">ダッシュボード</a>
-    <a href="/static/receiver.html">受信性能</a>
     <a href="/static/daily.html">今日の空</a>
-    <a href="/static/history.html">機体履歴</a>
-    <a href="/static/fullmap.html" aria-current="page">フルスクリーン地図</a>
-    <a href="/static/rawdata.html">生データ</a>
+    <a href="/static/receiver.html">受信性能</a>
+    <a href="/static/fullmap.html" aria-current="page">航跡地図</a>
     <a href="/static/globe.html">3D航跡</a>
+    <a href="/static/history.html">機体履歴</a>
+    <a href="/static/rawdata.html">生データ</a>
     <a href="/static/settings.html">設定</a>
   </nav>
 
@@ -30,12 +30,46 @@
       <h1>航跡地図</h1>
       <span class="app-header__version" id="app-version"></span>
     </div>
-    <div class="app-header__period" role="group" aria-label="航跡表示期間">
-      <button type="button" data-hours="1" class="period-btn">1h</button>
-      <button type="button" data-hours="6" class="period-btn" aria-pressed="true">6h</button>
-      <button type="button" data-hours="24" class="period-btn">24h</button>
+    <div class="app-header__period" role="group" aria-label="表示モード">
+      <button type="button" data-mode="live" class="period-btn" aria-pressed="true">ライブ</button>
+      <div class="globe-history-slider">
+        <label for="history-hours-slider">過去</label>
+        <input
+          type="range"
+          id="history-hours-slider"
+          class="range-slider"
+          min="1"
+          max="72"
+          step="1"
+          value="6"
+        >
+        <span id="history-hours-value">6H</span>
+      </div>
+    </div>
+    <div class="app-header__period" role="group" aria-label="表示機体" id="live-controls">
+      <div class="globe-picker-wrapper">
+        <button type="button" id="aircraft-picker-toggle" class="period-btn" aria-expanded="false">
+          機体選択 ▾
+        </button>
+        <div class="globe-picker" id="aircraft-picker" hidden>
+          <div class="globe-picker__header">
+            <button type="button" id="aircraft-picker-all" class="globe-picker__link">すべて表示</button>
+            <button type="button" id="aircraft-picker-none" class="globe-picker__link">すべて非表示</button>
+          </div>
+          <div class="globe-picker__list" id="aircraft-picker-list"></div>
+        </div>
+      </div>
+      <button type="button" id="aircraft-refresh" class="period-btn">一覧更新</button>
+      <button type="button" id="fast-mode-toggle" class="period-btn" aria-pressed="false">更新頻度: 1秒</button>
+      <button type="button" id="exit-isolate" class="period-btn" hidden>全機体表示に戻す</button>
     </div>
   </header>
+
+  <p class="panel__empty" style="padding: 0;">
+    「ライブ」表示中は現在受信中の全機体を機種カテゴリ別のアイコン(高度帯で色分け)で表示します。
+    アイコンをクリックすると詳細サイドパネルを開きます。「機体選択」で表示する機体を絞り込めます。
+    スライダー(1時間単位、最大72時間)で過去の航跡表示に切り替えられます。
+  </p>
 
   <section class="main-area" style="grid-template-columns: 1fr;">
     <div class="panel panel--map">

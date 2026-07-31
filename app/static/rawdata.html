@@ -15,12 +15,12 @@
 
   <nav class="app-nav" aria-label="ページ">
     <a href="/">ダッシュボード</a>
-    <a href="/static/receiver.html">受信性能</a>
     <a href="/static/daily.html">今日の空</a>
-    <a href="/static/history.html">機体履歴</a>
-    <a href="/static/fullmap.html">フルスクリーン地図</a>
-    <a href="/static/rawdata.html" aria-current="page">生データ</a>
+    <a href="/static/receiver.html">受信性能</a>
+    <a href="/static/fullmap.html">航跡地図</a>
     <a href="/static/globe.html">3D航跡</a>
+    <a href="/static/history.html">機体履歴</a>
+    <a href="/static/rawdata.html" aria-current="page">生データ</a>
     <a href="/static/settings.html">設定</a>
   </nav>
 
@@ -33,6 +33,27 @@
       <span class="status-dot" aria-hidden="true"></span>
       <span class="status-text">接続中…</span>
     </div>
+    <div class="app-header__period" role="group" aria-label="フィルタ">
+      <input
+        type="text"
+        id="icao-filter"
+        class="filter-input"
+        placeholder="ICAOでフィルタ"
+        aria-label="ICAOでフィルタ"
+      >
+      <div class="globe-picker-wrapper">
+        <button type="button" id="msgtype-picker-toggle" class="period-btn" aria-expanded="false">
+          種類で絞り込み ▾
+        </button>
+        <div class="globe-picker" id="msgtype-picker" hidden>
+          <div class="globe-picker__header">
+            <button type="button" id="msgtype-picker-all" class="globe-picker__link">すべて表示</button>
+            <button type="button" id="msgtype-picker-none" class="globe-picker__link">すべて非表示</button>
+          </div>
+          <div class="globe-picker__list" id="msgtype-picker-list"></div>
+        </div>
+      </div>
+    </div>
     <div class="app-header__period" role="group" aria-label="表示制御">
       <button type="button" id="pause-toggle" class="period-btn" aria-pressed="false">一時停止</button>
       <button type="button" id="clear-button" class="period-btn">クリア</button>
@@ -43,6 +64,7 @@
     readsbの生のBeastフォーマットストリームを表示しています。サーバーには保存されません
     (ブラウザを閉じれば消えます)。DF/ICAO/種別は簡易デコードです — 位置・速度などの本格的な
     デコードはreadsb自身が正しく行っているものをこのダッシュボードの他のページで表示しています。
+    フィルタは表示のみに影響し、受信・保持するフレーム数(最大500件)には影響しません。
   </p>
 
   <section class="main-area" style="grid-template-columns: 1fr;">

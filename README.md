@@ -77,6 +77,13 @@ reference for AI coding agents working in this repo.
   onto whichever aircraft is isolated. A slider (15-minute steps, up to
   24h) replays each aircraft's historical track for that window instead
   of the live feed.
+- **Installable as an app** (PWA) — Android Chrome's "Add to Home Screen"
+  turns this into a standalone app icon (no browser chrome). No offline
+  support by design (this app's data is inherently live; a cached response
+  would just look stale/broken) — the install/icon experience is the whole
+  point, not an offline mode. Requires HTTPS (or `localhost`) to actually
+  activate, so this becomes available once you're accessing the app over
+  the optional Cloudflare Tunnel below, not over plain Tailscale HTTP.
 - **Health checks** that actually mean something — `/health/ready` reflects
   real DB connectivity and recent ingestion success, not just "the process
   is running."
@@ -569,8 +576,13 @@ away.
 
 ```bash
 git pull
-./setup.sh          # or: docker compose build && docker compose up -d
+./setup.sh          # or: GIT_REVISION=$(git rev-parse --short HEAD) docker compose build \
+                     #     && docker compose up -d
 ```
+
+`setup.sh` sets `GIT_REVISION` for you; the manual form needs it explicitly
+or the version footer just won't show a commit suffix (harmless, not an
+error — see [Versioning](#versioning) below).
 
 **Stopping:**
 
@@ -584,6 +596,43 @@ git pull
 Equivalent to `docker compose down` / `docker compose down -v` directly, if
 you'd rather skip the wrapper.
 
+**Optional: public access via Cloudflare Tunnel.** This app has no login on
+any endpoint (see [Security & Privacy](#security--privacy)) — the default
+and recommended setup is Tailscale/LAN-only, as documented throughout this
+README. If you do want it reachable from the public internet, the
+supported path is [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
++ [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
+(both free for personal use) rather than opening a port yourself: Cloudflare
+terminates HTTPS and gates every request behind its own login (e.g. "only
+this email address") *before* it ever reaches this app, so the app's own
+lack of auth is no longer the exposed surface.
+
+This repo includes the local half (a `cloudflared` service, off by default);
+the account/domain/tunnel/auth setup can only happen in your own Cloudflare
+account, which nothing here can do for you:
+
+1. Create a free Cloudflare account and add a domain to it (an existing
+   one, or a newly-registered one — either works).
+2. Zero Trust dashboard → **Networks → Tunnels** → create a tunnel, add a
+   public hostname route pointing at `http://adsb-api:8088` (that's this
+   app's Compose service name/port — Cloudflare's dashboard just needs the
+   hostname, not a routable IP, since `cloudflared` reaches it over Compose's
+   internal network).
+3. Copy the tunnel token it gives you into `.env` as `CLOUDFLARE_TUNNEL_TOKEN`.
+4. Zero Trust dashboard → **Access → Applications** → add an application for
+   your new hostname, with a policy such as "allow: your own email only"
+   (free for up to 50 users).
+5. Start it:
+   ```bash
+   docker compose --profile cloudflare up -d cloudflared
+   ```
+
+`cloudflared` publishes **no host port at all** — it reaches `adsb-api`
+purely by Compose service name over the internal network, so none of this
+touches or weakens the existing Tailscale-only `APP_BIND_HOST`/`APP_PORT`
+setup; both can run side by side. Stop public access at any time with
+`docker compose stop cloudflared` (or just never run the command above).
+
 ## Development
 
 ```bash
@@ -596,6 +645,18 @@ make test
 Tests that need Docker (the Postgres-container contract tests, Playwright
 integration tests) skip rather than fail when Docker isn't available, so a
 green `make test` on a Docker-less machine doesn't mean full coverage ran.
+
+### Versioning
+
+The version shown in every page's header comes from `pyproject.toml`'s
+`version` field (single source of truth, see `app/version.py`) — bumped in
+the same commit as any user-visible change (patch for routine work, minor
+per completed milestone arc; see `CLAUDE.md`'s Versioning section for the
+exact policy). The optional `(gitrevision)` suffix next to it is
+best-effort: real in a deployed container only when built with
+`GIT_REVISION=$(git rev-parse --short HEAD)` set (`setup.sh` does this for
+you), since the container itself has neither a `.git` directory nor a
+`git` binary to work it out on its own.
 
 ## Troubleshooting
 

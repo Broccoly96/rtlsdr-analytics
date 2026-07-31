@@ -42,7 +42,7 @@ class AircraftTrack:
     segments: list[list[TrackPoint]]
 
 
-async def get_tracks(pool: asyncpg.Pool, hours: int) -> list[AircraftTrack]:
+async def get_tracks(pool: asyncpg.Pool, hours: float) -> list[AircraftTrack]:
     since = datetime.now(UTC) - timedelta(hours=hours)
 
     top_icaos_rows = await pool.fetch(

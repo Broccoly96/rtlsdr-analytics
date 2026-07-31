@@ -20,6 +20,7 @@ import * as maplibregl from "./vendor/maplibre-gl/maplibre-gl.mjs";
 
 import { api } from "./api.js";
 import { formatDistance, formatAltitude } from "./units.js";
+import { openAircraftSidebar } from "./aircraftinfo.js";
 
 // Populated from GET /api/config (see setAltitudeBands below) -- Python
 // (app/domain/bands.py) is the single source of truth so this can't drift
@@ -297,6 +298,7 @@ export function createTrackMap({ containerId, styleUrl }) {
         4,
         2,
       ]);
+      openAircraftSidebar(icao);
     });
   });
 

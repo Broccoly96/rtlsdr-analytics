@@ -12,6 +12,7 @@
 
 import { api } from "./api.js";
 import { ui } from "./ui.js";
+import { renderAltitudeLegend } from "./altitude-legend.js";
 import {
   axisStyle,
   baseChartOption,
@@ -305,6 +306,8 @@ async function main() {
     setHeatmapVisible: () => {},
   };
   let currentTracksHours = 6;
+
+  renderAltitudeLegend(document.getElementById("altitude-legend"), config.altitude_bands);
 
   const mapModule = await loadMapModule();
   let refreshTracks = async () => {};

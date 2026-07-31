@@ -3,6 +3,7 @@
 // main.js (a map.js/MapLibre load failure must not crash this whole page).
 
 import { api } from "./api.js";
+import { renderAltitudeLegend } from "./altitude-legend.js";
 
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const DEFAULT_CONFIG = {
@@ -63,6 +64,7 @@ async function main() {
   }
 
   renderVersion(config);
+  renderAltitudeLegend(document.getElementById("altitude-legend"), config.altitude_bands);
 
   let mapController = { setTracks: () => {}, resize: () => {}, setHeatmap: () => {}, setHeatmapVisible: () => {} };
   let currentHours = 6;

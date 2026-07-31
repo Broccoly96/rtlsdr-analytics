@@ -29,6 +29,7 @@ import { api } from "./api.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
 import { formatAltitude, formatDistance } from "./units.js";
 import { getTrackOpacity } from "./track-settings.js";
+import { renderAltitudeLegend } from "./altitude-legend.js";
 
 const FT_TO_M = 0.3048;
 const DEFAULT_HOURS = 6;
@@ -193,6 +194,11 @@ let isolatedIcao = null;
 let mode = "live";
 let historyEntities = [];
 let fastModeEnabled = false;
+// Incremented on every enterHistoryMode() call; a resolved fetch only
+// draws if it's still the latest request -- the slider (unlike the old
+// discrete buttons) can fire several requests in quick succession while
+// dragging, and responses aren't guaranteed to resolve in request order.
+let historyRequestId = 0;
 
 // Read once at load (same "reload to pick up a change" precedent as
 // every other setting in this app).
@@ -446,12 +452,14 @@ async function enterHistoryMode(hours) {
   setLiveControlsVisible(false);
   clearHistoryEntities();
 
+  const requestId = ++historyRequestId;
   try {
     const response = await api.getTracks(hours);
+    if (requestId !== historyRequestId) return; // a newer request has since started
     for (const feature of response.features) {
       const color = Cesium.Color.fromCssColorString(
         colorForAltitude(feature.properties.last_altitude_ft)
-      );
+      ).withAlpha(trackOpacity);
       for (const coordinates of feature.geometry.coordinates) {
         if (coordinates.length < 2) continue;
         const entity = viewer.entities.add({
@@ -466,6 +474,7 @@ async function enterHistoryMode(hours) {
       }
     }
   } catch (err) {
+    if (requestId !== historyRequestId) return;
     console.error("tracks fetch failed", err);
     showError("過去航跡の取得に失敗しました。");
   }
@@ -585,21 +594,38 @@ function wireIsolateExit() {
   document.getElementById("exit-isolate").addEventListener("click", () => exitIsolate());
 }
 
+// "6時間" for whole hours, "6時間15分" / "15分" for the slider's 15-minute
+// (0.25h) steps.
+function formatHoursLabel(hours) {
+  const wholeHours = Math.floor(hours);
+  const minutes = Math.round((hours - wholeHours) * 60);
+  if (minutes === 0) return `${wholeHours}時間`;
+  if (wholeHours === 0) return `${minutes}分`;
+  return `${wholeHours}時間${minutes}分`;
+}
+
 function wireModeButtons() {
-  const group = document.querySelector('.app-header__period[aria-label="表示モード"]');
-  if (!group) return;
-  const buttons = group.querySelectorAll(".period-btn");
-  for (const button of buttons) {
-    button.addEventListener("click", () => {
-      buttons.forEach((b) => b.setAttribute("aria-pressed", "false"));
-      button.setAttribute("aria-pressed", "true");
-      if (button.dataset.mode === "live") {
-        enterLiveMode();
-      } else {
-        enterHistoryMode(Number(button.dataset.hours));
-      }
-    });
-  }
+  const liveButton = document.querySelector(
+    '.app-header__period[aria-label="表示モード"] button[data-mode="live"]'
+  );
+  const slider = document.getElementById("history-hours-slider");
+  const valueLabel = document.getElementById("history-hours-value");
+  if (!liveButton || !slider || !valueLabel) return;
+
+  valueLabel.textContent = formatHoursLabel(Number(slider.value));
+
+  liveButton.addEventListener("click", () => {
+    liveButton.setAttribute("aria-pressed", "true");
+    enterLiveMode();
+  });
+
+  slider.addEventListener("input", () => {
+    valueLabel.textContent = formatHoursLabel(Number(slider.value));
+  });
+  slider.addEventListener("change", () => {
+    liveButton.setAttribute("aria-pressed", "false");
+    enterHistoryMode(Number(slider.value));
+  });
 }
 
 function wireFastModeToggle() {
@@ -710,6 +736,7 @@ async function main() {
   }
   renderVersion(config);
   setAltitudeBands(config.altitude_bands);
+  renderAltitudeLegend(document.getElementById("altitude-legend"), config.altitude_bands);
   displayTimezone = config.display_timezone || "UTC";
 
   try {

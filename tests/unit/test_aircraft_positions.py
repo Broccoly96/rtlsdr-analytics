@@ -19,6 +19,7 @@ def test_extracts_position_with_geometric_altitude():
             "roll": -12.5,
             "baro_rate": -800,
             "geom_rate": -750,
+            "category": "A3",
         }
     )
     assert result == {
@@ -31,6 +32,7 @@ def test_extracts_position_with_geometric_altitude():
         "ground_speed_kt": 400,
         "roll_deg": -12.5,
         "vertical_rate_fpm": -800,
+        "category": "A3",
     }
 
 

@@ -556,13 +556,19 @@ async def test_tracks_empty(client: AsyncClient) -> None:
 
 async def test_tracks_bounds_rejected(client: AsyncClient) -> None:
     assert (await client.get("/api/tracks", params={"hours": 0})).status_code == 422
-    assert (await client.get("/api/tracks", params={"hours": 25})).status_code == 422
+    assert (await client.get("/api/tracks", params={"hours": 73})).status_code == 422
     assert (await client.get("/api/tracks", params={"hours": 0.1})).status_code == 422
 
 
 async def test_tracks_accepts_quarter_hour_step(client: AsyncClient) -> None:
     # 0.25h (15 minutes) is the finest step the 3D globe's history slider allows.
     response = await client.get("/api/tracks", params={"hours": 0.25})
+    assert response.status_code == 200
+
+
+async def test_tracks_accepts_72_hours(client: AsyncClient) -> None:
+    # 72h is the fullscreen map's history slider's max (Milestone EE-4).
+    response = await client.get("/api/tracks", params={"hours": 72})
     assert response.status_code == 200
 
 

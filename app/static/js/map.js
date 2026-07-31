@@ -21,11 +21,13 @@ import * as maplibregl from "./vendor/maplibre-gl/maplibre-gl.mjs";
 import { api } from "./api.js";
 import { formatDistance, formatAltitude } from "./units.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
+import { registerAircraftIcons, iconIdFor, shapeForCategory, UNKNOWN_BAND_KEY } from "./aircraft-icons.js";
 
 // Populated from GET /api/config (see setAltitudeBands below) -- Python
 // (app/domain/bands.py) is the single source of truth so this can't drift
 // from the server-side band definitions used for grouping/filtering.
 let altitudeBands = [];
+let rawAltitudeBands = []; // kept alongside altitudeBands for aircraft-icons.js (needs .key, not just .max/.color)
 const UNKNOWN_ALTITUDE_COLOR = "#8fa3bd";
 // Cool-to-warm density ramp for the heatmap layer, matching this app's
 // existing color tokens (style.css's --accent-2/--accent/--success/--warning/--danger).
@@ -42,7 +44,9 @@ export function setTimezone(tz) {
 // simple "first band whose max covers this altitude" scan colorForAltitude
 // already did against the old hard-coded array.
 export function setAltitudeBands(bands) {
-  altitudeBands = (bands || []).map((b) => ({
+  rawAltitudeBands = bands || [];
+  altitudeBands = rawAltitudeBands.map((b) => ({
+    key: b.key,
     max: b.max_ft == null ? Infinity : b.max_ft,
     color: b.color,
   }));
@@ -63,6 +67,14 @@ function colorForAltitude(altitudeFt) {
     if (altitudeFt <= band.max) return band.color;
   }
   return UNKNOWN_ALTITUDE_COLOR;
+}
+
+function bandKeyForAltitude(altitudeFt) {
+  if (altitudeFt == null) return UNKNOWN_BAND_KEY;
+  for (const band of altitudeBands) {
+    if (altitudeFt <= band.max) return band.key;
+  }
+  return UNKNOWN_BAND_KEY;
 }
 
 function showMapError(message) {
@@ -99,10 +111,35 @@ function describeError(err) {
   return "詳細不明のエラー";
 }
 
+// Walks a segment's [lon, lat, altitude_ft] points and groups consecutive
+// points sharing the same altitude-band color into runs, carrying the
+// boundary point into both runs so the line stays visually connected
+// across a color change (mirrors globe.js's equivalent split for its
+// Cesium polylines, which have the same "one material per entity"
+// constraint MapLibre's "one color per feature" paint expression has).
+function splitCoordinatesByBand(coordinates) {
+  const runs = [];
+  let currentColor = null;
+  let currentCoords = [];
+  for (const point of coordinates) {
+    const color = colorForAltitude(point[2]);
+    if (color !== currentColor) {
+      if (currentCoords.length > 1) runs.push({ coordinates: currentCoords, color: currentColor });
+      currentCoords = currentCoords.length ? [currentCoords[currentCoords.length - 1]] : [];
+      currentColor = color;
+    }
+    currentCoords.push(point);
+  }
+  if (currentCoords.length > 1) runs.push({ coordinates: currentCoords, color: currentColor });
+  return runs;
+}
+
 function tracksToLineFeatures(tracksGeoJSON) {
   // Split each aircraft's MultiLineString into individual LineString
-  // features so each segment can be colored via a simple data-driven
-  // paint expression (one color per feature, computed once here).
+  // features, further split by altitude-band run so the line's color
+  // changes along its length to match the altitude at each point, rather
+  // than one color for the whole track computed once from a single
+  // (e.g. last-observed) altitude value.
   const features = [];
   for (const feature of tracksGeoJSON.features) {
     const {
@@ -113,21 +150,22 @@ function tracksToLineFeatures(tracksGeoJSON) {
       last_distance_km,
       last_observed_at,
     } = feature.properties;
-    const color = colorForAltitude(last_altitude_ft);
     for (const segment of feature.geometry.coordinates) {
-      features.push({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: segment },
-        properties: {
-          icao,
-          callsign,
-          last_altitude_ft,
-          last_ground_speed_kt,
-          last_distance_km,
-          last_observed_at,
-          color,
-        },
-      });
+      for (const run of splitCoordinatesByBand(segment)) {
+        features.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: run.coordinates },
+          properties: {
+            icao,
+            callsign,
+            last_altitude_ft,
+            last_ground_speed_kt,
+            last_distance_km,
+            last_observed_at,
+            color: run.color,
+          },
+        });
+      }
     }
   }
   return { type: "FeatureCollection", features };
@@ -151,8 +189,18 @@ export function createTrackMap({ containerId, styleUrl }) {
   let popup;
   let ready = false;
   let selectedIcao = null;
+  let iconsReadyPromise = Promise.resolve();
+  let liveFeatureShiftClickHandler = null;
 
-  const noop = { setTracks: () => {}, resize: () => {}, setHeatmap: () => {}, setHeatmapVisible: () => {} };
+  const noop = {
+    setTracks: () => {},
+    resize: () => {},
+    setHeatmap: () => {},
+    setHeatmapVisible: () => {},
+    setLivePositions: () => {},
+    clearLivePositions: () => {},
+    setLiveFeatureShiftClickHandler: () => {},
+  };
 
   if (!isWebGLAvailable()) {
     showMapError(
@@ -253,6 +301,48 @@ export function createTrackMap({ containerId, styleUrl }) {
       },
     });
 
+    map.addSource("live-positions", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: "live-positions-layer",
+      type: "symbol",
+      source: "live-positions",
+      layout: {
+        "icon-image": ["get", "icon"],
+        "icon-rotate": ["get", "track_deg"],
+        "icon-rotation-alignment": "map",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "text-field": ["get", "callsign"],
+        // Must be a font stack the map style's own glyphs endpoint
+        // actually hosts -- this app doesn't control MAP_STYLE_URL's
+        // font server, so an unavailable font silently fails to fetch
+        // (404) rather than throwing; "Noto Sans Regular" is what both
+        // this app's default style (OpenFreeMap/positron) and its other
+        // text layers already use.
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 10,
+        "text-offset": [0, 1.3],
+        "text-anchor": "top",
+        "text-allow-overlap": true,
+        "text-ignore-placement": true,
+      },
+      paint: {
+        "text-color": "#e8f0fa", // matches style.css's --text
+        "text-halo-color": "#08111f", // matches style.css's --bg
+        "text-halo-width": 1.5,
+      },
+    });
+    // Icon images must be registered before any feature referencing them
+    // is set on the source, or MapLibre silently skips rendering that
+    // icon (logs a warning, doesn't throw) -- setLivePositions() below
+    // awaits this same promise before its first setData() call.
+    iconsReadyPromise = registerAircraftIcons(map, rawAltitudeBands).catch((err) => {
+      console.error("aircraft icon registration failed", err);
+    });
+
     popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
 
     function describeFeature(props) {
@@ -300,6 +390,48 @@ export function createTrackMap({ containerId, styleUrl }) {
       ]);
       openAircraftSidebar(icao);
     });
+
+    function describeLiveFeature(props) {
+      const title = document.createElement("strong");
+      title.textContent = props.callsign || props.icao;
+
+      const altitude = props.altitude_ft != null ? formatAltitude(props.altitude_ft) : "高度不明";
+      const speed = props.ground_speed_kt != null ? `${Math.round(props.ground_speed_kt)} kt` : null;
+
+      const line = document.createElement("div");
+      line.textContent = [altitude, speed].filter(Boolean).join(" / ");
+
+      const content = document.createElement("div");
+      content.append(title, line);
+      return content;
+    }
+
+    map.on("mousemove", "live-positions-layer", (event) => {
+      map.getCanvas().style.cursor = "pointer";
+      const feature = event.features && event.features[0];
+      if (!feature) return;
+      popup.setLngLat(event.lngLat).setDOMContent(describeLiveFeature(feature.properties)).addTo(map);
+    });
+
+    map.on("mouseleave", "live-positions-layer", () => {
+      map.getCanvas().style.cursor = "";
+      if (popup) popup.remove();
+    });
+
+    map.on("click", "live-positions-layer", (event) => {
+      const feature = event.features && event.features[0];
+      if (!feature) return;
+      const icao = feature.properties.icao;
+      // Shift+click isolates one aircraft (same convention as the 3D
+      // globe's live view) -- the caller (fullmap.js) owns which
+      // aircraft are currently shown/hidden, so this just notifies it
+      // rather than filtering anything here.
+      if (event.originalEvent && event.originalEvent.shiftKey && liveFeatureShiftClickHandler) {
+        liveFeatureShiftClickHandler(icao);
+        return;
+      }
+      openAircraftSidebar(icao);
+    });
   });
 
   function setTracks(tracksGeoJSON) {
@@ -319,11 +451,53 @@ export function createTrackMap({ containerId, styleUrl }) {
     map.setLayoutProperty("heatmap-layer", "visibility", visible ? "visible" : "none");
   }
 
+  async function setLivePositions(positions) {
+    if (!ready) return;
+    await iconsReadyPromise;
+    const source = map.getSource("live-positions");
+    if (!source) return;
+    source.setData({
+      type: "FeatureCollection",
+      features: (positions || [])
+        .filter((p) => p.lat != null && p.lon != null)
+        .map((p) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+          properties: {
+            icao: p.icao,
+            callsign: p.callsign,
+            altitude_ft: p.altitude_ft,
+            ground_speed_kt: p.ground_speed_kt,
+            track_deg: p.track_deg || 0,
+            icon: iconIdFor(shapeForCategory(p.category), bandKeyForAltitude(p.altitude_ft)),
+          },
+        })),
+    });
+  }
+
+  function clearLivePositions() {
+    if (!ready) return;
+    const source = map.getSource("live-positions");
+    if (source) source.setData({ type: "FeatureCollection", features: [] });
+  }
+
+  function setLiveFeatureShiftClickHandler(fn) {
+    liveFeatureShiftClickHandler = fn;
+  }
+
   function resize() {
     if (map) map.resize();
   }
 
-  return { setTracks, resize, setHeatmap, setHeatmapVisible };
+  return {
+    setTracks,
+    resize,
+    setHeatmap,
+    setHeatmapVisible,
+    setLivePositions,
+    clearLivePositions,
+    setLiveFeatureShiftClickHandler,
+  };
 }
 
 export async function refreshTracks(mapController, hours) {

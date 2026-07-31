@@ -90,6 +90,12 @@ def extract_position(raw: dict) -> dict | None:
         "ground_speed_kt": raw.get("gs"),
         "roll_deg": roll_deg,
         "vertical_rate_fpm": vertical_rate_fpm,
+        # ADS-B emitter category (e.g. "A3" = large aircraft, "A7" =
+        # rotorcraft, "B2" = glider, ...), straight from readsb -- used
+        # client-side to pick a category-based icon shape for the
+        # fullscreen map's live mode (app/static/js/aircraft-icons.js).
+        # Equipage-dependent like roll/vertical_rate above; often absent.
+        "category": raw.get("category"),
     }
 
 

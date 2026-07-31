@@ -9,9 +9,11 @@
 // coloring) and oriented by heading (track_deg) + roll (readsb's `roll`,
 // often absent) + an approximated pitch (from vertical rate + ground
 // speed -- readsb has no real pitch field). Every currently-tracked
-// aircraft draws its own historical track (GET /api/aircraft/{icao}/positions,
-// cyan) plus a live-extending polyline (yellow) fed by the same broadcast
-// stream, at a user-configurable opacity (Settings tab, default 50%).
+// aircraft draws its own historical track (GET /api/aircraft/{icao}/positions)
+// plus a live-extending polyline fed by the same broadcast stream, both
+// colored by altitude band (same as the 3D models and map.js's 2D tracks,
+// see addBandRunPolylines) at a user-configurable opacity (Settings tab,
+// default 50%).
 // Shift+click isolates one aircraft: hides every other one (model + track)
 // and flies the camera to it (no separate per-aircraft WS needed here --
 // that connection is still used by aircraftinfo.js's sidebar for its
@@ -141,19 +143,52 @@ function colorForAltitude(altitudeFt) {
   return UNKNOWN_ALTITUDE_COLOR;
 }
 
-function segmentToCartesians(segment) {
-  return Cesium.Cartesian3.fromDegreesArrayHeights(
-    segment.flatMap((p) => [p.lon, p.lat, (p.altitude_ft || 0) * FT_TO_M])
-  );
+// Cesium polylines have one `material` for the whole entity (no per-vertex
+// color), same constraint map.js's "one color per GeoJSON feature" paint
+// expression has -- so a track that changes altitude band along its length
+// is split into one polyline entity per contiguous band "run", carrying
+// the boundary point into both runs so the line stays visually connected
+// across a color change. `points` is any array; `toCartesianAndAltitude`
+// adapts each item's shape ({lon,lat,altitude_ft} objects vs [lon,lat,alt]
+// arrays) to {cartesian, altitudeFt}. New entities are pushed onto `out`.
+function addBandRunPolylines(out, points, toCartesianAndAltitude, opacity) {
+  let currentColor = null;
+  let currentPositions = [];
+  const flush = () => {
+    if (currentPositions.length > 1) {
+      out.push(
+        viewer.entities.add({
+          polyline: {
+            positions: currentPositions,
+            width: 3,
+            material: Cesium.Color.fromCssColorString(currentColor).withAlpha(opacity),
+          },
+        })
+      );
+    }
+  };
+  for (const point of points) {
+    const { cartesian, altitudeFt } = toCartesianAndAltitude(point);
+    const color = colorForAltitude(altitudeFt);
+    if (color !== currentColor) {
+      flush();
+      currentPositions = currentPositions.length ? [currentPositions[currentPositions.length - 1]] : [];
+      currentColor = color;
+    }
+    currentPositions.push(cartesian);
+  }
+  flush();
 }
 
-// Same [lon, lat, altitude] flattening as segmentToCartesians, for
-// GET /api/tracks's GeoJSON coordinate arrays (history mode) rather than
+function positionPointToCartesian(p) {
+  return { cartesian: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, (p.altitude_ft || 0) * FT_TO_M), altitudeFt: p.altitude_ft };
+}
+
+// Same shape as positionPointToCartesian, for GET /api/tracks's GeoJSON
+// [lon, lat, altitude_ft] coordinate arrays (history mode) rather than
 // GET /api/aircraft/{icao}/positions's {lon,lat,altitude_ft} objects.
-function coordinatesToCartesians(coordinates) {
-  return Cesium.Cartesian3.fromDegreesArrayHeights(
-    coordinates.flatMap(([lon, lat, altitudeFt]) => [lon, lat, (altitudeFt || 0) * FT_TO_M])
-  );
+function coordinateToCartesian([lon, lat, altitudeFt]) {
+  return { cartesian: Cesium.Cartesian3.fromDegrees(lon, lat, (altitudeFt || 0) * FT_TO_M), altitudeFt };
 }
 
 // --- display timezone (mirrors map.js's formatTime) ------------------------
@@ -180,10 +215,15 @@ const knownAircraft = new Map(); // icao -> callsign|null, for the picker list
 const pickerCheckboxes = new Map();
 const pickerLabels = new Map();
 
-// Every currently-tracked aircraft gets its own historical (cyan) +
-// live-extending (yellow, Cesium.CallbackProperty) track -- not just the
-// isolated one. icao -> { historyEntities: Entity[], liveEntity: Entity,
-// liveTrackPositions: Cartesian3[] }.
+// Every currently-tracked aircraft gets its own historical + live-extending
+// track -- not just the isolated one -- both colored by altitude band (see
+// addBandRunPolylines) to match the legend, rather than the old fixed
+// cyan=historical/yellow=live-extending distinction. icao ->
+// { historyEntities: Entity[], liveRuns: [{positions, color, entity}] }.
+// liveRuns is a small ordered list of same-band CallbackProperty-backed
+// polylines, appended to in place while the aircraft's altitude stays in
+// one band and extended with a new run (sharing the boundary point) when
+// the band changes on a later broadcast tick -- see pushLiveTrackPoint.
 const trackState = new Map();
 
 let isolatedIcao = null;
@@ -227,9 +267,32 @@ function applyVisibility() {
     const track = trackState.get(icao);
     if (track) {
       for (const historyEntity of track.historyEntities) historyEntity.show = visible;
-      if (track.liveEntity) track.liveEntity.show = visible;
+      for (const run of track.liveRuns) run.entity.show = visible;
     }
   }
+}
+
+// Appends one broadcast tick's position to the aircraft's live-extending
+// track, starting a new band-run (see addBandRunPolylines' doc comment)
+// when the altitude band has changed since the last point.
+function pushLiveTrackPoint(state, position) {
+  const { cartesian, altitudeFt } = positionPointToCartesian(position);
+  const color = colorForAltitude(altitudeFt);
+  const currentRun = state.liveRuns[state.liveRuns.length - 1];
+  if (currentRun && currentRun.color === color) {
+    currentRun.positions.push(cartesian);
+    return;
+  }
+  const positions = currentRun ? [currentRun.positions[currentRun.positions.length - 1], cartesian] : [cartesian];
+  const run = { color, positions };
+  run.entity = viewer.entities.add({
+    polyline: {
+      positions: new Cesium.CallbackProperty(() => run.positions, false),
+      width: 3,
+      material: Cesium.Color.fromCssColorString(color).withAlpha(trackOpacity),
+    },
+  });
+  state.liveRuns.push(run);
 }
 
 // One-time (per icao) historical fetch + a live-extending polyline fed by
@@ -237,16 +300,8 @@ function applyVisibility() {
 // it's first seen, not just an isolated one.
 function ensureTrack(icao) {
   if (trackState.has(icao)) return;
-  const state = { historyEntities: [], liveEntity: null, liveTrackPositions: [] };
+  const state = { historyEntities: [], liveRuns: [] };
   trackState.set(icao, state);
-
-  state.liveEntity = viewer.entities.add({
-    polyline: {
-      positions: new Cesium.CallbackProperty(() => state.liveTrackPositions, false),
-      width: 3,
-      material: Cesium.Color.YELLOW.withAlpha(trackOpacity),
-    },
-  });
 
   api
     .getAircraftPositions(icao, DEFAULT_HOURS)
@@ -254,15 +309,7 @@ function ensureTrack(icao) {
       if (!trackState.has(icao)) return; // aircraft went stale before this resolved
       for (const segment of positions.segments) {
         if (segment.length < 2) continue;
-        state.historyEntities.push(
-          viewer.entities.add({
-            polyline: {
-              positions: segmentToCartesians(segment),
-              width: 3,
-              material: Cesium.Color.CYAN.withAlpha(trackOpacity),
-            },
-          })
-        );
+        addBandRunPolylines(state.historyEntities, segment, positionPointToCartesian, trackOpacity);
       }
       applyVisibility(); // newly-added entities default to show=true
     })
@@ -275,7 +322,7 @@ function removeTrack(icao) {
   const state = trackState.get(icao);
   if (!state) return;
   for (const entity of state.historyEntities) viewer.entities.remove(entity);
-  if (state.liveEntity) viewer.entities.remove(state.liveEntity);
+  for (const run of state.liveRuns) viewer.entities.remove(run.entity);
   trackState.delete(icao);
 }
 
@@ -457,20 +504,13 @@ async function enterHistoryMode(hours) {
     const response = await api.getTracks(hours);
     if (requestId !== historyRequestId) return; // a newer request has since started
     for (const feature of response.features) {
-      const color = Cesium.Color.fromCssColorString(
-        colorForAltitude(feature.properties.last_altitude_ft)
-      ).withAlpha(trackOpacity);
       for (const coordinates of feature.geometry.coordinates) {
         if (coordinates.length < 2) continue;
-        const entity = viewer.entities.add({
-          polyline: {
-            positions: coordinatesToCartesians(coordinates),
-            width: 3,
-            material: color,
-          },
-        });
-        entity.trackInfo = feature.properties;
-        historyEntities.push(entity);
+        const before = historyEntities.length;
+        addBandRunPolylines(historyEntities, coordinates, coordinateToCartesian, trackOpacity);
+        for (let i = before; i < historyEntities.length; i++) {
+          historyEntities[i].trackInfo = feature.properties;
+        }
       }
     }
   } catch (err) {
@@ -710,11 +750,7 @@ function connectBroadcast() {
       upsertEntity(position);
 
       const track = trackState.get(position.icao);
-      if (track) {
-        track.liveTrackPositions.push(
-          Cesium.Cartesian3.fromDegrees(position.lon, position.lat, (position.altitude_ft || 0) * FT_TO_M)
-        );
-      }
+      if (track) pushLiveTrackPoint(track, position);
     }
     removeStaleEntities(seenIcaos);
     applyVisibility();

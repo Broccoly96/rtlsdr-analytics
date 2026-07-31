@@ -122,7 +122,10 @@ class RecentAircraftResponse(BaseModel):
 
 class GeoJSONMultiLineString(BaseModel):
     type: Literal["MultiLineString"] = "MultiLineString"
-    coordinates: list[list[list[float]]]  # [[[lon, lat, altitude_ft], ...], ...] per segment
+    # [[[lon, lat, altitude_ft], ...], ...] per segment -- altitude_ft is
+    # None (not 0) when unknown, so the client can tell "on the ground"
+    # apart from "no altitude data yet" when coloring the track by band.
+    coordinates: list[list[list[float | None]]]
 
 
 class TrackFeatureProperties(BaseModel):

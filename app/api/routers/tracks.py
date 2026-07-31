@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["tracks"])
 
 @router.get("/tracks", response_model=TracksResponse)
 async def get_tracks_endpoint(
-    hours: float = Query(6, ge=0.25, le=24),
+    hours: float = Query(6, ge=0.25, le=72),
     pool=Depends(get_pool),
 ) -> TracksResponse:
     aircraft_tracks = await get_tracks(pool, hours)
@@ -26,7 +26,7 @@ async def get_tracks_endpoint(
         TrackFeature(
             geometry=GeoJSONMultiLineString(
                 coordinates=[
-                    [[point.lon, point.lat, point.altitude_ft or 0] for point in segment]
+                    [[point.lon, point.lat, point.altitude_ft] for point in segment]
                     for segment in track.segments
                 ]
             ),

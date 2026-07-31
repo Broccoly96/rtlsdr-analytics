@@ -667,6 +667,11 @@ button {
   flex-shrink: 0;
 }
 
+.altitude-legend__range {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .globe-history-slider {
   display: flex;
   align-items: center;

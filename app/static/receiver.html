@@ -5,21 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>受信性能 - ADS-B Analytics</title>
 <!--
-  script-src includes 'unsafe-eval' on this page ONLY (every other page
-  stays without it): echarts-gl's internal shader/expression compiler
-  throws "Invalid expression" and the 3D chart fails to render without
-  it -- confirmed by reproducing the exact failure locally with this
-  page's CSP and fixing it by adding 'unsafe-eval', nothing else changed.
-  This app never uses eval()/Function() itself and never renders
-  API/user data as HTML (always textContent, never innerHTML), so the
-  realistic added risk is narrow, but it's a real loosening of this
-  page's CSP and worth knowing about if you're auditing it.
+  script-src includes 'unsafe-eval' and 'blob:' on this page (every other
+  page except globe.html stays without them): echarts-gl's internal
+  shader/expression compiler needs 'unsafe-eval' (confirmed by
+  reproducing the exact failure locally and fixing it by adding only
+  that, nothing else). The 3D reception dome (CesiumJS, same vendored
+  bundle globe.html uses) needs both 'unsafe-eval' (its own top-level
+  script eagerly compiles WebAssembly during startup) and 'blob:' in
+  script-src (its worker-loaded scripts use importScripts() from a blob:
+  URL, which worker-src alone doesn't cover) -- same root cause and same
+  fix already proven necessary on globe.html. This app never uses
+  eval()/Function() itself and never renders API/user data as HTML
+  (always textContent, never innerHTML), so the realistic added risk is
+  narrow, but it's a real loosening of this page's CSP and worth knowing
+  about if you're auditing it.
 -->
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
+  content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
 >
 <link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/js/vendor/cesium/Widgets/widgets.css">
 </head>
 <body>
 <div class="app">
@@ -79,10 +85,12 @@
   <section class="main-area">
     <div class="panel panel--chart" style="grid-column: 1 / -1;">
       <div class="panel__header" id="hemisphere-heading">受信範囲 3D表示(方位・仰角・距離)</div>
-      <div id="hemisphere-chart" class="chart-container" role="img" aria-labelledby="hemisphere-heading" style="height: 480px;"></div>
+      <div id="hemisphere-container" style="width: 100%; height: 480px; border-radius: 6px; overflow: hidden;"></div>
+      <div id="hemisphere-tooltip" class="globe-tooltip" hidden></div>
       <div id="hemisphere-chart-error" class="panel__error" hidden></div>
-      <p class="panel__empty" style="padding: 4px;">
-        ドラッグで視点を回転できます。中心が受信局、点の位置が方位・仰角・最大受信距離、色が距離を表します。
+      <p class="panel__empty" style="padding: 4px;" id="hemisphere-caption">
+        ドラッグで視点を回転できます。中心付近が受信局(実際の位置とは無関係な仮の座標に固定表示)、
+        面の位置が方位(N/E/S/W、白い円は目安の距離)・仰角・受信距離、色が受信距離を表します。
       </p>
     </div>
   </section>
@@ -95,6 +103,8 @@
 
 <script src="/static/js/vendor/echarts/echarts.min.js"></script>
 <script src="/static/js/vendor/echarts-gl/echarts-gl.min.js"></script>
+<script src="/static/js/cesium-base-url.js"></script>
+<script src="/static/js/vendor/cesium/Cesium.js"></script>
 <script type="module" src="/static/js/receiver.js"></script>
 </body>
 </html>

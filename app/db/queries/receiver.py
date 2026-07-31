@@ -112,8 +112,11 @@ async def bearing_elevation_range(pool: asyncpg.Pool, hours: int) -> list[Bearin
     everywhere else in this app, treated as the horizontal leg of the
     triangle (an approximation that's fine at these ranges/altitudes; not
     worth a slant-range correction for a chart, not a precision instrument).
-    Sparse like distribution.py's histograms -- only occupied cells are
-    returned, not zero-filled across the full 16x9 grid."""
+    Zero-filled across the full 16x9 grid (same convention as
+    bearing_range/altitude_band_range in this file) -- the 3D reception
+    dome (app/static/js/receiver.js) builds a connected triangulated mesh
+    across neighboring cells, which needs every cell present (even with
+    null max_distance_km/zero sample_count) rather than a sparse list."""
     since = datetime.now(UTC) - timedelta(hours=hours)
     rows = await pool.fetch(
         f"""
@@ -136,18 +139,24 @@ async def bearing_elevation_range(pool: asyncpg.Pool, hours: int) -> list[Bearin
         since,
         timeout=QUERY_TIMEOUT_SECONDS,
     )
-    return [
-        BearingElevationEntry(
-            sector_index=row["sector_index"],
-            sector_center_deg=row["sector_index"] * SECTOR_WIDTH_DEG + SECTOR_WIDTH_DEG / 2,
-            elevation_index=row["elevation_index"],
-            elevation_center_deg=row["elevation_index"] * ELEVATION_BAND_WIDTH_DEG
-            + ELEVATION_BAND_WIDTH_DEG / 2,
-            max_distance_km=row["max_distance_km"],
-            sample_count=row["sample_count"],
-        )
-        for row in rows
-    ]
+    by_cell = {(row["sector_index"], row["elevation_index"]): row for row in rows}
+
+    entries: list[BearingElevationEntry] = []
+    for sector_index in range(BEARING_SECTOR_COUNT):
+        for elevation_index in range(ELEVATION_BAND_COUNT):
+            row = by_cell.get((sector_index, elevation_index))
+            entries.append(
+                BearingElevationEntry(
+                    sector_index=sector_index,
+                    sector_center_deg=sector_index * SECTOR_WIDTH_DEG + SECTOR_WIDTH_DEG / 2,
+                    elevation_index=elevation_index,
+                    elevation_center_deg=elevation_index * ELEVATION_BAND_WIDTH_DEG
+                    + ELEVATION_BAND_WIDTH_DEG / 2,
+                    max_distance_km=row["max_distance_km"] if row else None,
+                    sample_count=row["sample_count"] if row else 0,
+                )
+            )
+    return entries
 
 
 async def altitude_band_range(pool: asyncpg.Pool, hours: int) -> list[AltitudeBandRangeEntry]:

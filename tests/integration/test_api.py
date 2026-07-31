@@ -662,7 +662,12 @@ async def test_receiver_bearing_elevation_range_empty(client: AsyncClient) -> No
     response = await client.get("/api/receiver/bearing-elevation-range")
     assert response.status_code == 200
     body = response.json()
-    assert body["entries"] == []
+    # Zero-filled across the full 16x9 grid (unlike the sparse rssi-by-
+    # distance/hour-of-day histograms) -- the 3D reception dome needs
+    # every cell present to build a connected mesh without gaps logic
+    # of its own.
+    assert len(body["entries"]) == 16 * 9
+    assert all(e["max_distance_km"] is None and e["sample_count"] == 0 for e in body["entries"])
     assert body["sector_width_deg"] > 0
     assert body["elevation_band_width_deg"] > 0
 
@@ -699,8 +704,10 @@ async def test_receiver_bearing_elevation_range_with_seeded_data(
 
     response = await client.get("/api/receiver/bearing-elevation-range", params={"hours": 24})
     body = response.json()
-    assert len(body["entries"]) == 1
-    entry = body["entries"][0]
+    assert len(body["entries"]) == 16 * 9
+    occupied = [e for e in body["entries"] if e["sample_count"] > 0]
+    assert len(occupied) == 1
+    entry = occupied[0]
     assert entry["sector_index"] == 0
     assert entry["elevation_index"] == 4
     assert entry["max_distance_km"] == 3.048

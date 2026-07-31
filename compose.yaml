@@ -120,7 +120,30 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["uvicorn", "app.api.asgi:app", "--host", "0.0.0.0", "--port", "8088"]
+      # Populates the git-revision suffix next to the version number
+      # (see app/version.py, CLAUDE.md's Versioning section) -- omit and
+      # it silently falls back to "unknown", not an error, so builds
+      # without this still work, just without a revision suffix.
+      args:
+        GIT_REVISION: ${GIT_REVISION:-unknown}
+    # --proxy-headers trusts X-Forwarded-For/-Proto from whatever connects
+    # to this container -- safe here because the *only* things that can
+    # reach adsb-api:8088 at all are this app's own sibling containers
+    # (the Tailscale-facing host port above, or the optional cloudflared
+    # tunnel below, both already gate who reaches this port in the first
+    # place). Needed for correct client-IP/scheme handling once traffic
+    # can arrive via cloudflared (see the cloudflared service below).
+    command:
+      [
+        "uvicorn",
+        "app.api.asgi:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8088",
+        "--proxy-headers",
+        "--forwarded-allow-ips=*",
+      ]
     env_file: .env
     ports:
       - "${APP_BIND_HOST}:${APP_PORT}:8088"

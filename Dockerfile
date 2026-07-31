@@ -19,4 +19,12 @@ RUN pip install --no-cache-dir -e . \
     && useradd --create-home --uid 1000 appuser \
     && chown -R appuser:appuser /app
 
+# Baked in at build time (compose.yaml's build.args) since the running
+# container has neither a .git directory (.dockerignore excludes it) nor
+# a `git` binary -- app/version.py's get_git_revision() reads this env
+# var first, falling back to a live `git` subprocess that only works in
+# a local (non-container) checkout.
+ARG GIT_REVISION=unknown
+ENV GIT_REVISION=$GIT_REVISION
+
 USER appuser

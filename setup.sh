@@ -181,6 +181,11 @@ fi
 
 # --- build and start ---------------------------------------------------------
 echo "building images ..."
+# Bakes the current commit into the version footer shown in every page's
+# header (see CLAUDE.md's Versioning section) -- falls back to "unknown"
+# harmlessly if this isn't a git checkout.
+export GIT_REVISION
+GIT_REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 docker compose build
 
 echo "starting the stack ..."

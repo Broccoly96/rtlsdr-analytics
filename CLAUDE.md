@@ -15,6 +15,25 @@ install`, `make lint`, `make fmt`, `make test` (see `Makefile`). Do not
 invent commands or a directory layout that contradicts what's actually in
 the repo; treat the structure below as broadly accurate, not aspirational.
 
+## Versioning
+
+`pyproject.toml`'s `version` field is the single source of truth for the
+version shown in every page's header (via `GET /api/config`, see
+`app/version.py`) — and, in a deployed container, it's the *only* reliable
+build identifier: the `(gitrevision)` suffix next to it is best-effort
+only (populated from a `GIT_REVISION` build arg baked in at image-build
+time; falls back to `None`/no suffix if the image was built without it).
+**Bump `version` in the same commit as any user-visible change** — patch
+(`x.y.Z`) for routine fixes/tweaks, minor (`x.Y.0`) when a `PLAN.md`
+milestone arc completes. A shipped user-visible change with no version
+bump is a bug to fix immediately, not a formatting nicety — this project
+went 52 commits/3 days without a single bump before this rule was written
+down, which is exactly the failure mode this exists to prevent. There is
+no separate `CHANGELOG.md` by design; `PLAN.md`'s session log already
+serves that role. To get a real `git_revision` in a deployed build, build
+with `GIT_REVISION=$(git rev-parse --short HEAD) docker compose build adsb-api`
+rather than a plain `docker compose build`.
+
 ## What this project is
 
 A personal web app that pulls ADS-B decode data from a `readsb` instance already running on a Linux x86-64 server, stores history, and displays it. It is explicitly **not** a tar1090 replacement and does not do real-time tracking of *everything* — that's tar1090's job — it's primarily a historical-storage-and-analytics layer alongside the existing `readsb` / `tar1090` / `fr24feed` setup.

@@ -2077,3 +2077,55 @@ Milestone EE完了後の細かいフィードバック4件に対応。
 ユーザー判断が必要な事項: なし。
 ```
 
+## 26. バージョン管理ポリシー + PWA化 + Cloudflare Tunnel対応(Milestone GG)
+
+ユーザーからの3件の要望に対応: (1) Tailscale外への一般公開(Cloudflareの利用可否含む)、(2) Android向けのPWA化(ウィジェット化は不要と判断)、(3) バージョン番号が全く進んでいない件のドキュメント化・改善。実装前に3並列のExploreエージェントでdocker compose構成/PWA実現可能性/バージョニング機構を調査した。
+
+- **バージョン管理の根本原因調査**: `git log`で確認したところ、`pyproject.toml`のversionは2026-07-27〜28の2日間で12回バンプされた後、その後3日間・52コミット(EE/FF両マイルストーンの全機能を含む)で一度もバンプされていなかった。さらに調査を進めると、表示されている`(gitrevision)`部分は本番コンテナ内では**常にNone**になっていたことが判明: `app/version.py`の`get_git_revision()`はライブの`git rev-parse`サブプロセス呼び出しに依存していたが、`.dockerignore`が`.git/`を除外し、`python:3.12-slim`にはgitバイナリ自体が存在しないため。つまり本番環境で唯一信頼できるビルド識別子は`pyproject.toml`のversionフィールドだけであり、それが52コミットも止まっていたことがより深刻だったと判明。
+- **対応**: `pyproject.toml`を0.5.1→0.6.0にバンプ(蓄積されたEE/FF分の機能追加を反映したminorバンプ、新ポリシーの最初の適用例)。`get_git_revision()`をビルド時に焼き込む`GIT_REVISION`環境変数優先に変更(`Dockerfile`のARG/ENV、`compose.yaml`のbuild.args、`setup.sh`が自動でエクスポート)、ローカル開発時は従来のsubprocessフォールバックを維持。`CLAUDE.md`に新規「Versioning」セクションを追加し、「ユーザーに見える変更は同じコミットでversionをバンプする」ポリシーを明文化。
+- **PWA化**: Android Chromeの「ホーム画面に追加」でアプリのようなアイコン・スタンドアロン表示ができるようにした。`manifest.json`、最小限のservice worker(オフラインキャッシュは意図的に実装せず — このアプリのデータは本質的にライブなので、キャッシュされた古いデータを見せるくらいなら何もしない方が良いという判断)、アイコン(`scripts/generate_pwa_icons.py`でPillowを使い、`aircraft-icons.js`の"jet"シルエットを流用して生成、512/192/32pxの3サイズ)を追加。8ページ全てのCSPを調査した結果、変更不要と判明(`default-src 'self'`/`worker-src 'self' blob:'`が既にservice worker登録・manifest取得を許可していた)。
+- **Cloudflare Tunnel対応**: `compose.yaml`に新規`cloudflared`サービスを追加。`docker compose up -d`では起動しない「cloudflare」Composeプロファイルで隔離し、ホストポートを一切公開せず(Compose標準ネットワーク経由で`adsb-api`のサービス名で到達可能なことを確認済み)、既存のTailscale専用アクセス経路には一切影響しない設計。Cloudflareアカウント作成・ドメイン追加・Tunnel作成・トークン取得・Accessポリシー設定はユーザー自身のCloudflareダッシュボード操作が必要なため、このリポジトリ側では実施できない旨を明記した上で、README に手順を詳細に記載した。
+
+### Milestone GG-1:バージョン管理ポリシー + git_revision修正 + 0.6.0へバンプ
+
+- [x] `pyproject.toml`: versionを0.6.0にバンプ、devにpillowを追加。
+- [x] `app/version.py`: `GIT_REVISION`環境変数を優先するよう`get_git_revision()`を変更。
+- [x] `Dockerfile`/`compose.yaml`/`setup.sh`: `GIT_REVISION`のビルド時注入を配線。
+- [x] `CLAUDE.md`/`README.md`: バージョニングポリシーを文書化。
+- [x] `tests/unit/test_version.py`(新規): 環境変数優先・フォールバックの単体テスト。
+
+### Milestone GG-2:PWA化(Android「ホーム画面に追加」対応)
+
+- [x] `app/static/manifest.json`/`sw.js`/`js/pwa.js`(いずれも新規)。
+- [x] `scripts/generate_pwa_icons.py`(新規): アイコン生成(512/192/32px)。
+- [x] `app/api/main.py`: `GET /manifest.json`/`GET /sw.js`のルートを追加。
+- [x] 全8ページのHTML(manifest/icon/theme-colorのリンク・メタタグ追加)とJSエントリポイント(`registerServiceWorker()`呼び出し追加)。
+
+### Milestone GG-3:Cloudflare Tunnel対応(オプトイン)
+
+- [x] `compose.yaml`: `cloudflared`サービスを`cloudflare`プロファイル配下に新規追加、`adsb-api`に`--proxy-headers`を追加。
+- [x] `.env.example`: `CLOUDFLARE_TUNNEL_TOKEN`を追加。
+- [x] `CLAUDE.md`/`README.md`: 手動で必要なCloudflareダッシュボード手順を文書化。
+
+### セッション記録
+
+```text
+日付: 2026-07-31
+完了したMilestone/Task: Milestone GG-1(バージョン管理)、GG-2(PWA化)、GG-3(Cloudflare Tunnel対応)
+変更した主要ファイル:
+  - GG-1: pyproject.toml、app/version.py、Dockerfile、compose.yaml、setup.sh、tests/unit/test_version.py、CLAUDE.md、README.md
+  - GG-2: app/static/manifest.json、app/static/sw.js、app/static/js/pwa.js、app/static/icons/、scripts/generate_pwa_icons.py、app/api/main.py、全8ページのHTML/JS、tests/integration/test_api.py
+  - GG-3: compose.yaml、.env.example、CLAUDE.md、README.md
+実行したテスト: pytest(フルスイート、301→303件)、ruff check(app tests scripts migrations)
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - GG-1: `GIT_REVISION=$(git rev-parse --short HEAD) docker compose build`でビルド・再デプロイし、`/api/config`とページヘッダーが実際に「v0.6.0 (9a475d1)」と表示されることを確認(本番で初めてgit_revisionが表示された)。
+  - GG-2: 8ページ全てでservice workerが正しく登録される(console error 0件)こと、`/manifest.json`/`/sw.js`が正しいcontent-typeで配信されること、生成したアイコン(ジェット機シルエット)の見た目を確認。Playwright上ではservice worker APIが利用不可("unsupported")と出るが、これはTailscale経由の平文HTTPがセキュアコンテキストでないためであり、想定通りの挙動であることを確認(HTTPSまたはlocalhostが必要 — Cloudflare Tunnel経由でのアクセス時に有効になる)。
+  - GG-3: `docker compose config`で構文検証、`cloudflared`がプロファイル未指定時に起動しないこと(`docker compose ps`で確認)、`adsb-api`が`--proxy-headers`追加後も正常にhealthyであることを確認。実際のトンネル起動(トークン取得含む)はユーザー自身のCloudflareダッシュボード操作待ち。
+  - 全体: 8ページ全てでconsole error 0件を再確認。
+残課題:
+  - Cloudflare Tunnelの実際の稼働確認(トークン取得・Accessポリシー設定含む)はユーザー自身のCloudflareダッシュボード操作待ち。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: Cloudflareアカウント/ドメイン/Tunnel/Accessポリシーの設定(README記載の手順を参照)。
+```
+

@@ -64,13 +64,13 @@
     readsbの生のBeastフォーマットストリームを表示しています。サーバーには保存されません
     (ブラウザを閉じれば消えます)。DF/ICAO/種別は簡易デコードです — 位置・速度などの本格的な
     デコードはreadsb自身が正しく行っているものをこのダッシュボードの他のページで表示しています。
-    フィルタは表示のみに影響し、受信・保持するフレーム数(最大500件)には影響しません。
+    フィルタは表示のみに影響し、受信・保持するフレーム数(最大5000件)には影響しません。
   </p>
 
   <section class="main-area" style="grid-template-columns: 1fr;">
     <div class="panel">
       <div class="panel__header">
-        フレーム (直近<span id="row-count">0</span>件、最大500件)
+        フレーム (直近<span id="row-count">0</span>件、最大5000件)
       </div>
       <div style="max-height: 70vh; overflow-y: auto;">
         <table class="ranking-table" id="rawdata-table">

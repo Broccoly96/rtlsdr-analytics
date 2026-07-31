@@ -5,7 +5,7 @@
 
 import { api } from "./api.js";
 
-const MAX_ROWS = 500;
+const MAX_ROWS = 5000;
 const RECONNECT_DELAY_MS = 3000;
 
 const FRAME_TYPE_LABELS = {

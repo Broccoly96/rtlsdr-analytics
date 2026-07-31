@@ -1918,3 +1918,49 @@ Milestone V〜W(tar1090風サイドバー + 3D航跡)を実際に使ったユー
 ユーザー判断が必要な事項: なし。
 ```
 
+## 23. 3D航跡スライダーのドラッグ位置ズレ修正 + 表示短縮 + 受信性能3D半球の削除(Milestone DD)
+
+§22で実装したCesiumJS版3D受信半球について、ユーザーから「(echarts-gl版に続き、CesiumJS版でも)やはりわかりにくいので機能自体を削除してほしい」という判断があり、機能を丸ごと削除。合わせて3D航跡の過去航跡スライダーについて2件のフィードバック(ドラッグ中に位置がズレて正確に時間指定できない、表示を「x時間y分」から「x.yH」に短縮)に対応。
+
+- **スライダーのドラッグ位置ズレの根本原因**: `.globe-history-slider`内で時間表示ラベル(`<label>過去<span id="history-hours-value">`)がスライダーより**前**のDOM順に置かれており、ドラッグ中に表示文字列の幅が変わる(例:「6時間」→「1時間30分」)たびにflexレイアウトが再計算され、スライダー自体の画面上のX座標がわずかに動いていた。ラベルをスライダーの**後ろ**に移動しただけでは不十分だった: 親の`.app-header__period`が`margin-left: auto`で右寄せされており、内部の可変幅ラベルが伸縮するたびに、この auto margin が消費する余白量が変化し、グループ全体(スライダーごと)が左右に動いていた。根本修正は数値表示spanに`width`(`min-width`ではなく固定`width: 5ch`)を指定し、表示文字列が変わってもボックス幅自体が変化しないようにしたこと。実際にPlaywrightでスライダーをドラッグしながら10段階でbounding boxのx座標を計測し、ドラッグ中一切動かないことを確認。
+- **表示形式の短縮**: 「6時間」「1時間30分」のような可変長の日本語表記から、固定的な「6.0H」「1.5H」のような形式に変更(`formatHoursLabel`を10分の1時間単位の整数丸めで実装し、JSの`toFixed`が起こしうる浮動小数点誤差による表示ゆれを回避)。
+- **受信性能3D半球の削除**: `app/static/js/receiver.js`のCesiumドーム関連コード(定数・座標変換・三角形メッシュ構築・コンパスラベル・距離リング・ツールチップ・`createHemisphereDome`本体)を全削除し、§22以前(echarts-glの散布図版ですらなく、その前のMilestone Iベースライン)の4チャート構成に戻した。バックエンド(`app/db/queries/receiver.py`の`bearing_elevation_range`/`BearingElevationEntry`、`ELEVATION_BAND_COUNT`等の定数)、ルーター(`/api/receiver/bearing-elevation-range`)、スキーマ(`BearingElevationEntryResponse`/`BearingElevationRangeResponse`)、フロントエンドAPI(`api.js`の`getBearingElevationRange`)を全て削除。ベンダー済み`echarts-gl`(632KB、この機能のみが利用していた)も削除し、`receiver.html`のCSPから`'unsafe-eval'`の理由・`blob:`を全て外して素の`echarts`のみのCSPに戻した(`worker-src 'self' blob:;`はecharts-gl導入前から存在していたため維持)。テスト(`test_receiver_bearing_elevation_range_empty`/`_with_seeded_data`、bounds/openapiテストの該当エントリ)も削除。
+
+### Milestone DD-1:過去航跡スライダーのドラッグ位置ズレ修正 + 表示短縮
+
+- [x] `app/static/globe.html`: ラベル(「過去」固定テキストのみ)→スライダー→数値表示spanの順にDOM再構成。
+- [x] `app/static/css/style.css`: `#history-hours-value`に`width: 5ch`(固定幅、`min-width`ではない)+`font-variant-numeric: tabular-nums`を追加。
+- [x] `app/static/js/globe.js`: `formatHoursLabel`を「x時間y分」形式から「x.yH」形式(10分の1時間の整数丸め)に変更。
+- [x] Playwrightでスライダーを10段階に分けてドラッグしながらbounding boxのx座標を計測し、ドラッグ中スライダー位置が一切動かないことを実機で確認。
+
+### Milestone DD-2:受信性能3D半球の削除
+
+- [x] `app/static/js/receiver.js`: Cesiumドーム関連コード全削除(`showChartError`/`hideChartError`ヘルパーも含む、他に利用箇所がないため)。
+- [x] `app/static/receiver.html`: hemisphereセクションのDOM削除、CesiumスクリプトタグとWidgets CSS削除、CSPを`script-src 'self' 'unsafe-eval';`(echarts-glのみを理由とする、素のecharts用)に復元。
+- [x] `app/db/queries/receiver.py`/`app/api/routers/receiver.py`/`app/api/schemas.py`: `bearing_elevation_range`関連の関数・データクラス・エンドポイント・スキーマを全削除。
+- [x] `app/static/js/api.js`: `getBearingElevationRange`削除。
+- [x] ベンダー済み`app/static/js/vendor/echarts-gl/`を削除(`git rm`)。
+- [x] `tests/integration/test_api.py`: 該当テスト・bounds/openapiテストのエントリを削除。
+- [x] README.mdの受信性能・3D航跡セクション、CSP関連の記述を更新(削除の経緯を明記)。
+
+### セッション記録
+
+```text
+日付: 2026-07-31
+完了したMilestone/Task: Milestone DD-1(過去航跡スライダーのドラッグ位置ズレ修正+表示短縮)、DD-2(受信性能3D半球の削除)
+変更した主要ファイル:
+  - DD-1: app/static/globe.html、app/static/css/style.css、app/static/js/globe.js
+  - DD-2: app/static/js/receiver.js、app/static/receiver.html、app/db/queries/receiver.py、app/api/routers/receiver.py、app/api/schemas.py、app/static/js/api.js、app/static/js/vendor/echarts-gl/(削除)、tests/integration/test_api.py
+  - 全体: README.md
+実行したテスト: pytest(フルスイート、299→297件)、ruff check(app tests scripts migrations)
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - DD-1: Playwrightでスライダーのつまみを10段階(10%刻み)でドラッグしながら都度bounding boxのx座標を計測し、修正前は表示文字列の幅変化に応じてスライダー自体が左右に動いていたのに対し、修正後は一切座標が変化しないことを実測で確認。表示形式が実際に「6.0H」のような固定長表記になっていることをスクリーンショットで確認。
+  - DD-2: 受信性能ページを再デプロイ後、3D半球のDOM(`#hemisphere-container`)が存在しないこと、旧4チャート(方位別受信距離・高度帯別受信距離・メッセージ数/位置取得率推移・RSSIヒートマップ)が正常描画されること、console error 0件を確認。
+  - 全体: ダッシュボード/受信性能/今日の空/機体履歴/フルスクリーン地図/生データ/3D航跡/設定の8ページ全てでconsole error 0件を再確認。
+残課題:
+  - なし(両マイルストーン完了・デプロイ・検証・ドキュメント更新済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+

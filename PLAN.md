@@ -1846,4 +1846,75 @@ Milestone V〜W(tar1090風サイドバー + 3D航跡)を実際に使ったユー
 ユーザー判断が必要な事項: なし。
 ```
 
+## 22. 3D航跡スライダー/透明度 + フルマップサイドバー + 凡例 + 今日の空拡張 + 受信性能3D半球のCesiumJS化(Milestone CC)
+
+3D航跡・フルスクリーン地図・今日の空・受信性能の4ページにまたがる7件のフィードバックを受けて実施。
+
+- **過去航跡の時間スライダー化**: `1h/6h/24h`の3ボタンを、15分(0.25h)刻みで動かせるレンジスライダーに置き換え。`GET /api/tracks?hours=`の`hours`パラメータ制約を`ge=1`から`ge=0.25`(float)に緩和。スライダーは`input`イベントでラベルのみ即時更新、`change`イベント(ドラッグ終了時)で実際の再取得を行う設計とし、リクエストトークンで古い応答を破棄するガードも追加(ボタンと違いスライダーは短時間に`change`が連続発火し得るため)。
+- **過去航跡の透明度未適用バグ**: `enterHistoryMode`のポリライン生成が`.withAlpha(trackOpacity)`を呼んでおらず、設定した透明度がライブ航跡にしか効いていなかった実バグを発見・修正。
+- **フルスクリーン地図への共有サイドバー追加**: `map.js`(`index.html`埋め込み地図・`fullmap.html`共有)の航跡クリックハンドラに`openAircraftSidebar`呼び出しを追加。他の全ページが既に使っている共有モジュールを流用しただけで、両ページに同時に反映。
+- **高度色分けの凡例**: 新規共有モジュール`app/static/js/altitude-legend.js`(`renderAltitudeLegend`)を3D航跡・ダッシュボード地図・フルスクリーン地図の3ページから呼び出し、`/api/config`の`altitude_bands`が元々持っていた日本語ラベルを初めて画面に表示。
+- **今日の空「最遠」callsignバグの根本原因調査**: 実データ調査で判明した実態は「最遠/最接近の1行そのものの callsign を使う」設計自体は意図通りだが、機体を初めて捕捉した直後の(=電波到達範囲ギリギリで最遠になりやすい)最初の数pingはcallsign未デコードのことが多いという系統的バイアスだった(本日の最遠機体は61行中最初の2行がcallsign nullで3行目から`CAL003`、全275機体中「最大距離行のcallsignがnull」は37%、ランダムな1行では6.1%)。`farthest`/`closest`クエリを、その機体のその日のうちで時間的に最も近い非null callsignを相関サブクエリで拾う方式に変更(元の設計意図=正しいフライトレグのcallsignを保つ、を維持したまま実バグのみ修正)。`most_observed`にも同型の潜在バグがあったため`FILTER (WHERE callsign IS NOT NULL)`で同様に硬化。
+- **今日の空の新機能3件(ユーザーが提示した3案全てを選択)**: 本日初観測の機体一覧(`aircraft.first_seen_at`が当日のもの、最大20件)、本日の最高速度/最高高度ハイライトカード(farthest/closestと同じ相関サブクエリでcallsignを解決)、直近7日間のユニーク機数トレンドスパークライン(`traffic_day`の過去6日+当日のライブ集計を結合、最終日を強調表示)。
+- **受信性能3D半球のCesiumJS化**: echarts-glのXYZ散布図(何を示しているか分かりにくいという指摘)を、ユーザーの明示的な選択(「echarts-gl改良」ではなく「CesiumJSベースに作り直す」を選択)に基づきCesiumJSシーンで再構築。方位16分割×仰角9分割の各セルをテクスチャなしの三角形メッシュとして接続描画(点の散布ではなく面)、東西南北ラベル、同心円の距離目安リング、ホバーで方位/仰角/距離のツールチップ、色の意味と実測最大距離(nm/km設定に連動)を説明するキャプションを追加。受信局の実座標は今まで通り一切APIで返さない設計を維持しつつ、Cesiumのlocal East-North-Up座標系は地球上のどの地点に置いても真北基準で正しく成立するという性質を利用し、Null Island(0°N/0°E)という明らかに実在と無関係な仮の座標にシーンを固定(既存のプライバシー設計をコード上も明記)。バックエンド側は`bearing_elevation_range`を同ファイル内の`bearing_range`と同じ手法で16×9セル全件ゼロ埋めするよう変更(疎な結果だと隣接セルの三角形メッシュを繋げられないため)。CSPは`globe.html`で既に実証済みの`'unsafe-eval'`+`blob:`をそのまま踏襲(今回は初回デプロイでCSPエラー・Cesium初期化エラーとも一切発生せず)。
+
+### Milestone CC-1:過去航跡スライダー + 透明度バグ修正
+
+- [x] `app/api/routers/tracks.py`/`app/db/queries/tracks.py`: `hours`をfloat化、`ge=0.25`に緩和。
+- [x] `app/static/globe.html`/`app/static/js/globe.js`: 1h/6h/24hボタンをスライダーに置き換え、リクエストトークンガード追加、履歴航跡に`.withAlpha(trackOpacity)`を適用。
+- [x] テスト追加: `hours=0.25`受理・`hours=0.1`拒否のケース。
+
+### Milestone CC-2:フルスクリーン地図への共有サイドバー追加
+
+- [x] `app/static/js/map.js`: `openAircraftSidebar`をインポートし航跡クリックハンドラで呼び出し(`index.html`/`fullmap.html`両方に反映)。
+
+### Milestone CC-3:高度色分け凡例(3D航跡 + 地図)
+
+- [x] 新規`app/static/js/altitude-legend.js`(`renderAltitudeLegend`)、新規CSS(`.altitude-legend`系)。
+- [x] `app/static/globe.html`/`fullmap.html`/`index.html`とそれぞれのJSに凡例コンテナ+呼び出しを追加。
+
+### Milestone CC-4:今日の空「最遠/最接近」callsignバグ修正
+
+- [x] `app/db/queries/period.py`: `farthest`/`closest`を相関サブクエリ方式に変更、`most_observed`のcallsign抽出を`FILTER (WHERE callsign IS NOT NULL)`で硬化。
+- [x] テスト追加: 最遠行がnull callsignでも同日内の非null callsignを拾うケース、一度もcallsignを broadcastしない機体はnullのまま(クラッシュしない)ケース。
+
+### Milestone CC-5:今日の空 新機能3件
+
+- [x] `app/db/queries/period.py`: `FirstSeenAircraft`データクラス、`fastest`/`highest`クエリ(CC-4と同型の相関サブクエリ)、`first_seen_rows`クエリを追加、`DailyTrafficSummary`を拡張。
+- [x] `app/api/schemas.py`: `FirstSeenAircraftResponse`追加、`DailyTrafficSummaryResponse`拡張(ルーター変更不要、`asdict`が再帰的にネストしたdataclassを変換することを確認済み)。
+- [x] `app/static/daily.html`/`app/static/js/daily.js`: 最高速度/最高高度ハイライトカード、本日初観測テーブル、7日間トレンドスパークライン(`chart.js`の`createChart`を流用した最小構成)を追加。
+- [x] テスト追加: 実際に速度/高度が最大の機体が選ばれること、`first_seen_today`の件数・内容。
+
+### Milestone CC-6:受信性能3D半球のCesiumJS化
+
+- [x] `app/db/queries/receiver.py`: `bearing_elevation_range`を16×9セル全件ゼロ埋めに変更(`bearing_range`と同じパターン)。
+- [x] `app/static/receiver.html`: CSPに`blob:`を追加(コメントで`globe.html`と同根の理由を明記)、Cesium widgets CSS読み込み、半球チャートのDOM構造をCesiumコンテナ+ツールチップ+キャプションに置き換え。
+- [x] `app/static/js/receiver.js`: 旧`createHemisphereChart`(echarts-gl scatter3D)を削除、Cesiumベースの`createHemisphereDome`を新規実装(ENUローカル座標変換、三角形メッシュのGeometry/GeometryInstance/Primitive構築、東西南北ラベル、距離リング、ホバーツールチップ、単位対応キャプション)。
+- [x] テスト更新: `bearing_elevation_range`の空/シード済みテストを「常に16×9=144件」の形に合わせて更新。
+
+### セッション記録
+
+```text
+日付: 2026-07-31
+完了したMilestone/Task: Milestone CC-1(過去航跡スライダー+透明度修正)、CC-2(フルマップサイドバー)、CC-3(高度凡例)、CC-4(最遠/最接近callsignバグ修正)、CC-5(今日の空新機能3件)、CC-6(受信性能3D半球のCesiumJS化)
+変更した主要ファイル:
+  - CC-1: app/api/routers/tracks.py、app/db/queries/tracks.py、app/static/globe.html、app/static/js/globe.js、app/static/css/style.css、tests/integration/test_api.py
+  - CC-2: app/static/js/map.js
+  - CC-3: app/static/js/altitude-legend.js(新規)、app/static/css/style.css、app/static/globe.html、app/static/fullmap.html、app/static/index.html、app/static/js/globe.js、app/static/js/main.js、app/static/js/fullmap.js
+  - CC-4/CC-5: app/db/queries/period.py、app/api/schemas.py、app/static/daily.html、app/static/js/daily.js、tests/integration/test_api.py
+  - CC-6: app/db/queries/receiver.py、app/static/receiver.html、app/static/js/receiver.js、tests/integration/test_api.py
+  - 全体: README.md
+実行したテスト: pytest(フルスイート、299件)、ruff check(app tests scripts migrations)
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - CC-1: スライダーを操作すると15分刻みで`GET /api/tracks`の`hours`が変化し過去航跡が再描画されること、履歴モードの航跡が設定した透明度で薄く描画されること(修正前後のスクリーンショット比較)。
+  - CC-2: フルスクリーン地図で航跡をクリックすると他ページと同じ共有サイドバーが開くこと。
+  - CC-3: 3D航跡・ダッシュボード地図・フルスクリーン地図それぞれで凡例が表示され、実際の帯色と一致すること。
+  - CC-4/CC-5: 今日の空の最遠/最接近が実データでcallsign表示になること、最高速度/最高高度カード・本日初観測リスト・7日間トレンドが実データで描画されること。
+  - CC-6: デプロイ後の初回Playwright確認でCSPエラー・console error 0件(このセッションで過去に構築したCesium系ページは全て初回に何らかのCSP/初期化エラーが出ていたため、今回が初めての一発成功)。実際にドームメッシュ上をホバーして方位/仰角/距離ツールチップが表示されること(例: 「方位113° / 仰角10° / 距離176.9 km」)、期間ボタン(24h/7日/30日)切り替えでconsole errorが出ないこと、設定タブでnm表示に切り替えるとキャプションの数値が km→nm(357.5 km→193.0 nm)に正しく追従することを確認。
+残課題:
+  - なし(全Milestone完了・デプロイ・検証・ドキュメント更新済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
 

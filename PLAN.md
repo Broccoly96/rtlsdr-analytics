@@ -1964,3 +1964,69 @@ Milestone V〜W(tar1090風サイドバー + 3D航跡)を実際に使ったユー
 ユーザー判断が必要な事項: なし。
 ```
 
+## 24. 生データフィルタ + タブ並び替え + 航跡地図ライブモード + 航跡色バグ修正・再配色(Milestone EE)
+
+ダッシュボード全体を使い込んだユーザーからの7件のフィードバックに対応。実装前に3並列のExploreエージェントで生データページ・ナビ構成/フルスクリーン地図・航跡色の3領域を調査し、2件をAskUserQuestionでユーザーに確認したうえで実装した。
+
+- **生データのフィルタリング**: DF/ICAO/種別はいずれも`WS /ws/rawdata`で毎フレーム届いておりサーバー往復不要と判明。ICAOのテキストフィルタと、「メッセージ種類」列と全く同じ文字列をキーにした複数選択ポップオーバー(globe.htmlの機体選択ポップオーバーと同じCSS/構造を再利用)を追加。フィルタは表示のみに影響し、500件バッファ・一時停止・クリアの挙動には一切影響しない設計とした。
+- **タブ並び替え + 改名**: ダッシュボード→今日の空→受信性能→航跡地図(旧フルスクリーン地図)→3D航跡→機体履歴→生データ→設定の順に変更。8ページ全てに手動複製されている`<nav>`ブロック(テンプレート化されていない)をPythonスクリプトで一括生成・置換。
+- **航跡色バグの根本原因**: `map.js`の`tracksToLineFeatures`と`globe.js`の`enterHistoryMode`はいずれも「機体1機につき1色」を`last_altitude_ft`から一度だけ計算し、航跡全体をその色で塗っていた(高度データ自体は各点に既に存在しており、レンダリングロジックの不備と判明)。さらに`globe.js`のライブモードの機体別航跡(`ensureTrack`)は高度帯と無関係な固定色(黄=ライブ延伸中/シアン=過去分)を使っており、そもそも凡例と対応する設計になっていなかった。ユーザー確認の上、ライブモードも高度帯配色に統一する方針とした。
+- **修正方式**: 高度帯が変化するたびに新しいポリライン(区間の境界点を共有して視覚的な連続性を保つ)に分割する「バンドラン分割」を採用。MapLibreは1フィーチャーにつき1色、Cesiumポリラインは1エンティティにつき1マテリアルという制約が同じ形をしているため、2D/3D共通の考え方で実装(`map.js`の`splitCoordinatesByBand`、`globe.js`の`addBandRunPolylines`/ライブ延伸用の`pushLiveTrackPoint`)。副次的に見つかった実データバグとして、`GET /api/tracks`が高度不明を`altitude_ft or 0`で0(地上)に丸めていたのを修正し、`GeoJSONMultiLineString.coordinates`にNoneを許容するようスキーマを緩和。
+- **再配色**: 中高度を旧高高度の青(`#60a5fa`)に、高高度を旧超高高度の紫(`#c084fc`)に、超高高度を新しい赤(`#ef4444`)に変更(地上/低高度は変更なし)。`altitude-legend.js`は各帯の正確な数値範囲(配列の並び順から下限を導出、バックエンド変更不要)も表示するよう拡張。
+- **航跡地図(フルスクリーン地図)のライブモード**: 3D航跡と同じ`WS /ws/aircraft-positions`共有ブロードキャストに接続し、機種カテゴリ別のフラット2Dアイコン(MapLibreのsymbolレイヤー、`icon-rotate`で機首方向に回転)で全機体を表示。クリックでサイドバー、Shift+クリックで機体を1機に絞り込み、機体選択ポップオーバー、更新頻度1秒切り替えなど、3D航跡のライブモードと同じ操作感を実装(状態遷移も`connectBroadcast`/`teardownLiveView`/`enterHistoryMode`/`enterLiveMode`という同じ形)。アイコンは機種の正確なシルエットではなく、readsbのADS-B `category`フィールド(軽量機/大型機/回転翼機/滑空機/UAV/地上車両など約7分類)に基づく自作の単純なSVGシルエットとする方針を、ユーザーに確認の上で採用(tar1090/FlightRadar24規模の機種別アイコンライブラリはライセンス・工数の両面でこの個人アプリの規模に見合わないため)。`aircraft_positions.py`の`extract_position`にreadsbの`category`フィールドをそのまま追加(追加のI/Oなし)。
+- **フルスクリーン地図の過去履歴スライダー**: 1h/6h/24hボタンを1時間刻みのスライダーに変更し、`GET /api/tracks`の`hours`上限を24→72に拡大(既存の`MAX_TOTAL_POINTS`/`MAX_AIRCRAFT`間引きが72hでも安全に機能するため、他のバックエンド変更は不要)。
+
+### Milestone EE-1:生データのフィルタリング
+
+- [x] `app/static/js/rawdata.js`: ICAOテキストフィルタ、メッセージ種類ポップオーバー(動的に選択肢を追加)を実装。`app/static/rawdata.html`にフィルタUIを追加。
+
+### Milestone EE-2:タブ並び替え + フルスクリーン地図→航跡地図改名
+
+- [x] 全8ページの`<nav>`ブロックを新しい並び順に更新、`fullmap.html`の`<title>`を`<h1>`(既に「航跡地図」だった)に合わせて修正。
+
+### Milestone EE-3:航跡色システムの見直し(バグ修正 + 再配色 + 数値範囲表示)
+
+- [x] `app/domain/bands.py`: 中高度/高高度/超高高度の色を変更。
+- [x] `app/static/js/altitude-legend.js`: 各帯の数値範囲を表示。
+- [x] `app/api/routers/tracks.py`/`app/api/schemas.py`: 高度不明の0埋めを廃止しNoneを許容。
+- [x] `app/static/js/map.js`: `splitCoordinatesByBand`でバンドラン分割、`tracksToLineFeatures`を書き換え。
+- [x] `app/static/js/globe.js`: `addBandRunPolylines`(履歴モード・機体別過去航跡)、`pushLiveTrackPoint`(ライブ延伸航跡)を実装し、旧黄/シアン固定色を廃止。
+
+### Milestone EE-4:航跡地図の過去履歴スライダー(1時間単位、最大72時間)
+
+- [x] `app/api/routers/tracks.py`: `hours`の上限を72に拡大。`tests/integration/test_api.py`のbounds/72h受理テストを更新。
+- [x] `app/static/fullmap.html`/`app/static/js/fullmap.js`: 期間ボタンをスライダーに置き換え。
+
+### Milestone EE-5:航跡地図のライブモード(カテゴリ別アイコン)
+
+- [x] `app/api/routers/aircraft_positions.py`: `category`フィールドを追加。
+- [x] 新規`app/static/js/aircraft-icons.js`: カテゴリ別SVGシルエット(高度帯色ごとに事前生成し`map.addImage`で登録)。
+- [x] `app/static/js/map.js`: ライブ位置用symbolレイヤー、`setLivePositions`/`clearLivePositions`/`setLiveFeatureShiftClickHandler`を追加。
+- [x] `app/static/js/fullmap.js`: ライブ/履歴モードの状態遷移、機体選択ポップオーバー、更新頻度切り替え、Shift+クリック分離を実装。
+- [x] 実機確認中に判明した不具合を修正: symbolレイヤーの`text-field`がMAP_STYLE_URLの既定フォント("Open Sans")を要求し404していたため、`text-font`をスタイルが実際にホストする"Noto Sans Regular"に明示指定。
+
+### セッション記録
+
+```text
+日付: 2026-07-31
+完了したMilestone/Task: Milestone EE-1(生データフィルタ)、EE-2(タブ並び替え+改名)、EE-3(航跡色システム見直し)、EE-4(航跡地図スライダー)、EE-5(航跡地図ライブモード)
+変更した主要ファイル:
+  - EE-1: app/static/rawdata.html、app/static/js/rawdata.js
+  - EE-2: app/static/{daily,fullmap,globe,history,index,rawdata,receiver,settings}.html
+  - EE-3: app/domain/bands.py、app/static/js/altitude-legend.js、app/api/routers/tracks.py、app/api/schemas.py、app/static/js/map.js、app/static/js/globe.js、app/static/css/style.css
+  - EE-4: app/api/routers/tracks.py、app/static/fullmap.html、app/static/js/fullmap.js、tests/integration/test_api.py
+  - EE-5: app/api/routers/aircraft_positions.py、app/static/js/aircraft-icons.js(新規)、app/static/js/map.js、app/static/js/fullmap.js、tests/unit/test_aircraft_positions.py
+  - 全体: README.md、CLAUDE.md
+実行したテスト: pytest(フルスイート、297→298件)、ruff check(app tests scripts migrations)
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - EE-1: ICAOフィルタ・メッセージ種類ポップオーバーで実際に該当行が非表示になること、フィルタが受信・バッファ・一時停止/クリアの挙動に影響しないことを確認。
+  - EE-3: フルスクリーン地図72時間表示・3D航跡24時間表示のいずれでも、1本の航跡が離陸/着陸区間で複数の色に変化していることをスクリーンショットで確認(赤→紫→青→緑のグラデーション状の遷移が実際に描画された)。凡例の数値範囲、再配色後の色も確認。
+  - EE-5: ライブモードでカテゴリ別アイコンが実際に機首方向へ回転し高度帯で色分けされて表示されること、アイコンクリックでサイドバーが開くこと、機体選択ですべて非表示にできること、更新頻度1秒トグルが正常に切り替わることを確認。デプロイ直後の実機確認で`text-font`未指定によるフォント404を発見・修正(この1点を除き初回デプロイでconsole error 0件)。
+  - 全体: 8ページ全てでconsole error 0件を再確認。
+残課題:
+  - なし(全Milestone完了・デプロイ・検証・ドキュメント更新済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+

@@ -11,8 +11,6 @@ from app.api.dependencies import get_pool
 from app.api.schemas import (
     AltitudeBandRangeEntryResponse,
     AltitudeRangeResponse,
-    BearingElevationEntryResponse,
-    BearingElevationRangeResponse,
     BearingRangeEntryResponse,
     BearingRangeResponse,
     ReceptionBucketResponse,
@@ -23,10 +21,7 @@ from app.api.schemas import (
 from app.db.queries.receiver import (
     DEFAULT_DISTANCE_BUCKET_KM,
     DEFAULT_RSSI_BUCKET_DB,
-    ELEVATION_BAND_WIDTH_DEG,
-    SECTOR_WIDTH_DEG,
     altitude_band_range,
-    bearing_elevation_range,
     bearing_range,
     reception_timeseries,
     rssi_by_distance,
@@ -68,20 +63,6 @@ async def get_reception(
     return ReceptionResponse(
         hours=hours,
         buckets=[ReceptionBucketResponse(**asdict(bucket)) for bucket in buckets],
-    )
-
-
-@router.get("/bearing-elevation-range", response_model=BearingElevationRangeResponse)
-async def get_bearing_elevation_range(
-    hours: int = Query(24, ge=1, le=720),
-    pool=Depends(get_pool),
-) -> BearingElevationRangeResponse:
-    entries = await bearing_elevation_range(pool, hours)
-    return BearingElevationRangeResponse(
-        hours=hours,
-        sector_width_deg=SECTOR_WIDTH_DEG,
-        elevation_band_width_deg=ELEVATION_BAND_WIDTH_DEG,
-        entries=[BearingElevationEntryResponse(**asdict(entry)) for entry in entries],
     )
 
 

@@ -41,7 +41,6 @@ export const api = {
   getRankings: (hours, limit) => getJSON("/api/rankings", { hours, limit }),
   getRecentAircraft: (hours, limit) => getJSON("/api/aircraft/recent", { hours, limit }),
   getBearingRange: (hours) => getJSON("/api/receiver/bearing-range", { hours }),
-  getBearingElevationRange: (hours) => getJSON("/api/receiver/bearing-elevation-range", { hours }),
   getAltitudeRange: (hours) => getJSON("/api/receiver/altitude-range", { hours }),
   getReception: (hours) => getJSON("/api/receiver/reception", { hours }),
   getRssiByDistance: (hours) => getJSON("/api/receiver/rssi-by-distance", { hours }),

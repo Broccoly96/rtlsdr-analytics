@@ -33,12 +33,8 @@ reference for AI coding agents working in this repo.
   and mach straight from readsb (see [Security & Privacy](#security--privacy)).
 - **Receiver performance** (`/static/receiver.html`) — how far you're
   actually receiving, broken down by compass bearing and by altitude band,
-  a distance-vs-signal-strength (RSSI) heatmap, an interactive 3D
-  "reception dome" (CesiumJS; bearing/elevation/distance as a connected
-  mesh with compass labels and distance rings, drag to rotate, hover for
-  exact bearing/elevation/distance — see
-  [Receiver performance](#receiver-performance-staticreceiverhtml) below), plus
-  a message-rate/position-rate trend over 24h/7d/30d.
+  a distance-vs-signal-strength (RSSI) heatmap, and a message-rate/
+  position-rate trend, all over 24h/7d/30d.
 - **Daily report** (`/static/daily.html`) — one day's summary (unique
   aircraft, max concurrent, message count, farthest/closest/most-observed,
   fastest/highest-altitude), a list of aircraft first seen that day, a
@@ -289,26 +285,19 @@ tar1090's own info panel:
 Answers "how good is my antenna/siting, really?" — a bearing-vs-range
 chart (max distance received per compass sector), an altitude-vs-range
 chart, a distance-vs-RSSI heatmap (how signal strength falls off with
-range), a message-count/position-rate trend (all four built with
-[`echarts`](https://echarts.apache.org/)/[`echarts-gl`](https://github.com/ecomfe/echarts-gl),
-BSD-3-Clause, vendored — no CDN), and a 3D "reception dome": a CesiumJS
-scene showing every (bearing, elevation) direction's max reception
-distance as a single connected, color-graded mesh (not scattered
-points) — drag to rotate, hover any point on the mesh for its exact
-bearing/elevation/distance, four compass labels (N/E/S/W) and
-concentric distance rings for orientation, and a caption stating what
-the color scale means in your configured distance unit (km or nm). All
-over 24h/7d/30d.
+range), and a message-count/position-rate trend, all built with
+[`echarts`](https://echarts.apache.org/) (BSD-3-Clause, vendored — no
+CDN), over 24h/7d/30d.
 
-The dome's scene is anchored at a fixed, clearly-arbitrary placeholder
-point (Null Island, 0°N/0°E) rather than this app's real (never
-exposed) receiver location — a Cesium local East-North-Up frame is
-correctly true-north-oriented at *any* point on the WGS84 ellipsoid, so
-the already receiver-relative bearing/elevation/distance data renders
-with identical geometric accuracy regardless of anchor. This keeps the
-"never expose real receiver coordinates" rule (see
-[Security & Privacy](#security--privacy)) intact while still giving a
-real geo-referenced 3D scene instead of an abstract chart.
+An earlier version of this page also had a 3D "reception dome" (max
+reception distance per bearing/elevation direction as a rotatable 3D
+mesh, first built with `echarts-gl`'s scatter3D, later rebuilt in
+CesiumJS). It was removed after user feedback that neither version was
+actually easier to read than the plain 2D bearing chart above — the
+underlying data (bearing/elevation/distance per direction) just isn't
+well served by a 3D scene here. `GET /api/receiver/bearing-range` (2D,
+still in use) covers the same "which direction reaches furthest"
+question without the readability problem.
 
 ### Daily report (`/static/daily.html`)
 
@@ -405,10 +394,10 @@ popup, click to open the sidebar, same as live mode. Switching back to
 **ライブ** restores the live broadcast view.
 
 Drag to orbit, scroll to zoom, click the home icon to reset the view.
-Unlike the receiver-performance page's 3D reception-hemisphere chart
-(which is `echarts-gl`, an aggregate view of reception range), this is
-[CesiumJS](https://github.com/CesiumGS/cesium) — built for exactly this
-"real aircraft, real 3D scene" use case. Nothing here is persisted.
+Built with [CesiumJS](https://github.com/CesiumGS/cesium) — the only
+page in this app that still uses it, after the receiver-performance
+page's 3D reception chart (also CesiumJS at one point) was removed for
+being harder to read than a plain 2D chart. Nothing here is persisted.
 
 The aircraft model (`app/static/models/aircraft.glb`) is Cesium's own
 `Cesium_Air.glb` sample model from the
@@ -594,31 +583,24 @@ green `make test` on a Docker-less machine doesn't mean full coverage ran.
   (`scripts/reset_db.py`) is a manual, confirmation-gated CLI script, never
   reachable over the network.
 - `/static/receiver.html`'s Content-Security-Policy adds `'unsafe-eval'`
-  and `blob:` to `script-src` — every other page except `globe.html`
-  stays without them. `echarts-gl`'s internal shader/expression compiler
-  needs `'unsafe-eval'` for the bearing/altitude/RSSI charts (confirmed
-  by reproducing and fixing the exact failure); the 3D reception dome
-  (CesiumJS, same vendored bundle `globe.html` uses) needs `'unsafe-eval'`
-  for its own WebAssembly compilation at startup and `blob:` for its
-  worker-loaded scripts, same root cause as `globe.html` below. This app
-  never uses `eval()`/`Function()` itself and never renders API/user data
-  as HTML (always `textContent`), so the realistic added risk is narrow —
-  worth knowing if you're auditing this page specifically.
+  to `script-src` — every other page except `globe.html` stays without
+  it. `echarts`'s internal shader/expression compiler needs it for the
+  bearing/altitude/RSSI charts (confirmed by reproducing and fixing the
+  exact failure). This app never uses `eval()`/`Function()` itself and
+  never renders API/user data as HTML (always `textContent`), so the
+  realistic added risk is narrow — worth knowing if you're auditing this
+  page specifically.
 - `/static/globe.html`'s CSP similarly adds `'unsafe-eval'` (CesiumJS's
   own script eagerly compiles WebAssembly for terrain/imagery decoding;
   without it, Cesium's own top-level script throws mid-execution and
   never finishes loading at all) and `blob:` to `script-src` (Cesium
-  bootstraps its web workers via a small in-memory blob: script) — again,
-  only these two pages, confirmed by reproducing and fixing the exact
-  failure rather than added speculatively.
-- `/static/globe.html` and `/static/receiver.html`'s 3D reception dome
-  both fetch satellite imagery (ArcGIS World Imagery, attribution shown
-  on-page) continuously while open — not just on click, the same posture
-  as the dashboard's map tiles, just a different provider and only on
-  these two pages. The reception dome's imagery is centered on a fixed,
-  clearly-arbitrary placeholder point (Null Island, 0°N/0°E), never your
-  real receiver location — see [Receiver performance](#receiver-performance-staticreceiverhtml)
-  for why an arbitrary anchor doesn't affect the geometry's correctness.
+  bootstraps its web workers via a small in-memory blob: script) — only
+  this one page, confirmed by reproducing and fixing the exact failure
+  rather than added speculatively.
+- `/static/globe.html` fetches satellite imagery (ArcGIS World Imagery,
+  attribution shown on-page) continuously while it's open — not just on
+  click, the same posture as the dashboard's map tiles, just a different
+  provider and only on this one page.
 - Your receiver's coordinates are used server-side for distance
   calculations and are never returned at full precision by the API; the
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off

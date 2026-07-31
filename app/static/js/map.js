@@ -171,6 +171,10 @@ function tracksToLineFeatures(tracksGeoJSON) {
   return { type: "FeatureCollection", features };
 }
 
+// Historical fetch window for each live-tracked aircraft's trailing track
+// (mirrors globe.js's DEFAULT_HOURS for the same purpose).
+const LIVE_TRACK_HISTORY_HOURS = 6;
+
 function cellsToHeatmapFeatures(cells) {
   return {
     type: "FeatureCollection",
@@ -191,6 +195,12 @@ export function createTrackMap({ containerId, styleUrl }) {
   let selectedIcao = null;
   let iconsReadyPromise = Promise.resolve();
   let liveFeatureShiftClickHandler = null;
+  // icao -> { historyFeatures: LineString[], liveRuns: [{color, coordinates}] }
+  // -- every live-tracked aircraft accumulates here regardless of picker/
+  // isolate visibility (mirrors globe.js's trackState); renderLiveTracks()
+  // below is what actually filters by visibility.
+  const liveTrackState = new Map();
+  let visibleLiveIcaos = new Set();
 
   const noop = {
     setTracks: () => {},
@@ -200,6 +210,9 @@ export function createTrackMap({ containerId, styleUrl }) {
     setLivePositions: () => {},
     clearLivePositions: () => {},
     setLiveFeatureShiftClickHandler: () => {},
+    updateLiveTracks: () => {},
+    pruneLiveTracks: () => {},
+    clearLiveTracks: () => {},
   };
 
   if (!isWebGLAvailable()) {
@@ -440,6 +453,110 @@ export function createTrackMap({ containerId, styleUrl }) {
     if (source) source.setData(tracksToLineFeatures(tracksGeoJSON));
   }
 
+  // --- live-mode per-aircraft tracks (reuses the "tracks" source/layer
+  // history mode uses -- only one mode is ever active at a time) ---------
+
+  function liveLineFeature(coordinates, color, icao) {
+    return {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates },
+      properties: { icao, color },
+    };
+  }
+
+  function renderLiveTracks() {
+    if (!ready) return;
+    const source = map.getSource("tracks");
+    if (!source) return;
+    const features = [];
+    for (const [icao, state] of liveTrackState) {
+      if (!visibleLiveIcaos.has(icao)) continue;
+      features.push(...state.historyFeatures);
+      for (const run of state.liveRuns) {
+        if (run.coordinates.length > 1) features.push(liveLineFeature(run.coordinates, run.color, icao));
+      }
+    }
+    source.setData({ type: "FeatureCollection", features });
+  }
+
+  // One-time (per icao) historical fetch for a live-tracked aircraft's
+  // trailing track, band-split same as history mode's tracksToLineFeatures.
+  function ensureLiveTrackHistory(icao) {
+    if (liveTrackState.has(icao)) return;
+    liveTrackState.set(icao, { historyFeatures: [], liveRuns: [] });
+    api
+      .getAircraftPositions(icao, LIVE_TRACK_HISTORY_HOURS)
+      .then((positions) => {
+        const state = liveTrackState.get(icao);
+        if (!state) return; // aircraft went stale before this resolved
+        for (const segment of positions.segments) {
+          if (segment.length < 2) continue;
+          const coords = segment.map((p) => [p.lon, p.lat, p.altitude_ft]);
+          for (const run of splitCoordinatesByBand(coords)) {
+            state.historyFeatures.push(liveLineFeature(run.coordinates, run.color, icao));
+          }
+        }
+        renderLiveTracks();
+      })
+      .catch((err) => {
+        console.error("live track history fetch failed", err);
+      });
+  }
+
+  // Appends one broadcast tick's position to the aircraft's live-extending
+  // track, starting a new band-run (see splitCoordinatesByBand) when the
+  // altitude band has changed since the last point.
+  function pushLiveTrackPoint(icao, position) {
+    const state = liveTrackState.get(icao);
+    if (!state) return;
+    const coord = [position.lon, position.lat, position.altitude_ft];
+    const color = colorForAltitude(position.altitude_ft);
+    const currentRun = state.liveRuns[state.liveRuns.length - 1];
+    if (currentRun && currentRun.color === color) {
+      currentRun.coordinates.push(coord);
+      return;
+    }
+    const coordinates = currentRun
+      ? [currentRun.coordinates[currentRun.coordinates.length - 1], coord]
+      : [coord];
+    state.liveRuns.push({ color, coordinates });
+  }
+
+  // Accumulates every broadcast tick's positions into per-aircraft track
+  // state (does not itself trigger a render -- setLivePositions() does,
+  // right after this is called each tick, so the two don't double-render).
+  function updateLiveTracks(positions) {
+    if (!ready) return;
+    for (const position of positions || []) {
+      if (!position.icao || position.lat == null || position.lon == null) continue;
+      ensureLiveTrackHistory(position.icao);
+      pushLiveTrackPoint(position.icao, position);
+    }
+  }
+
+  // Drops state for aircraft that have left the broadcast entirely (not
+  // just hidden via the picker) -- called with every icao seen in the
+  // latest raw tick, unfiltered by visibility.
+  function pruneLiveTracks(seenIcaos) {
+    let changed = false;
+    for (const icao of Array.from(liveTrackState.keys())) {
+      if (!seenIcaos.has(icao)) {
+        liveTrackState.delete(icao);
+        changed = true;
+      }
+    }
+    if (changed) renderLiveTracks();
+  }
+
+  function clearLiveTracks() {
+    liveTrackState.clear();
+    visibleLiveIcaos = new Set();
+    if (ready) {
+      const source = map.getSource("tracks");
+      if (source) source.setData({ type: "FeatureCollection", features: [] });
+    }
+  }
+
   function setHeatmap(cells) {
     if (!ready) return;
     const source = map.getSource("heatmap");
@@ -473,6 +590,13 @@ export function createTrackMap({ containerId, styleUrl }) {
           },
         })),
     });
+    // `positions` here is already filtered to what should be visible
+    // (fullmap.js's applyLivePositions()) -- track *accumulation* happens
+    // for every aircraft regardless (updateLiveTracks, called separately
+    // with the unfiltered tick), so this only controls which of those
+    // already-accumulated tracks renderLiveTracks() draws.
+    visibleLiveIcaos = new Set((positions || []).map((p) => p.icao).filter(Boolean));
+    renderLiveTracks();
   }
 
   function clearLivePositions() {
@@ -497,6 +621,9 @@ export function createTrackMap({ containerId, styleUrl }) {
     setLivePositions,
     clearLivePositions,
     setLiveFeatureShiftClickHandler,
+    updateLiveTracks,
+    pruneLiveTracks,
+    clearLiveTracks,
   };
 }
 

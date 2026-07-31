@@ -4,8 +4,11 @@
 // 1h steps up to 72h via a slider) -- mirrors globe.js's live/history mode
 // switch, aircraft picker, fast-mode toggle, and shift+click isolate, just
 // rendering flat 2D category-icons (app/static/js/aircraft-icons.js)
-// instead of 3D models. Uses the same dynamic-import-isolation approach as
-// main.js (a map.js/MapLibre load failure must not crash this whole page).
+// instead of 3D models. Each live-tracked aircraft also draws its own
+// historical + live-extending track (map.js's updateLiveTracks/
+// pruneLiveTracks/clearLiveTracks), same as globe.js's per-aircraft
+// tracks. Uses the same dynamic-import-isolation approach as main.js (a
+// map.js/MapLibre load failure must not crash this whole page).
 
 import { api } from "./api.js";
 import { renderAltitudeLegend } from "./altitude-legend.js";
@@ -27,6 +30,9 @@ const NOOP_CONTROLLER = {
   setLivePositions: () => {},
   clearLivePositions: () => {},
   setLiveFeatureShiftClickHandler: () => {},
+  updateLiveTracks: () => {},
+  pruneLiveTracks: () => {},
+  clearLiveTracks: () => {},
 };
 
 function renderVersion(config) {
@@ -125,6 +131,12 @@ function connectBroadcast() {
     for (const icao of Array.from(latestPositions.keys())) {
       if (!seenIcaos.has(icao)) latestPositions.delete(icao);
     }
+    // Every aircraft accumulates its own track regardless of picker/isolate
+    // visibility (mirrors globe.js's ensureTrack/pushLiveTrackPoint) --
+    // only *rendering* is filtered, via applyLivePositions() below, so
+    // toggling an aircraft back on doesn't leave a gap in its track.
+    mapController.updateLiveTracks(positions);
+    mapController.pruneLiveTracks(seenIcaos);
     applyLivePositions();
   });
   socket.addEventListener("error", () => console.error("fullmap: live connection error"));
@@ -138,6 +150,7 @@ function teardownLiveView() {
   if (isolatedIcao) exitIsolate();
   latestPositions.clear();
   mapController.clearLivePositions();
+  mapController.clearLiveTracks();
 }
 
 function sendFastMode() {

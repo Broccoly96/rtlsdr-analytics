@@ -9,12 +9,20 @@ module in this package.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 import asyncpg
 
 QUERY_TIMEOUT_SECONDS = 5.0
+FIRST_SEEN_TODAY_LIMIT = 20
+
+
+@dataclass(frozen=True, slots=True)
+class FirstSeenAircraft:
+    icao: str
+    callsign: str | None
+    first_seen_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,13 +39,20 @@ class DailyTrafficSummary:
     most_observed_icao: str | None
     most_observed_count: int | None
     # Only populated by compute_daily_summary ("today", always computed
-    # live) -- None for get_traffic_day's past-day path, since traffic_day
-    # has no callsign columns and was never asked to carry them (no
-    # migration needed: these all have defaults, so **dict(row) from that
-    # table's narrower column set still constructs fine).
+    # live) -- None/empty for get_traffic_day's past-day path, since
+    # traffic_day has no columns for these and was never asked to carry
+    # them (no migration needed: these all have defaults, so **dict(row)
+    # from that table's narrower column set still constructs fine).
     farthest_callsign: str | None = None
     closest_callsign: str | None = None
     most_observed_callsign: str | None = None
+    fastest_icao: str | None = None
+    fastest_callsign: str | None = None
+    fastest_ground_speed_kt: float | None = None
+    highest_icao: str | None = None
+    highest_callsign: str | None = None
+    highest_altitude_ft: float | None = None
+    first_seen_today: list[FirstSeenAircraft] = field(default_factory=list)
 
 
 async def compute_daily_summary(
@@ -133,6 +148,59 @@ async def compute_daily_summary(
         end_utc,
         timeout=QUERY_TIMEOUT_SECONDS,
     )
+    # Same "winning row's own callsign can be null" concern as
+    # farthest/closest above, same fix: nearest-in-time non-null callsign
+    # for that aircraft that day.
+    fastest = await pool.fetchrow(
+        """
+        WITH winner AS (
+            SELECT icao, ground_speed_kt, observed_at FROM observations
+            WHERE observed_at >= $1 AND observed_at < $2 AND ground_speed_kt IS NOT NULL
+            ORDER BY ground_speed_kt DESC LIMIT 1
+        )
+        SELECT w.icao, w.ground_speed_kt,
+            (SELECT o.callsign FROM observations o
+             WHERE o.icao = w.icao AND o.observed_at >= $1 AND o.observed_at < $2
+               AND o.callsign IS NOT NULL
+             ORDER BY abs(extract(epoch FROM o.observed_at - w.observed_at)) ASC
+             LIMIT 1) AS callsign
+        FROM winner w
+        """,
+        start_utc,
+        end_utc,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    highest = await pool.fetchrow(
+        """
+        WITH winner AS (
+            SELECT icao, altitude_ft, observed_at FROM observations
+            WHERE observed_at >= $1 AND observed_at < $2 AND altitude_ft IS NOT NULL
+            ORDER BY altitude_ft DESC LIMIT 1
+        )
+        SELECT w.icao, w.altitude_ft,
+            (SELECT o.callsign FROM observations o
+             WHERE o.icao = w.icao AND o.observed_at >= $1 AND o.observed_at < $2
+               AND o.callsign IS NOT NULL
+             ORDER BY abs(extract(epoch FROM o.observed_at - w.observed_at)) ASC
+             LIMIT 1) AS callsign
+        FROM winner w
+        """,
+        start_utc,
+        end_utc,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    first_seen_rows = await pool.fetch(
+        """
+        SELECT icao, last_callsign AS callsign, first_seen_at FROM aircraft
+        WHERE first_seen_at >= $1 AND first_seen_at < $2
+        ORDER BY first_seen_at DESC LIMIT $3
+        """,
+        start_utc,
+        end_utc,
+        FIRST_SEEN_TODAY_LIMIT,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+
     return DailyTrafficSummary(
         day=day,
         unique_aircraft_count=unique_count,
@@ -148,6 +216,16 @@ async def compute_daily_summary(
         most_observed_icao=most_observed["icao"] if most_observed else None,
         most_observed_count=most_observed["observation_count"] if most_observed else None,
         most_observed_callsign=most_observed["callsign"] if most_observed else None,
+        fastest_icao=fastest["icao"] if fastest else None,
+        fastest_callsign=fastest["callsign"] if fastest else None,
+        fastest_ground_speed_kt=fastest["ground_speed_kt"] if fastest else None,
+        highest_icao=highest["icao"] if highest else None,
+        highest_callsign=highest["callsign"] if highest else None,
+        highest_altitude_ft=highest["altitude_ft"] if highest else None,
+        first_seen_today=[
+            FirstSeenAircraft(row["icao"], row["callsign"], row["first_seen_at"])
+            for row in first_seen_rows
+        ],
     )
 
 

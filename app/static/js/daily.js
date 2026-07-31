@@ -7,7 +7,18 @@
 import { api } from "./api.js";
 import { createAircraftInfoTrigger } from "./aircraftinfo.js";
 import { axisStyle, baseChartOption, CHART_COLORS, createChart } from "./chart.js";
-import { formatDistance } from "./units.js";
+import { formatDistance, formatAltitude } from "./units.js";
+
+let displayTimezone = "UTC";
+
+function formatTime(isoString) {
+  if (!isoString) return "--";
+  try {
+    return new Date(isoString).toLocaleString("ja-JP", { timeZone: displayTimezone, hour12: false });
+  } catch {
+    return isoString;
+  }
+}
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -63,6 +74,56 @@ function renderHighlight(elId, icao, callsign, valueText) {
   el.replaceChildren(icaoEl, metaEl);
 }
 
+function renderFirstSeenToday(rows) {
+  const table = document.getElementById("first-seen-today");
+  const emptyEl = document.getElementById("first-seen-today-empty");
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  tbody.replaceChildren();
+  table.hidden = rows.length === 0;
+  if (emptyEl) emptyEl.hidden = rows.length > 0;
+
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    const icaoCell = document.createElement("td");
+    icaoCell.appendChild(createAircraftInfoTrigger(row.icao, row.callsign || row.icao));
+    const timeCell = document.createElement("td");
+    timeCell.textContent = formatTime(row.first_seen_at);
+    tr.append(icaoCell, timeCell);
+    tbody.appendChild(tr);
+  }
+}
+
+// Minimal line chart, no legend/axis-name chrome -- "a small sparkline",
+// not a full traffic chart.
+function createTrendChart(containerId) {
+  return createChart(containerId, "trend-chart-error", (days) => ({
+    ...baseChartOption(),
+    grid: { left: 32, right: 16, top: 12, bottom: 24 },
+    tooltip: { trigger: "axis" },
+    xAxis: {
+      type: "category",
+      data: days.map((d) => d.day.slice(5)), // "MM-DD"
+      ...axisStyle(),
+    },
+    yAxis: { type: "value", minInterval: 1, ...axisStyle() },
+    series: [
+      {
+        type: "line",
+        data: days.map((d) => d.unique_aircraft_count),
+        showSymbol: true,
+        symbolSize: 6,
+        lineStyle: { color: CHART_COLORS.seriesA },
+        areaStyle: { color: "rgba(96, 165, 250, 0.15)" },
+        itemStyle: {
+          color: (params) =>
+            params.dataIndex === days.length - 1 ? CHART_COLORS.seriesB : CHART_COLORS.seriesA,
+        },
+      },
+    ],
+  }));
+}
+
 function createAircraftTypeChart(containerId) {
   return createChart(containerId, "aircraft-type-chart-error", (data) => ({
     ...baseChartOption(),
@@ -92,12 +153,16 @@ async function main() {
     config = { version: null, git_revision: null };
   }
   renderVersion(config);
+  displayTimezone = config.display_timezone || "UTC";
 
   const aircraftTypeChart = createAircraftTypeChart("aircraft-type-chart");
+  const trendChart = createTrendChart("trend-chart");
   let todayDay = null;
+  let todaySummary = null;
 
   try {
     const today = await api.getTrafficDailySummary();
+    todaySummary = today;
     todayDay = today.day;
     setText("summary-day", today.day);
     setText("card-unique", String(today.unique_aircraft_count));
@@ -123,6 +188,19 @@ async function main() {
       today.most_observed_callsign,
       today.most_observed_count != null ? `${today.most_observed_count}回観測` : ""
     );
+    renderHighlight(
+      "highlight-fastest",
+      today.fastest_icao,
+      today.fastest_callsign,
+      today.fastest_ground_speed_kt != null ? `${Math.round(today.fastest_ground_speed_kt)} kt` : ""
+    );
+    renderHighlight(
+      "highlight-highest",
+      today.highest_icao,
+      today.highest_callsign,
+      today.highest_altitude_ft != null ? formatAltitude(today.highest_altitude_ft) : ""
+    );
+    renderFirstSeenToday(today.first_seen_today || []);
 
     const [yesterday, lastWeek] = await Promise.all([
       api.getTrafficDailySummary(addDaysToIsoDate(today.day, -1)),
@@ -138,6 +216,16 @@ async function main() {
     }
   } catch (err) {
     console.error("daily summary refresh failed", err);
+  }
+
+  try {
+    // Ends yesterday (traffic_day only ever holds finished days) --
+    // splice in today's already-fetched live count as the 7th point.
+    const past = await api.getTrafficDaily(6);
+    const trendDays = todaySummary ? [...past.daily, todaySummary] : past.daily;
+    trendChart.setData(trendDays);
+  } catch (err) {
+    console.error("trend chart refresh failed", err);
   }
 
   try {

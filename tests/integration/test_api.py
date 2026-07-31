@@ -295,6 +295,72 @@ async def test_traffic_daily_summary_today_is_computed_live(
     assert body["farthest_callsign"] == "TEST001"
     assert body["closest_callsign"] == "TEST001"
     assert body["most_observed_callsign"] == "TEST001"
+    assert body["fastest_icao"] == "aaaaaa"
+    assert body["fastest_callsign"] == "TEST001"
+    assert body["fastest_ground_speed_kt"] == 400.0
+    assert body["highest_icao"] == "aaaaaa"
+    assert body["highest_callsign"] == "TEST001"
+    assert body["highest_altitude_ft"] == 10000.0
+    assert len(body["first_seen_today"]) == 1
+    assert body["first_seen_today"][0]["icao"] == "aaaaaa"
+    assert body["first_seen_today"][0]["callsign"] == "TEST001"
+
+
+async def test_traffic_daily_summary_fastest_and_highest_pick_the_actual_max(
+    postgres_url, client: AsyncClient
+) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("dddddd", now, "SLOW01")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="dddddd",
+                observed_at=now,
+                callsign="SLOW01",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=5000.0,
+                ground_speed_kt=200.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=10.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+        await store.upsert_aircraft("eeeeee", now, "FAST01")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="eeeeee",
+                observed_at=now,
+                callsign="FAST01",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=40000.0,
+                ground_speed_kt=550.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=10.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/traffic/daily-summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fastest_icao"] == "eeeeee"
+    assert body["fastest_ground_speed_kt"] == 550.0
+    assert body["highest_icao"] == "eeeeee"
+    assert body["highest_altitude_ft"] == 40000.0
+    assert len(body["first_seen_today"]) == 2
 
 
 async def test_traffic_daily_summary_farthest_finds_nearby_time_callsign_when_winning_row_is_null(

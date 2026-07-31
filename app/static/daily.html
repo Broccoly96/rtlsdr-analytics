@@ -79,6 +79,36 @@
       <div class="panel__header">最多観測</div>
       <div class="daily-highlight" id="highlight-most-observed">--</div>
     </div>
+    <div class="panel">
+      <div class="panel__header">最高速度</div>
+      <div class="daily-highlight" id="highlight-fastest">--</div>
+    </div>
+    <div class="panel">
+      <div class="panel__header">最高高度</div>
+      <div class="daily-highlight" id="highlight-highest">--</div>
+    </div>
+  </section>
+
+  <section class="main-area" style="grid-template-columns: 1fr 1fr;">
+    <div class="panel">
+      <div class="panel__header">本日初観測の機体</div>
+      <table class="ranking-table" id="first-seen-today">
+        <caption class="sr-only">今日はじめて観測した機体</caption>
+        <thead>
+          <tr>
+            <th scope="col">機体</th>
+            <th scope="col">初観測時刻</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="panel__empty" id="first-seen-today-empty" hidden>今日はまだ新規機体はありません</p>
+    </div>
+    <div class="panel panel--chart">
+      <div class="panel__header" id="trend-heading">直近7日間のユニーク機数トレンド</div>
+      <div id="trend-chart" class="chart-container" role="img" aria-labelledby="trend-heading" style="height: 180px;"></div>
+      <div id="trend-chart-error" class="panel__error" hidden></div>
+    </div>
   </section>
 
   <footer class="app-footer">

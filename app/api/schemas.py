@@ -62,6 +62,12 @@ class TrafficResponse(BaseModel):
     unique_aircraft_count: int
 
 
+class FirstSeenAircraftResponse(BaseModel):
+    icao: str
+    callsign: str | None
+    first_seen_at: datetime
+
+
 class DailyTrafficSummaryResponse(BaseModel):
     day: date
     unique_aircraft_count: int
@@ -77,6 +83,13 @@ class DailyTrafficSummaryResponse(BaseModel):
     most_observed_icao: str | None
     most_observed_count: int | None
     most_observed_callsign: str | None = None
+    fastest_icao: str | None = None
+    fastest_callsign: str | None = None
+    fastest_ground_speed_kt: float | None = None
+    highest_icao: str | None = None
+    highest_callsign: str | None = None
+    highest_altitude_ft: float | None = None
+    first_seen_today: list[FirstSeenAircraftResponse] = []
 
 
 class TrafficDailyResponse(BaseModel):

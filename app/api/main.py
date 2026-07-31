@@ -79,6 +79,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def dashboard() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
+    # Served at the root (not /static/manifest.json or /static/sw.js) so
+    # the service worker's default scope covers the whole app (/), not
+    # just /static/ -- PWA installability needs start_url within scope.
+    @app.get("/manifest.json", include_in_schema=False)
+    async def pwa_manifest() -> FileResponse:
+        return FileResponse(STATIC_DIR / "manifest.json", media_type="application/manifest+json")
+
+    @app.get("/sw.js", include_in_schema=False)
+    async def service_worker() -> FileResponse:
+        return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript")
+
     @app.middleware("http")
     async def no_cache_for_dashboard_assets(request: Request, call_next):
         # This dashboard is small, low-traffic, and actively iterated on --
@@ -86,7 +97,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # build (with no visible sign anything is wrong) is a worse outcome
         # than the browser re-fetching a few hundred KB on every load.
         response = await call_next(request)
-        if request.url.path == "/" or request.url.path.startswith("/static/"):
+        if (
+            request.url.path == "/"
+            or request.url.path.startswith("/static/")
+            or request.url.path in ("/manifest.json", "/sw.js")
+        ):
             response.headers["Cache-Control"] = "no-store"
         return response
 

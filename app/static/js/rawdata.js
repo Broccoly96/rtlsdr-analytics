@@ -4,6 +4,7 @@
 // rawdata.py's docstring).
 
 import { api } from "./api.js";
+import { registerServiceWorker } from "./pwa.js";
 
 const MAX_ROWS = 5000;
 const RECONNECT_DELAY_MS = 3000;
@@ -245,6 +246,7 @@ async function main() {
     config = { version: null, git_revision: null };
   }
   renderVersion(config);
+  registerServiceWorker();
 
   setupPauseButton();
   setupClearButton();

@@ -9,6 +9,7 @@
 import { api } from "./api.js";
 import { ui } from "./ui.js";
 import { createAircraftInfoTrigger } from "./aircraftinfo.js";
+import { registerServiceWorker } from "./pwa.js";
 
 const FAVORITES_KEY = "adsb-analytics:favorites";
 
@@ -179,6 +180,7 @@ async function main() {
     config = { version: null, git_revision: null };
   }
   renderVersion(config);
+  registerServiceWorker();
 
   const params = new URLSearchParams(window.location.search);
   const icao = params.get("icao");

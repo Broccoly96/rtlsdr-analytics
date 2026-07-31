@@ -7,6 +7,7 @@
 import { api } from "./api.js";
 import { axisStyle, baseChartOption, CHART_COLORS, createChart, formatAxisTime, setTimezone } from "./chart.js";
 import { distanceUnitLabel, formatDistance, toDisplayDistance } from "./units.js";
+import { registerServiceWorker } from "./pwa.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -215,6 +216,7 @@ async function main() {
   }
 
   renderVersion(config);
+  registerServiceWorker();
   setTimezone(config.display_timezone);
 
   const bandLabels = {};

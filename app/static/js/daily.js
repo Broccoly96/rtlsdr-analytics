@@ -8,6 +8,7 @@ import { api } from "./api.js";
 import { createAircraftInfoTrigger } from "./aircraftinfo.js";
 import { axisStyle, baseChartOption, CHART_COLORS, createChart } from "./chart.js";
 import { formatDistance, formatAltitude } from "./units.js";
+import { registerServiceWorker } from "./pwa.js";
 
 let displayTimezone = "UTC";
 
@@ -153,6 +154,7 @@ async function main() {
     config = { version: null, git_revision: null };
   }
   renderVersion(config);
+  registerServiceWorker();
   displayTimezone = config.display_timezone || "UTC";
 
   const aircraftTypeChart = createAircraftTypeChart("aircraft-type-chart");

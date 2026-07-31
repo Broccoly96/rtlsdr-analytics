@@ -1440,3 +1440,24 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/aircraft/{icao}/history",
         "/api/aircraft/frequent",
     }
+
+
+# --- PWA (manifest, service worker) -----------------------------------------
+
+
+async def test_manifest_served_at_root_with_correct_media_type(client: AsyncClient) -> None:
+    response = await client.get("/manifest.json")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/manifest+json"
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body["start_url"] == "/"
+    assert body["scope"] == "/"
+    assert len(body["icons"]) == 2
+
+
+async def test_service_worker_served_at_root_with_correct_media_type(client: AsyncClient) -> None:
+    response = await client.get("/sw.js")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert response.headers["cache-control"] == "no-store"

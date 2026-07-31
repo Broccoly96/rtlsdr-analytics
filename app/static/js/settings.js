@@ -5,6 +5,7 @@
 import { api } from "./api.js";
 import { getUnits, setUnits } from "./units.js";
 import { getTrackOpacity, setTrackOpacity } from "./track-settings.js";
+import { registerServiceWorker } from "./pwa.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -39,6 +40,7 @@ async function main() {
     config = { version: null, git_revision: null };
   }
   renderVersion(config);
+  registerServiceWorker();
 
   const units = getUnits();
   wireButtonGroup("distance-unit-group", units.distance, (value) => {

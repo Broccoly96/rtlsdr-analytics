@@ -13,6 +13,7 @@
 import { api } from "./api.js";
 import { ui } from "./ui.js";
 import { renderAltitudeLegend } from "./altitude-legend.js";
+import { registerServiceWorker } from "./pwa.js";
 import {
   axisStyle,
   baseChartOption,
@@ -290,6 +291,7 @@ async function main() {
   }
 
   renderVersion(config);
+  registerServiceWorker();
   ui.setTimezone(config.display_timezone);
   setChartTimezone(config.display_timezone);
 

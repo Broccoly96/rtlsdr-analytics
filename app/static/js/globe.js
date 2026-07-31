@@ -32,6 +32,7 @@ import { openAircraftSidebar } from "./aircraftinfo.js";
 import { formatAltitude, formatDistance } from "./units.js";
 import { getTrackOpacity } from "./track-settings.js";
 import { renderAltitudeLegend } from "./altitude-legend.js";
+import { registerServiceWorker } from "./pwa.js";
 
 const FT_TO_M = 0.3048;
 const DEFAULT_HOURS = 6;
@@ -768,6 +769,7 @@ async function main() {
     config = { version: null, git_revision: null, altitude_bands: [] };
   }
   renderVersion(config);
+  registerServiceWorker();
   setAltitudeBands(config.altitude_bands);
   renderAltitudeLegend(document.getElementById("altitude-legend"), config.altitude_bands);
   displayTimezone = config.display_timezone || "UTC";

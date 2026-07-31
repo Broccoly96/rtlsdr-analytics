@@ -12,6 +12,7 @@
 
 import { api } from "./api.js";
 import { renderAltitudeLegend } from "./altitude-legend.js";
+import { registerServiceWorker } from "./pwa.js";
 
 const HISTORY_AUTO_REFRESH_INTERVAL_MS = 30000;
 const DEFAULT_CONFIG = {
@@ -374,6 +375,7 @@ async function main() {
   }
 
   renderVersion(config);
+  registerServiceWorker();
   renderAltitudeLegend(document.getElementById("altitude-legend"), config.altitude_bands);
 
   const mapModule = await loadMapModule();

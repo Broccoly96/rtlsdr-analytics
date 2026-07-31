@@ -28,11 +28,13 @@ reference for AI coding agents working in this repo.
   full-screen, with a live mode: every currently-received aircraft as a
   flat 2D icon (shape by ADS-B emitter category — jet/light/rotorcraft/
   glider/UAV/ground vehicle, color by altitude band, rotated to its
-  heading), click for the shared aircraft detail sidebar, Shift+click to
-  isolate one, a picker to show/hide specific aircraft, and an optional
-  1Hz update rate — same broadcast connection and controls as the 3D
-  globe below, just flat icons instead of a 3D model. A slider (1-hour
-  steps, up to 72h) switches to a historical-track replay instead.
+  heading), each also drawing its own historical + live-extending track
+  (altitude-band colored, same as everywhere else), click for the shared
+  aircraft detail sidebar, Shift+click to isolate one, a picker to
+  show/hide specific aircraft, and an optional 1Hz update rate — same
+  broadcast connection and controls as the 3D globe below, just flat
+  icons instead of a 3D model. A slider (1-hour steps, up to 72h)
+  switches to a historical-track replay instead.
 - **Aircraft detail sidebar** — click any aircraft's callsign, track, or
   live icon anywhere in the app (dashboard, track map, daily report,
   history, 3D globe) for a tar1090-style detail panel: registration/type/
@@ -57,7 +59,7 @@ reference for AI coding agents working in this repo.
 - **Raw data** (`/static/rawdata.html`) — a live, ephemeral view of
   readsb's raw Beast-format stream with a simple decode (downlink format,
   ICAO24, ADS-B message-type category), filterable by ICAO and message
-  type (both client-side, no effect on the 500-frame buffer or on
+  type (both client-side, no effect on the 5000-frame buffer or on
   pause/clear), for learning the frame structure. Nothing shown here is
   stored anywhere.
 - **3D flight globe** (`/static/globe.html`) — every currently-live aircraft
@@ -295,7 +297,15 @@ renders every currently-received aircraft as a flat 2D icon:
   in this app uses.
 - **Rotation** — to the aircraft's current track/heading.
 
-Click an icon for the shared aircraft detail sidebar; Shift+click to
+Each aircraft also draws its own historical + live-extending track
+underneath its icon (fetched from `GET /api/aircraft/{icao}/positions`
+the first time it's seen, then extended live from the broadcast), colored
+by altitude band the same way — including changing color along its own
+length as altitude changes — as every other track in this app. Tracks
+keep accumulating for every aircraft in the background even while hidden
+via the picker or isolate, so showing one again doesn't leave a gap.
+
+Click an icon (or its track) for the shared aircraft detail sidebar; Shift+click to
 isolate one aircraft (Shift+click again, or "全機体表示に戻す", to
 return to the full view); "機体選択" opens a checkbox picker to
 show/hide specific aircraft; "更新頻度: 1秒" opts into the same 1Hz
@@ -390,7 +400,7 @@ database. Pause to read, or clear the table, with the buttons at the top;
 it reconnects automatically if the connection drops. An ICAO text filter
 and a message-type checkbox popover narrow down what's *shown*; both are
 purely client-side (every field needed already arrives per-message) and
-never affect what's received, the 500-frame buffer, or pause/clear.
+never affect what's received, the 5000-frame buffer, or pause/clear.
 
 ### 3D flight globe (`/static/globe.html`)
 

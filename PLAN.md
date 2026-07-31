@@ -2030,3 +2030,50 @@ Milestone V〜W(tar1090風サイドバー + 3D航跡)を実際に使ったユー
 ユーザー判断が必要な事項: なし。
 ```
 
+## 25. 高度帯しきい値の調整 + 生データの小改善 + 航跡地図ライブモードへの航跡ライン追加(Milestone FF)
+
+Milestone EE完了後の細かいフィードバック4件に対応。
+
+- **高度帯しきい値の変更**: 地上/低高度を5000ft以下、低高度を5000〜10000ft、中高度を10000〜20000ft、高高度を20000〜30000ft、超高高度を30000ft超に変更(旧: 0/10000/25000/35000)。`app/domain/bands.py`の`max_ft`のみ変更すれば、色・凡例の数値範囲・航跡の配色・受信性能のバンド集計・ヒートマップのフィルタなど全消費者が`/api/config`経由で自動的に追従する設計であることを実際に確認(他ファイルの変更は一切不要だった)。`tests/unit/test_bands.py`の境界値テスト(5000ftが旧「低高度」→新「地上/低高度」になった点)のみ更新。
+- **生データの最大保存件数を500→5000件に増加**: `app/static/js/rawdata.js`の`MAX_ROWS`定数と`app/static/rawdata.html`の表示テキストを変更。
+- **24bitアドレスのラベルを「Hex」→「ICAO」に変更**: `app/static/js/aircraftinfo.js`の機体情報サイドバーのヘッダーラベルを変更。生データページのICAOフィルタと表記を揃えることで、フィルタに何を入力すればよいかが分かりやすくなるというユーザーの意図に対応。
+- **航跡地図のライブモードに機体別の航跡ラインを追加**: これまでライブモードはアイコンのみで航跡ラインが無かった問題に対応。`map.js`に`updateLiveTracks`/`pruneLiveTracks`/`clearLiveTracks`を新設し、3D航跡の`ensureTrack`/`pushLiveTrackPoint`と同じ設計思想(機体ごとに過去分を`GET /api/aircraft/{icao}/positions`で一度取得、以降はブロードキャストの各tickでライブ延伸、既存の`splitCoordinatesByBand`で高度帯ごとに色分けしたポリラインに分割)をMapLibreのGeoJSON特徴量として実装し、履歴モードと共用している既存の`tracks`ソース/レイヤーにそのまま描画。機体選択で非表示にした機体も裏側では航跡の蓄積を継続し(3D航跡と同じ設計)、表示のみを`visibleLiveIcaos`でフィルタする方式のため、再表示時に航跡が途切れない。
+
+### Milestone FF-1:高度帯しきい値の調整
+
+- [x] `app/domain/bands.py`: `max_ft`を5000/10000/20000/30000/Noneに変更。
+- [x] `tests/unit/test_bands.py`: 境界値テストを更新。
+
+### Milestone FF-2:生データの改善(最大件数 + ICAO表記統一)
+
+- [x] `app/static/js/rawdata.js`/`app/static/rawdata.html`: `MAX_ROWS`と表示テキストを5000件に。
+- [x] `app/static/js/aircraftinfo.js`: サイドバーのラベルを「Hex」→「ICAO」に変更。
+
+### Milestone FF-3:航跡地図ライブモードへの航跡ライン追加
+
+- [x] `app/static/js/map.js`: `updateLiveTracks`/`pruneLiveTracks`/`clearLiveTracks`、`ensureLiveTrackHistory`/`pushLiveTrackPoint`/`renderLiveTracks`を実装。
+- [x] `app/static/js/fullmap.js`: ブロードキャストのメッセージハンドラで`updateLiveTracks`/`pruneLiveTracks`を呼び出し、`teardownLiveView`で`clearLiveTracks`を呼び出すよう配線。
+
+### セッション記録
+
+```text
+日付: 2026-07-31
+完了したMilestone/Task: Milestone FF-1(高度帯しきい値調整)、FF-2(生データ改善)、FF-3(航跡地図ライブモード航跡ライン)
+変更した主要ファイル:
+  - FF-1: app/domain/bands.py、tests/unit/test_bands.py
+  - FF-2: app/static/js/rawdata.js、app/static/rawdata.html、app/static/js/aircraftinfo.js
+  - FF-3: app/static/js/map.js、app/static/js/fullmap.js、app/static/fullmap.html
+  - 全体: README.md
+実行したテスト: pytest(フルスイート、298件、全green)、ruff check(app tests scripts migrations)
+テスト結果: 全green、lint clean
+実環境で確認したこと:
+  - FF-1: 凡例が新しいしきい値(5000/10000/20000/30000ft)で正しく表示されることを確認。
+  - FF-2: 生データページのヘッダーが「最大5000件」と表示されること、ダッシュボードのランキング経由で開いた機体情報サイドバーが「ICAO: xxxxxx」と表示されることを確認。
+  - FF-3: 航跡地図のライブモードで各機体アイコンの下に高度帯で色分けされた航跡ラインが実際に描画されること(スクリーンショットで複数色の航跡を確認)、ライブ→過去→ライブの往復、機体選択の全非表示→全表示往復、航跡ライン自体のクリックでのサイドバー表示、いずれもconsole error 0件で動作することを確認。
+  - 全体: 8ページ全てでconsole error 0件を再確認。
+残課題:
+  - なし(全Milestone完了・デプロイ・検証・ドキュメント更新済み)。
+次に行うTask: なし。ユーザーからの次の指示待ち。
+ユーザー判断が必要な事項: なし。
+```
+

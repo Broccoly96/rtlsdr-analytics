@@ -4,6 +4,7 @@
 // unlike maplibre-gl v6 which is ESM-only).
 
 import { api } from "./api.js";
+import { t, currentLocale } from "./i18n.js";
 
 let displayTimezone = "UTC";
 
@@ -13,7 +14,7 @@ export function setTimezone(tz) {
 
 export function formatAxisTime(isoString) {
   try {
-    return new Date(isoString).toLocaleTimeString("ja-JP", {
+    return new Date(isoString).toLocaleTimeString(currentLocale(), {
       timeZone: displayTimezone,
       hour: "2-digit",
       minute: "2-digit",
@@ -73,14 +74,14 @@ export function axisStyle() {
 function initChart(containerId, errorElId) {
   const container = document.getElementById(containerId);
   if (!container || typeof echarts === "undefined") {
-    showError(errorElId, "グラフの初期化に失敗しました。");
+    showError(errorElId, t("chart.initFailed"));
     return null;
   }
   try {
     return echarts.init(container, null, { renderer: "canvas" });
   } catch (err) {
     console.error("chart init failed", err);
-    showError(errorElId, "グラフの初期化に失敗しました。");
+    showError(errorElId, t("chart.initFailed"));
     return null;
   }
 }
@@ -114,7 +115,7 @@ export function createChart(containerId, errorElId, buildOption) {
       chart.setOption(currentBuildOption(data), true);
     } catch (err) {
       console.error("chart render failed", err);
-      showError(errorElId, "グラフの描画に失敗しました。");
+      showError(errorElId, t("chart.renderFailed"));
     }
   }
 
@@ -145,7 +146,7 @@ export function trafficChartOption(traffic) {
       },
     },
     legend: {
-      data: ["受信中", "位置取得中"],
+      data: [t("chart.active"), t("chart.positionAcquired")],
       textStyle: { color: CHART_COLORS.axisLabel },
       top: 0,
     },
@@ -161,7 +162,7 @@ export function trafficChartOption(traffic) {
     },
     series: [
       {
-        name: "受信中",
+        name: t("chart.active"),
         type: "line",
         data: active,
         showSymbol: false,
@@ -169,7 +170,7 @@ export function trafficChartOption(traffic) {
         areaStyle: { color: "rgba(96, 165, 250, 0.15)" },
       },
       {
-        name: "位置取得中",
+        name: t("chart.positionAcquired"),
         type: "line",
         data: position,
         showSymbol: false,
@@ -190,7 +191,7 @@ export async function refreshTraffic(chartController, hours) {
     return traffic;
   } catch (err) {
     console.error("traffic refresh failed", err);
-    showError("chart-error", "交通量データの取得に失敗しました。");
+    showError("chart-error", t("chart.trafficFetchFailed"));
     return null;
   }
 }

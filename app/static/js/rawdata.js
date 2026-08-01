@@ -5,6 +5,7 @@
 
 import { api } from "./api.js";
 import { registerServiceWorker } from "./pwa.js";
+import { t, currentLocale, applyStaticTranslations } from "./i18n.js";
 
 const MAX_ROWS = 5000;
 const RECONNECT_DELAY_MS = 3000;
@@ -34,7 +35,7 @@ function setConnectionState(state, label) {
 }
 
 function formatNowTime() {
-  return new Date().toLocaleTimeString("ja-JP", { hour12: false });
+  return new Date().toLocaleTimeString(currentLocale(), { hour12: false });
 }
 
 // The same string already shown in the "メッセージ種類" column -- grouping
@@ -175,7 +176,7 @@ function setupPauseButton() {
   pauseToggle.addEventListener("click", () => {
     paused = !paused;
     pauseToggle.setAttribute("aria-pressed", String(paused));
-    pauseToggle.textContent = paused ? "再開" : "一時停止";
+    pauseToggle.textContent = paused ? t("rawdata.resume") : t("rawdata.pause");
   });
 }
 
@@ -187,10 +188,10 @@ function connect() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${window.location.host}/ws/rawdata`);
 
-  setConnectionState("connecting", "接続中…");
+  setConnectionState("connecting", t("rawdata.connecting"));
 
   ws.addEventListener("open", () => {
-    setConnectionState("ok", "接続中");
+    setConnectionState("ok", t("rawdata.connected"));
   });
 
   ws.addEventListener("message", (event) => {
@@ -214,12 +215,12 @@ function connect() {
   });
 
   ws.addEventListener("close", () => {
-    setConnectionState("stale", `切断されました。${RECONNECT_DELAY_MS / 1000}秒後に再接続します…`);
+    setConnectionState("stale", t("rawdata.disconnected", { seconds: RECONNECT_DELAY_MS / 1000 }));
     setTimeout(connect, RECONNECT_DELAY_MS);
   });
 
   ws.addEventListener("error", () => {
-    setConnectionState("error", "接続エラー");
+    setConnectionState("error", t("rawdata.connectionError"));
   });
 }
 
@@ -245,6 +246,7 @@ async function main() {
     console.error("failed to load /api/config", err);
     config = { version: null, git_revision: null };
   }
+  applyStaticTranslations();
   renderVersion(config);
   registerServiceWorker();
 

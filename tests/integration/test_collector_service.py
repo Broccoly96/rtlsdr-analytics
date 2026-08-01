@@ -41,7 +41,7 @@ def _client_with_responses(responses: list[httpx.Response]) -> httpx.AsyncClient
     return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://readsb.test")
 
 
-def _service(client: httpx.AsyncClient, store) -> CollectorService:
+def _service(client: httpx.AsyncClient, store, **kwargs) -> CollectorService:
     return CollectorService(
         client=client,
         url="/aircraft.json",
@@ -50,6 +50,7 @@ def _service(client: httpx.AsyncClient, store) -> CollectorService:
         receiver_lon=139.0,
         poll_interval_seconds=5.0,
         track_sample_seconds=30.0,
+        **kwargs,
     )
 
 
@@ -162,3 +163,153 @@ async def test_empty_aircraft_list_does_not_crash_service():
 
     assert interval == 5.0
     assert store.ingestion_status_log[-1].aircraft_count == 0
+
+
+# --- Milestone KK: emergency squawk / favorite-seen event watchers --------
+
+
+def _squawk_payload(icao: str, squawk: str, callsign: str = "TEST001") -> dict:
+    return {
+        "now": 1.0,
+        "messages": 1,
+        "aircraft": [
+            {
+                "hex": icao,
+                "flight": callsign,
+                "seen": 0.5,
+                "seen_pos": 0.5,
+                "lat": 35.0,
+                "lon": 139.0,
+                "alt_baro": 1000,
+                "squawk": squawk,
+            }
+        ],
+    }
+
+
+async def test_emergency_squawk_disabled_by_default_never_notifies():
+    calls = []
+
+    async def notify(icao, squawk, callsign):
+        calls.append((icao, squawk, callsign))
+
+    client = _client_with_responses([httpx.Response(200, json=_squawk_payload("aaaaaa", "7700"))])
+    service = _service(client, InMemoryStore(), notify_emergency_squawk=notify)
+
+    await service.poll_once()
+
+    assert calls == []
+    await client.aclose()
+
+
+async def test_emergency_squawk_notifies_once_on_transition_not_every_poll():
+    calls = []
+
+    async def notify(icao, squawk, callsign):
+        calls.append((icao, squawk, callsign))
+
+    payload = _squawk_payload("aaaaaa", "7700")
+    client = _client_with_responses([httpx.Response(200, json=payload)])
+    service = _service(
+        client, InMemoryStore(), emergency_squawk_enabled=True, notify_emergency_squawk=notify
+    )
+
+    await service.poll_once()
+    await service.poll_once()  # still squawking 7700 -- must not re-notify
+
+    assert calls == [("aaaaaa", "7700", "TEST001")]
+    await client.aclose()
+
+
+async def test_emergency_squawk_renotifies_after_clearing_and_recurring():
+    calls = []
+
+    async def notify(icao, squawk, callsign):
+        calls.append((icao, squawk, callsign))
+
+    responses = [
+        httpx.Response(200, json=_squawk_payload("aaaaaa", "7700")),
+        httpx.Response(200, json=_squawk_payload("aaaaaa", "2000")),  # cleared
+        httpx.Response(200, json=_squawk_payload("aaaaaa", "7700")),  # recurs
+    ]
+    client = _client_with_responses(responses)
+    service = _service(
+        client, InMemoryStore(), emergency_squawk_enabled=True, notify_emergency_squawk=notify
+    )
+
+    await service.poll_once()
+    await service.poll_once()
+    await service.poll_once()
+
+    assert len(calls) == 2
+    await client.aclose()
+
+
+async def test_non_emergency_squawk_never_notifies():
+    calls = []
+
+    async def notify(icao, squawk, callsign):
+        calls.append((icao, squawk, callsign))
+
+    client = _client_with_responses([httpx.Response(200, json=_squawk_payload("aaaaaa", "2000"))])
+    service = _service(
+        client, InMemoryStore(), emergency_squawk_enabled=True, notify_emergency_squawk=notify
+    )
+
+    await service.poll_once()
+
+    assert calls == []
+    await client.aclose()
+
+
+async def test_favorite_seen_disabled_by_default_never_notifies():
+    calls = []
+
+    async def notify(icao, callsign):
+        calls.append((icao, callsign))
+
+    store = InMemoryStore(favorite_icaos={"aaaaaa"})
+    client = _client_with_responses([httpx.Response(200, json=SAMPLE_PAYLOAD)])
+    service = _service(client, store, notify_favorite_seen=notify)
+
+    await service.poll_once()
+
+    assert calls == []
+    await client.aclose()
+
+
+async def test_favorite_seen_notifies_once_on_transition_not_every_poll():
+    calls = []
+
+    async def notify(icao, callsign):
+        calls.append((icao, callsign))
+
+    store = InMemoryStore(favorite_icaos={"aaaaaa"})
+    client = _client_with_responses([httpx.Response(200, json=SAMPLE_PAYLOAD)])
+    service = _service(
+        client, store, favorite_seen_enabled=True, notify_favorite_seen=notify
+    )
+
+    await service.poll_once()
+    await service.poll_once()  # still present -- must not re-notify
+
+    assert calls == [("aaaaaa", "TEST001")]
+    await client.aclose()
+
+
+async def test_non_favorite_aircraft_never_notifies():
+    calls = []
+
+    async def notify(icao, callsign):
+        calls.append((icao, callsign))
+
+    store = InMemoryStore(favorite_icaos={"zzzzzz"})  # not the aircraft in SAMPLE_PAYLOAD
+    client = _client_with_responses([httpx.Response(200, json=SAMPLE_PAYLOAD)])
+    service = _service(
+        client, store, favorite_seen_enabled=True, notify_favorite_seen=notify
+    )
+
+    await service.poll_once()
+
+    assert calls == []
+    await client.aclose()

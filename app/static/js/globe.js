@@ -29,10 +29,20 @@
 
 import { api } from "./api.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
+import { setNationalityBlocks } from "./nationality.js";
+import { updateEmergencySquawkBanner } from "./squawk-alert.js";
+import { checkTransitAlerts, resetTransitAlerts } from "./transit-alert.js";
+import { checkNewArrivals, resetKnownAircraft } from "./speech.js";
+import { loadFavorites } from "./favorites.js";
+import { checkFavoriteArrivals, resetFavoriteArrivals } from "./browser-notify.js";
 import { formatAltitude, formatDistance } from "./units.js";
 import { getTrackOpacity } from "./track-settings.js";
 import { renderAltitudeLegend } from "./altitude-legend.js";
 import { registerServiceWorker } from "./pwa.js";
+import { ui } from "./ui.js";
+import { t, applyStaticTranslations } from "./i18n.js";
+
+const formatTime = ui.formatTime;
 
 const FT_TO_M = 0.3048;
 const DEFAULT_HOURS = 6;
@@ -190,19 +200,6 @@ function positionPointToCartesian(p) {
 // GET /api/aircraft/{icao}/positions's {lon,lat,altitude_ft} objects.
 function coordinateToCartesian([lon, lat, altitudeFt]) {
   return { cartesian: Cesium.Cartesian3.fromDegrees(lon, lat, (altitudeFt || 0) * FT_TO_M), altitudeFt };
-}
-
-// --- display timezone (mirrors map.js's formatTime) ------------------------
-
-let displayTimezone = "UTC";
-
-function formatTime(isoString) {
-  if (!isoString) return "--";
-  try {
-    return new Date(isoString).toLocaleString("ja-JP", { timeZone: displayTimezone, hour12: false });
-  } catch {
-    return isoString;
-  }
 }
 
 // --- state ----------------------------------------------------------------
@@ -480,6 +477,10 @@ function teardownLiveView() {
     removeTrack(icao);
   }
   latestPositions.clear();
+  updateEmergencySquawkBanner([]);
+  resetTransitAlerts();
+  resetKnownAircraft();
+  resetFavoriteArrivals();
 }
 
 function clearHistoryEntities() {
@@ -517,7 +518,7 @@ async function enterHistoryMode(hours) {
   } catch (err) {
     if (requestId !== historyRequestId) return;
     console.error("tracks fetch failed", err);
-    showError("過去航跡の取得に失敗しました。");
+    showError(t("globe.tracksFetchFailed"));
   }
 }
 
@@ -565,7 +566,7 @@ function showTrackTooltip(trackInfo, screenPosition) {
 
   const parts = [
     trackInfo.callsign || trackInfo.icao,
-    trackInfo.last_altitude_ft != null ? formatAltitude(trackInfo.last_altitude_ft) : "高度不明",
+    trackInfo.last_altitude_ft != null ? formatAltitude(trackInfo.last_altitude_ft) : t("common.altitudeUnknown"),
     trackInfo.last_ground_speed_kt != null ? `${Math.round(trackInfo.last_ground_speed_kt)} kt` : null,
     trackInfo.last_distance_km != null ? formatDistance(trackInfo.last_distance_km) : null,
     formatTime(trackInfo.last_observed_at),
@@ -620,7 +621,7 @@ function wireFollowToggle() {
       return;
     }
     if (!isolatedIcao) {
-      showError("カメラ自動追従には、先に機体をShift+クリックしてください。");
+      showError(t("globe.followRequiresIsolate"));
       return;
     }
     const entity = aircraftEntities.get(isolatedIcao);
@@ -643,9 +644,7 @@ function formatHoursLabel(hours) {
 }
 
 function wireModeButtons() {
-  const liveButton = document.querySelector(
-    '.app-header__period[aria-label="表示モード"] button[data-mode="live"]'
-  );
+  const liveButton = document.querySelector("#mode-switch-group button[data-mode=\"live\"]");
   const slider = document.getElementById("history-hours-slider");
   const valueLabel = document.getElementById("history-hours-value");
   if (!liveButton || !slider || !valueLabel) return;
@@ -756,8 +755,12 @@ function connectBroadcast() {
     removeStaleEntities(seenIcaos);
     applyVisibility();
     autoFrameOnFirstData(positions);
+    updateEmergencySquawkBanner(positions);
+    checkTransitAlerts(positions);
+    checkNewArrivals(positions);
+    checkFavoriteArrivals(positions);
   });
-  socket.addEventListener("error", () => showError("ライブ接続エラー"));
+  socket.addEventListener("error", () => showError(t("globe.liveConnectionError")));
 }
 
 async function main() {
@@ -768,23 +771,24 @@ async function main() {
     console.error("failed to load /api/config", err);
     config = { version: null, git_revision: null, altitude_bands: [] };
   }
+  applyStaticTranslations();
   renderVersion(config);
+  setNationalityBlocks(config.nationality_blocks);
   registerServiceWorker();
   setAltitudeBands(config.altitude_bands);
   renderAltitudeLegend(document.getElementById("altitude-legend"), config.altitude_bands);
-  displayTimezone = config.display_timezone || "UTC";
+  ui.setTimezone(config.display_timezone || "UTC");
 
   try {
     viewer = createViewer();
   } catch (err) {
     console.error("Cesium viewer init failed", err);
-    showError(
-      `3D表示の初期化に失敗しました: ${err && err.message ? err.message : err}(WebGLが利用できない環境の可能性があります)`
-    );
+    showError(t("globe.initFailed", { detail: err && err.message ? err.message : err }));
     return;
   }
 
   hideError();
+  await loadFavorites();
   await refreshPickerFromRecent();
   wirePicker();
   wireFollowToggle();

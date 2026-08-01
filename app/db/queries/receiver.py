@@ -8,7 +8,7 @@ is always present in the result, even with zero samples).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import asyncpg
 
@@ -54,6 +54,24 @@ class RssiDistanceCell:
 
 DEFAULT_DISTANCE_BUCKET_KM = 20.0
 DEFAULT_RSSI_BUCKET_DB = 5.0
+DAY_START_HOUR = 6
+DAY_END_HOUR = 18  # local hour range [6, 18) counts as "day", else "night"
+
+
+@dataclass(frozen=True, slots=True)
+class DayNightRange:
+    day_max_distance_km: float | None
+    day_sample_count: int
+    night_max_distance_km: float | None
+    night_sample_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class WeeklyTrendEntry:
+    week_start: date
+    message_count_total: int
+    max_concurrent_count: int
+    unique_aircraft_count: int
 
 
 async def bearing_range(pool: asyncpg.Pool, hours: int) -> list[BearingRangeEntry]:
@@ -201,4 +219,87 @@ async def rssi_by_distance(
     return [
         RssiDistanceCell(row["distance_bucket"], row["rssi_bucket"], row["cell_count"])
         for row in rows
+    ]
+
+
+async def day_night_range(pool: asyncpg.Pool, hours: int, tz_name: str) -> DayNightRange:
+    """Max reception distance split into "day" ([DAY_START_HOUR,
+    DAY_END_HOUR) local time) vs. "night" (everything else) -- a rough
+    day/night comparison, not a sunrise/sunset-precise one. Scans
+    `observations` like bearing_range/altitude_band_range above, so it's
+    bounded by RAW_RETENTION_DAYS the same way."""
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    row = await pool.fetchrow(
+        """
+        SELECT
+            max(distance_km) FILTER (
+                WHERE extract(hour FROM observed_at AT TIME ZONE $2) >= $3
+                  AND extract(hour FROM observed_at AT TIME ZONE $2) < $4
+            ) AS day_max_distance_km,
+            count(*) FILTER (
+                WHERE extract(hour FROM observed_at AT TIME ZONE $2) >= $3
+                  AND extract(hour FROM observed_at AT TIME ZONE $2) < $4
+            ) AS day_sample_count,
+            max(distance_km) FILTER (
+                WHERE extract(hour FROM observed_at AT TIME ZONE $2) < $3
+                   OR extract(hour FROM observed_at AT TIME ZONE $2) >= $4
+            ) AS night_max_distance_km,
+            count(*) FILTER (
+                WHERE extract(hour FROM observed_at AT TIME ZONE $2) < $3
+                   OR extract(hour FROM observed_at AT TIME ZONE $2) >= $4
+            ) AS night_sample_count
+        FROM observations
+        WHERE observed_at >= $1 AND distance_km IS NOT NULL
+        """,
+        since,
+        tz_name,
+        DAY_START_HOUR,
+        DAY_END_HOUR,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    return DayNightRange(
+        day_max_distance_km=row["day_max_distance_km"],
+        day_sample_count=row["day_sample_count"] or 0,
+        night_max_distance_km=row["night_max_distance_km"],
+        night_sample_count=row["night_sample_count"] or 0,
+    )
+
+
+async def weekly_trend(pool: asyncpg.Pool, weeks: int) -> list[WeeklyTrendEntry]:
+    """Weekly trend over `traffic_day`/`aircraft_day` (kept long-term), not
+    raw `observations` -- same reasoning as period.py's monthly/yearly
+    rollups. `unique_aircraft_count` comes from `aircraft_day` (true
+    distinct count per week) rather than summing `traffic_day`'s daily
+    counts, which would double-count repeat visitors within a week."""
+    since_day = date.today() - timedelta(weeks=weeks)
+    traffic_rows = await pool.fetch(
+        """
+        SELECT date_trunc('week', day)::date AS week_start,
+               coalesce(sum(message_count_total), 0) AS message_count_total,
+               coalesce(max(max_concurrent_count), 0) AS max_concurrent_count
+        FROM traffic_day WHERE day >= $1
+        GROUP BY week_start ORDER BY week_start
+        """,
+        since_day,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    unique_rows = await pool.fetch(
+        """
+        SELECT date_trunc('week', day)::date AS week_start,
+               count(DISTINCT icao) AS unique_aircraft_count
+        FROM aircraft_day WHERE day >= $1
+        GROUP BY week_start
+        """,
+        since_day,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    unique_by_week = {r["week_start"]: r["unique_aircraft_count"] for r in unique_rows}
+    return [
+        WeeklyTrendEntry(
+            week_start=r["week_start"],
+            message_count_total=r["message_count_total"],
+            max_concurrent_count=r["max_concurrent_count"],
+            unique_aircraft_count=unique_by_week.get(r["week_start"], 0),
+        )
+        for r in traffic_rows
     ]

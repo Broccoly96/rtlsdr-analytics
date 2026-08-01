@@ -37,6 +37,8 @@ class Store(Protocol):
 
     async def record_ingestion_status(self, status: IngestionStatus) -> None: ...
 
+    async def get_favorite_icaos(self) -> set[str]: ...
+
     async def close(self) -> None: ...
 
 
@@ -59,6 +61,7 @@ class InMemoryStore:
     observations: dict[tuple[str, datetime], AircraftObservation] = field(default_factory=dict)
     traffic_minutes: dict[datetime, TrafficMinute] = field(default_factory=dict)
     ingestion_status_log: list[IngestionStatus] = field(default_factory=list)
+    favorite_icaos: set[str] = field(default_factory=set)  # settable directly in tests
 
     async def upsert_aircraft(self, icao: str, seen_at: datetime, callsign: str | None) -> None:
         existing = self.aircraft.get(icao)
@@ -77,6 +80,9 @@ class InMemoryStore:
         self.ingestion_status_log.append(status)
         if len(self.ingestion_status_log) > MAX_INGESTION_STATUS_HISTORY:
             del self.ingestion_status_log[:-MAX_INGESTION_STATUS_HISTORY]
+
+    async def get_favorite_icaos(self) -> set[str]:
+        return set(self.favorite_icaos)
 
     async def close(self) -> None:
         pass  # no resources to release

@@ -21,8 +21,10 @@ from app.api.routers import (
     aircraft_history,
     aircraft_live,
     aircraft_positions,
+    badges,
     config,
     distribution,
+    favorites,
     health,
     heatmap,
     rankings,
@@ -31,6 +33,7 @@ from app.api.routers import (
     status,
     tracks,
     traffic,
+    weather,
 )
 from app.api.routers.aircraft_positions import PositionBroadcaster
 from app.config import Settings
@@ -47,7 +50,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = resolved_settings
         app.state.pool = await create_pool(resolved_settings.database_url)
         app.state.position_broadcaster = PositionBroadcaster(
-            resolved_settings.readsb_aircraft_url, resolved_settings.poll_interval_seconds
+            resolved_settings.readsb_aircraft_url,
+            resolved_settings.poll_interval_seconds,
+            resolved_settings.receiver_lat,
+            resolved_settings.receiver_lon,
         )
         await app.state.position_broadcaster.start()
         try:
@@ -72,6 +78,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(rawdata.router)
     app.include_router(aircraft_live.router)
     app.include_router(aircraft_positions.router)
+    app.include_router(favorites.router)
+    app.include_router(badges.router)
+    app.include_router(weather.router)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

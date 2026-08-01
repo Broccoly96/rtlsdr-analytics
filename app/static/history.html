@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<script src="/static/js/theme-init.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>機体履歴 - ADS-B Analytics</title>
+<title data-i18n="history.pageTitle">機体履歴 - ADS-B Analytics</title>
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
@@ -16,60 +17,72 @@
 <body>
 <div class="app">
 
-  <nav class="app-nav" aria-label="ページ">
-    <a href="/">ダッシュボード</a>
-    <a href="/static/daily.html">今日の空</a>
-    <a href="/static/receiver.html">受信性能</a>
-    <a href="/static/fullmap.html">航跡地図</a>
-    <a href="/static/globe.html">3D航跡</a>
-    <a href="/static/history.html" aria-current="page">機体履歴</a>
-    <a href="/static/rawdata.html">生データ</a>
-    <a href="/static/settings.html">設定</a>
+  <nav class="app-nav" data-i18n-aria-label="nav.aria">
+    <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
+    <a href="/static/daily.html" data-i18n="nav.daily">今日の空</a>
+    <a href="/static/receiver.html" data-i18n="nav.receiver">受信性能</a>
+    <a href="/static/fullmap.html" data-i18n="nav.trackMap">航跡地図</a>
+    <a href="/static/globe.html" data-i18n="nav.globe">3D航跡</a>
+    <a href="/static/history.html" aria-current="page" data-i18n="nav.history">機体履歴</a>
+    <a href="/static/rawdata.html" data-i18n="nav.rawdata">生データ</a>
+    <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
+    <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
+    <a href="/static/archive.html" data-i18n="nav.archive">機体アーカイブ</a>
+    <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
+    <form class="nav-search" action="/static/archive.html" method="get" role="search">
+      <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
+    </form>
   </nav>
 
   <header class="app-header">
     <div class="app-header__title">
-      <h1>機体履歴</h1>
+      <h1 data-i18n="nav.history">機体履歴</h1>
       <span class="app-header__version" id="app-version"></span>
     </div>
   </header>
 
   <section class="panel" id="detail-panel" hidden>
     <div class="panel__header">
-      機体詳細
-      <a href="/static/history.html" class="csv-link">一覧に戻る</a>
+      <span data-i18n="history.detailHeading">機体詳細</span>
+      <a href="/static/history.html" class="csv-link" data-i18n="history.backToList">一覧に戻る</a>
     </div>
     <div id="detail-content"></div>
   </section>
 
-  <section class="panel" aria-label="最頻観測機体">
+  <section class="panel" data-i18n-aria-label="history.mostFrequent">
     <div class="panel__header">
-      最頻観測機体
+      <span data-i18n="history.mostFrequent">最頻観測機体</span>
       <div class="chart-controls">
-        <div class="granularity-controls" role="group" aria-label="集計期間">
-          <button type="button" data-days="7" class="period-btn frequent-period-btn" aria-pressed="false">7日</button>
-          <button type="button" data-days="30" class="period-btn frequent-period-btn" aria-pressed="true">30日</button>
-          <button type="button" data-days="90" class="period-btn frequent-period-btn" aria-pressed="false">90日</button>
+        <div class="granularity-controls" role="group" data-i18n-aria-label="receiver.period">
+          <button type="button" data-days="7" class="period-btn frequent-period-btn" aria-pressed="false" data-i18n="receiver.period.7d">7日</button>
+          <button type="button" data-days="30" class="period-btn frequent-period-btn" aria-pressed="true" data-i18n="history.period.30d">30日</button>
+          <button type="button" data-days="90" class="period-btn frequent-period-btn" aria-pressed="false" data-i18n="history.period.90d">90日</button>
         </div>
         <label class="favorites-filter">
           <input type="checkbox" id="favorites-only">
-          お気に入りのみ
+          <span data-i18n="history.favoritesOnly">お気に入りのみ</span>
         </label>
+        <a href="/api/aircraft/frequent.csv?days=30" download class="csv-link" data-i18n="index.csvDownload">CSVダウンロード</a>
       </div>
     </div>
     <table class="ranking-table" id="ranking-frequent">
-      <caption class="sr-only">直近N日間で最も多く観測された機体</caption>
+      <caption class="sr-only" data-i18n="history.frequentCaption">直近N日間で最も多く観測された機体</caption>
       <thead>
         <tr>
-          <th scope="col">お気に入り</th>
-          <th scope="col">機体</th>
-          <th scope="col">観測日数</th>
-          <th scope="col">総パス数</th>
+          <th scope="col" data-i18n="history.favorite">お気に入り</th>
+          <th scope="col" data-i18n="common.aircraft">機体</th>
+          <th scope="col" data-i18n="history.daysObserved">観測日数</th>
+          <th scope="col" data-i18n="history.totalPasses">総パス数</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
-    <p class="panel__empty" hidden>データがありません</p>
+    <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
+  </section>
+
+  <section class="panel" data-i18n-aria-label="history.onThisDay.heading">
+    <div class="panel__header" data-i18n="history.onThisDay.heading">n年前の今日</div>
+    <div id="on-this-day-content">--</div>
   </section>
 
   <footer class="app-footer">

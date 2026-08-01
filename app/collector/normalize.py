@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from app.collector.geo import bearing_deg, haversine_distance_km
+from app.domain.geo import bearing_deg, haversine_distance_km
 from app.domain.models import AircraftObservation, ReceptionState
 
 RECEIVED_MAX_SEEN_SECONDS = 15.0

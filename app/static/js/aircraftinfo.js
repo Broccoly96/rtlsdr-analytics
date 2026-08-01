@@ -22,6 +22,8 @@
 
 import { api } from "./api.js";
 import { formatDistance, formatAltitude } from "./units.js";
+import { t } from "./i18n.js";
+import { countryForIcao, flagEmoji } from "./nationality.js";
 
 const ADSBDB_TIMEOUT_MS = 6000;
 
@@ -109,7 +111,7 @@ function renderTypeAndPhoto(container, aircraft, photo) {
       .join(" / ");
   } else {
     typeLine.className = "aircraft-info__meta";
-    typeLine.textContent = "機体情報は見つかりませんでした(adsbdb.com)";
+    typeLine.textContent = t("aircraftinfo.notFound");
   }
   container.appendChild(typeLine);
 
@@ -125,7 +127,7 @@ function renderTypeAndPhoto(container, aircraft, photo) {
     img.src = photo.thumbnail_url;
     if (photo.thumbnail_width) img.width = photo.thumbnail_width;
     if (photo.thumbnail_height) img.height = photo.thumbnail_height;
-    img.alt = "機体写真";
+    img.alt = t("aircraftinfo.photoAlt");
     img.className = "aircraft-info__photo";
     img.loading = "lazy";
 
@@ -134,13 +136,13 @@ function renderTypeAndPhoto(container, aircraft, photo) {
     credit.target = "_blank";
     credit.rel = "noopener noreferrer";
     credit.className = "aircraft-info__credit";
-    credit.textContent = `撮影: ${photo.photographer || "unknown"} (Planespotters.net)`;
+    credit.textContent = t("aircraftinfo.photoCredit", { photographer: photo.photographer || "unknown" });
 
     container.append(img, credit);
   } else {
     const noPhoto = document.createElement("div");
     noPhoto.className = "aircraft-info__meta";
-    noPhoto.textContent = "写真は見つかりませんでした(Planespotters.net)";
+    noPhoto.textContent = t("aircraftinfo.noPhoto");
     container.appendChild(noPhoto);
   }
 }
@@ -150,18 +152,18 @@ function renderOwnData(container, latest) {
   if (!latest) {
     const empty = document.createElement("p");
     empty.className = "panel__empty";
-    empty.textContent = "自局での観測データはまだありません";
+    empty.textContent = t("aircraftinfo.noOwnData");
     container.appendChild(empty);
     return;
   }
   container.appendChild(
-    buildSection("自局データ", [
-      ["高度", formatAltitude(latest.altitude_ft)],
-      ["地速", fmt(latest.ground_speed_kt, " kt")],
+    buildSection(t("aircraftinfo.ownDataSection"), [
+      [t("common.altitude"), formatAltitude(latest.altitude_ft)],
+      [t("aircraftinfo.groundSpeed"), fmt(latest.ground_speed_kt, " kt")],
       ["Track", fmtRound(latest.track_deg, "°")],
-      ["昇降率", fmt(latest.vertical_rate_fpm, " fpm")],
-      ["距離", formatDistance(latest.distance_km)],
-      ["方位", fmtRound(latest.bearing_deg, "°")],
+      [t("aircraftinfo.verticalRate"), fmt(latest.vertical_rate_fpm, " fpm")],
+      [t("common.distance"), formatDistance(latest.distance_km)],
+      [t("aircraftinfo.bearing"), fmtRound(latest.bearing_deg, "°")],
       ["RSSI", fmt(latest.rssi, " dB")],
     ])
   );
@@ -172,42 +174,42 @@ function renderLive(container, data) {
   if (!data || data.received === false) {
     const empty = document.createElement("p");
     empty.className = "panel__empty";
-    empty.textContent = "現在readsbから受信していません";
+    empty.textContent = t("aircraftinfo.noLiveData");
     container.appendChild(empty);
     return;
   }
 
   container.append(
     buildSection("SIGNAL", [
-      ["スコーク", fmt(data.squawk)],
-      ["メッセージ数", fmt(data.messages)],
-      ["最終位置", fmt(data.seen_pos, " 秒前")],
+      [t("aircraftinfo.squawk"), fmt(data.squawk)],
+      [t("receiver.messageCount"), fmt(data.messages)],
+      [t("aircraftinfo.lastPosition"), fmt(data.seen_pos, t("aircraftinfo.secondsAgoSuffix"))],
       ["MLAT/TIS-B", `${data.mlat ? "MLAT" : ""}${data.mlat && data.tisb ? " / " : ""}${data.tisb ? "TIS-B" : ""}` || "--"],
     ]),
     buildSection("SPATIAL", [
-      ["気圧高度", formatAltitude(data.alt_baro)],
-      ["幾何高度", formatAltitude(data.alt_geom)],
-      ["地速", fmt(data.gs, " kt")],
-      ["対気速度(IAS/TAS)", `${fmt(data.ias)} / ${fmt(data.tas)}`],
-      ["マッハ", fmt(data.mach)],
-      ["Track / 磁方位", `${fmtRound(data.track, "°")} / ${fmtRound(data.mag_heading, "°")}`],
-      ["ロール", fmt(data.roll, "°")],
-      ["昇降率(baro/geom)", `${fmt(data.baro_rate)} / ${fmt(data.geom_rate)} fpm`],
-      ["カテゴリ", fmt(data.category)],
+      [t("aircraftinfo.baroAltitude"), formatAltitude(data.alt_baro)],
+      [t("aircraftinfo.geomAltitude"), formatAltitude(data.alt_geom)],
+      [t("aircraftinfo.groundSpeed"), fmt(data.gs, " kt")],
+      [t("aircraftinfo.iasTasLabel"), `${fmt(data.ias)} / ${fmt(data.tas)}`],
+      [t("aircraftinfo.mach"), fmt(data.mach)],
+      [t("aircraftinfo.trackMagHeading"), `${fmtRound(data.track, "°")} / ${fmtRound(data.mag_heading, "°")}`],
+      [t("aircraftinfo.roll"), fmt(data.roll, "°")],
+      [t("aircraftinfo.verticalRateBaroGeom"), `${fmt(data.baro_rate)} / ${fmt(data.geom_rate)} fpm`],
+      [t("aircraftinfo.category"), fmt(data.category)],
     ]),
-    buildSection("FMS選択値", [
-      ["選択高度", formatAltitude(data.nav_altitude_mcp)],
-      ["選択方位", fmt(data.nav_heading, "°")],
+    buildSection(t("aircraftinfo.fmsSection"), [
+      [t("aircraftinfo.selectedAltitude"), formatAltitude(data.nav_altitude_mcp)],
+      [t("aircraftinfo.selectedHeading"), fmt(data.nav_heading, "°")],
       ["QNH", fmt(data.nav_qnh, " hPa")],
     ]),
-    buildSection("精度指標(ACCURACY)", [
+    buildSection(t("aircraftinfo.accuracySection"), [
       ["NIC / NIC_baro", `${fmt(data.nic)} / ${fmt(data.nic_baro)}`],
       ["NACp / NACv", `${fmt(data.nac_p)} / ${fmt(data.nac_v)}`],
       ["SIL", `${fmt(data.sil)} (${fmt(data.sil_type)})`],
       ["Rc", fmt(data.rc, " m")],
     ]),
-    buildSection("風・気温", [
-      ["風向/風速", `${fmt(data.wd, "°")} / ${fmt(data.ws, " kt")}`],
+    buildSection(t("aircraftinfo.windTempSection"), [
+      [t("aircraftinfo.windDirSpeed"), `${fmt(data.wd, "°")} / ${fmt(data.ws, " kt")}`],
       ["OAT / TAT", `${fmt(data.oat, "°C")} / ${fmt(data.tat, "°C")}`],
     ])
   );
@@ -252,27 +254,55 @@ export function openAircraftSidebar(icao) {
   closeButton.type = "button";
   closeButton.className = "aircraft-sidebar__close";
   closeButton.textContent = "×";
-  closeButton.setAttribute("aria-label", "閉じる");
+  closeButton.setAttribute("aria-label", t("aircraftinfo.close"));
   closeButton.addEventListener("click", closeAircraftSidebar);
   const title = document.createElement("h2");
   title.textContent = icao;
   const hexLabel = document.createElement("div");
   hexLabel.className = "aircraft-sidebar__hex";
-  hexLabel.textContent = `ICAO: ${icao}`;
+  // The flag lives in `hexLabel`, not `title` -- title.textContent gets
+  // overwritten once the callsign loads (below), which would silently
+  // wipe a flag placed inside it; hexLabel is never touched again.
+  const country = countryForIcao(icao);
+  if (country) {
+    const countryName = t(`nationality.country.${country.code}`);
+    const flagSpan = document.createElement("span");
+    flagSpan.className = "aircraft-sidebar__flag";
+    flagSpan.textContent = flagEmoji(country.code);
+    flagSpan.title = countryName;
+    flagSpan.setAttribute("aria-label", countryName);
+    hexLabel.appendChild(flagSpan);
+  }
+  hexLabel.appendChild(document.createTextNode(t("aircraftinfo.icaoLabel", { icao })));
   header.append(closeButton, title, hexLabel);
   sidebar.appendChild(header);
 
+  const trackExportRow = document.createElement("div");
+  trackExportRow.className = "aircraft-sidebar__track-export";
+  const gpxLink = document.createElement("a");
+  gpxLink.href = `/api/aircraft/${encodeURIComponent(icao)}/positions.gpx?hours=24`;
+  gpxLink.download = "";
+  gpxLink.className = "csv-link";
+  gpxLink.textContent = t("aircraftinfo.downloadGpx");
+  const kmlLink = document.createElement("a");
+  kmlLink.href = `/api/aircraft/${encodeURIComponent(icao)}/positions.kml?hours=24`;
+  kmlLink.download = "";
+  kmlLink.className = "csv-link";
+  kmlLink.textContent = t("aircraftinfo.downloadKml");
+  trackExportRow.append(gpxLink, kmlLink);
+  sidebar.appendChild(trackExportRow);
+
   const typePhotoSection = document.createElement("div");
   typePhotoSection.className = "aircraft-sidebar__type-photo";
-  typePhotoSection.textContent = "読み込み中…";
+  typePhotoSection.textContent = t("index.loading");
   sidebar.appendChild(typePhotoSection);
 
   const ownDataSection = document.createElement("div");
-  ownDataSection.textContent = "読み込み中…";
+  ownDataSection.textContent = t("index.loading");
   sidebar.appendChild(ownDataSection);
 
   const liveSection = document.createElement("div");
-  liveSection.textContent = "接続中…";
+  liveSection.textContent = t("rawdata.connecting");
   sidebar.appendChild(liveSection);
 
   Promise.all([fetchAircraftType(icao), fetchAircraftPhoto(icao)]).then(([aircraft, photo]) => {
@@ -291,7 +321,7 @@ export function openAircraftSidebar(icao) {
       console.error("aircraft history fetch failed", err);
       if (currentIcao !== icao) return;
       ownDataSection.textContent =
-        err && err.status === 404 ? "自局での観測データはありません" : "自局データの取得に失敗しました";
+        err && err.status === 404 ? t("aircraftinfo.noOwnDataFound") : t("aircraftinfo.ownDataFetchFailed");
     });
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -309,10 +339,10 @@ export function openAircraftSidebar(icao) {
     renderLive(liveSection, data);
   });
   socket.addEventListener("close", () => {
-    if (currentIcao === icao) liveSection.textContent = "ライブ接続が切断されました";
+    if (currentIcao === icao) liveSection.textContent = t("aircraftinfo.liveDisconnected");
   });
   socket.addEventListener("error", () => {
-    if (currentIcao === icao) liveSection.textContent = "ライブ接続エラー";
+    if (currentIcao === icao) liveSection.textContent = t("aircraftinfo.liveError");
   });
 }
 

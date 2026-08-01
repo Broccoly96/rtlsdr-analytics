@@ -54,8 +54,7 @@ reference for AI coding agents working in this repo.
   Optionally posted once a day to a Slack- or Discord-compatible webhook.
 - **Aircraft revisit history** (`/static/history.html`) — which aircraft
   come back the most, with a per-aircraft first/last-seen, pass count, and
-  callsign history; supports a browser-local (no account, no server write)
-  favorites list.
+  callsign history; supports a server-backed favorites list.
 - **Raw data** (`/static/rawdata.html`) — a live, ephemeral view of
   readsb's raw Beast-format stream with a simple decode (downlink format,
   ICAO24, ADS-B message-type category), filterable by ICAO and message
@@ -77,6 +76,22 @@ reference for AI coding agents working in this repo.
   onto whichever aircraft is isolated. A slider (15-minute steps, up to
   24h) replays each aircraft's historical track for that window instead
   of the live feed.
+- **Achievements** (`/static/badges.html`) — a set of milestones (aircraft
+  count, distinct types, farthest catch, favorites collected, and more)
+  computed fresh from permanent data on every visit; nothing is stored
+  per-badge, so there's no "earned on" date, but nothing can silently
+  un-earn itself either.
+- **Aircraft archive** (`/static/archive.html`) — every aircraft ever
+  seen, searchable by ICAO/callsign, sortable, paginated. The same search
+  box is in every page's nav bar.
+- **Spotter-radio announcements** — optional (Settings, off by default):
+  the track map/3D globe's live view announces newly-appeared aircraft
+  via the browser's own speech synthesis.
+- **"On this day"** (`/static/history.html`) — which aircraft were seen on
+  today's calendar date in past years.
+- **Optional METAR weather** (`/static/receiver.html`) — current
+  conditions at a station you configure, for eyeballing whether reception
+  range tracks the weather.
 - **Installable as an app** (PWA) — Android Chrome's "Add to Home Screen"
   turns this into a standalone app icon (no browser chrome). No offline
   support by design (this app's data is inherently live; a cached response
@@ -121,7 +136,7 @@ Seven Docker Compose services, defined in [`compose.yaml`](compose.yaml):
 |---|---|
 | `adsb-db` | PostgreSQL. Never exposed on a host port — reachable only on the internal Docker network. |
 | `adsb-migrate` | One-shot Alembic `upgrade head`. Every other app service waits for this to succeed before starting. |
-| `adsb-collector` | Polls `readsb`, normalizes records, writes to Postgres with exponential backoff on failure. |
+| `adsb-collector` | Polls `readsb`, normalizes records, writes to Postgres with exponential backoff on failure. Also watches every raw poll for an emergency squawk or a favorited aircraft appearing, firing the corresponding webhook (see below) on each transition — in-memory only, nothing persisted. |
 | `adsb-retention` | Deletes `observations`/`ingestion_status` rows older than `RAW_RETENTION_DAYS`, in small batches. |
 | `adsb-daily-rollup` | Once a day, computes the previous day's summary and (optionally) sends the webhook. |
 | `adsb-type-lookup` | Every ~15 minutes, caches type/registration info for any newly-seen aircraft against `api.adsbdb.com`. |
@@ -251,7 +266,10 @@ start with a clear error rather than running misconfigured.
 | `MAP_SHOW_RECEIVER_MARKER` | `false` | Whether to plot your receiver's location on the map. |
 | `MAP_RECEIVER_MARKER_PRECISION` | `1` | Decimal places shown if the marker is enabled. |
 | `NOTIFY_WEBHOOK_ENABLED` | `false` | Enables the daily-summary webhook. Requires `NOTIFY_WEBHOOK_URL` if `true`. |
-| `NOTIFY_WEBHOOK_URL` | unset | Slack "Incoming Webhook" URL, or a Discord webhook URL with `/slack` appended (both accept this app's `{"text": "..."}` payload). |
+| `NOTIFY_WEBHOOK_URL` | unset | Slack "Incoming Webhook" URL, or a Discord webhook URL with `/slack` appended (both accept this app's `{"text": "..."}` payload). Shared by all three webhook event types below. |
+| `NOTIFY_EMERGENCY_SQUAWK_ENABLED` | `false` | Fires once when an aircraft starts squawking 7500/7600/7700, sent from `adsb-collector` as it happens (not once a day). Requires `NOTIFY_WEBHOOK_URL`. |
+| `NOTIFY_FAVORITE_SEEN_ENABLED` | `false` | Fires once when a favorited aircraft (`/static/history.html`'s favorites star) starts being received. Requires `NOTIFY_WEBHOOK_URL`. |
+| `METAR_STATION_ICAO` | unset | Shows current METAR weather on `/static/receiver.html`. No automatic "nearest airport" lookup — set this to your nearest airport's 4-character ICAO code by hand (e.g. `RJTT`). Unset hides the feature entirely. |
 | `READSB_BEAST_HOST` | `READSB_AIRCRAFT_URL`'s hostname | Only needed if readsb's Beast-format output (used by `/static/rawdata.html`) is served from a different host. |
 | `READSB_BEAST_PORT` | `30005` | readsb's standard Beast-out port. |
 
@@ -321,12 +339,33 @@ to 72h) switches to a historical-track replay instead of the live view
 (the same `GET /api/tracks` endpoint and data the dashboard's embedded
 map uses).
 
+If any currently-live aircraft is squawking an emergency code
+(7500/7600/7700), a banner appears at the top of the page — a same-page
+visual only, computed fresh from the broadcast on every tick. The
+separate, independent `NOTIFY_EMERGENCY_SQUAWK_ENABLED` webhook (see
+Configuration) is what actually notifies you if you're not looking at
+this page.
+
+A small toast also pops up when a live aircraft's position — as seen
+from your receiver — lines up with the sun (within ~2°), computed
+server-side from a low-precision solar-position calculation
+(`app/domain/celestial.py`) and your receiver's coordinates, which never
+reach the browser (only the resulting yes/no flag does, same privacy
+posture as everywhere else in this app). Moon transits aren't supported
+yet — the moon's position is meaningfully harder to compute accurately
+than the sun's.
+
 ### Aircraft detail sidebar
 
 Click any aircraft's callsign anywhere in the app (dashboard, daily
 report, history) to open a persistent left sidebar, styled after
 tar1090's own info panel:
 
+- **Flag** — a country flag inferred from the aircraft's ICAO 24-bit
+  address, computed entirely client-side (`app/static/js/nationality.js`)
+  against a block table published once over `GET /api/config`
+  (`app/domain/nationality.py`); deliberately partial (major aviation
+  nations only), never a licensed registry lookup.
 - **Registration / type / photo** — registration, ICAO type code, and
   manufacturer from adsbdb.com; a photo with photographer credit from
   Planespotters.net (proxied through this app's own server — see
@@ -341,6 +380,49 @@ tar1090's own info panel:
   aircraft broadcasts them — streamed live from readsb while the sidebar
   is open (not everything is available for every aircraft; unavailable
   fields show `--`, same as tar1090).
+- **GPX / KML download** — the last 24h of that aircraft's positions as a
+  track file (`GET /api/aircraft/{icao}/positions.gpx` / `.kml`), for
+  opening in Google Earth or any GPS software.
+
+### Achievements (`/static/badges.html`)
+
+`GET /api/badges` recomputes every badge's earned/locked status fresh on
+every call from the permanent tables (`aircraft`, `aircraft_day`,
+`aircraft_callsign_history`, `traffic_day`, `aircraft_type_cache`,
+`favorites`) — deliberately never raw `observations` (purged after
+`RAW_RETENTION_DAYS`), since a badge that could silently un-earn itself
+once its supporting data ages out would be a correctness bug, not a
+quirky feature. No "earned on" date is stored anywhere; this stays a
+`GET`-only endpoint like everything except `/api/favorites`.
+
+### Aircraft archive (`/static/archive.html`)
+
+Every aircraft ever seen (`GET /api/aircraft/archive`), searchable by a
+substring of ICAO or callsign, sortable by last/first-seen, days
+observed, or total pass count (the sort column is validated against a
+fixed allow-list server-side, never interpolated raw), and paginated.
+The same search box appears in every page's nav bar and submits here as
+a plain form `GET` — no JavaScript needed on the originating page.
+
+### Flag collection (`/static/flags.html`)
+
+A "passport" style view: every aircraft ever observed, grouped by
+country (same ICAO-address inference as the sidebar's flag), with a
+per-country aircraft count and first-seen date. `GET
+/api/aircraft/nationalities` does the grouping server-side over the
+`aircraft` table (cheap — one row per distinct ICAO ever seen, not per
+observation).
+
+Each card's background is that country's actual national flag, drawn
+from [flag-icons](https://github.com/lipis/flag-icons) v7.5.0 (MIT
+License, vendored — no CDN — as `app/static/js/vendor/flag-icons/`, 22
+SVGs matching `NATIONALITY_BLOCKS` plus the upstream `LICENSE` file), not
+a Unicode flag emoji — some environments (notably Linux without a
+color-emoji font like Noto Color Emoji installed) render flag emoji as a
+bare two-letter code instead of an actual flag, which real SVG images
+don't depend on. If a country is ever added to `NATIONALITY_BLOCKS`
+without a matching SVG vendored yet, the card falls back automatically
+to the old flag-emoji rendering instead of showing a broken image icon.
 
 ### Receiver performance (`/static/receiver.html`)
 
@@ -361,6 +443,16 @@ well served by a 3D scene here. `GET /api/receiver/bearing-range` (2D,
 still in use) covers the same "which direction reaches furthest"
 question without the readability problem.
 
+Also on this page: a day/night max-range comparison (a simple local-hour
+split — `[6, 18)` counts as "day" — not a sunrise/sunset-precise one) and
+a weekly trend of unique aircraft, both aggregated from `traffic_day`/
+`aircraft_day` (kept long-term), never a re-scan of raw `observations`.
+If you set `METAR_STATION_ICAO` to your nearest airport's ICAO code, the
+current METAR also shows here — there's no automatic "nearest airport"
+lookup (that would need a licensed airport-location dataset, the same
+question that already ruled out bundling aircraft-type data), so this is
+opt-in and manual; unset, the feature simply doesn't appear.
+
 ### Daily report (`/static/daily.html`)
 
 One calendar day's numbers with comparisons: vs. yesterday and vs. the
@@ -369,6 +461,16 @@ enable the webhook (`NOTIFY_WEBHOOK_ENABLED=true` /
 `NOTIFY_WEBHOOK_URL=...`), the summary (not the type chart) is posted
 once a day (after the previous day's rollup completes, around 00:10 in
 `DISPLAY_TIMEZONE`) to Slack or Discord automatically.
+
+A "画像として保存" (save as image) button renders the day's key stats to
+a `<canvas>` client-side and downloads a PNG — no server-side image
+generation (Pillow stays a dev-only dependency, not promoted into the
+Docker image for this). A monthly/yearly summary section below reads
+`GET /api/traffic/monthly` / `/api/traffic/yearly`, aggregated the same
+"from `traffic_day`/`aircraft_day`, never raw `observations`" way as the
+receiver page's weekly trend above — summing a whole month/year of raw
+rows would be both slow and, for `observations`, impossible past
+`RAW_RETENTION_DAYS` anyway.
 
 The aircraft-type chart reads from a small self-populating cache
 (`aircraft_type_cache`): every ~15 minutes, `adsb-type-lookup` looks up
@@ -388,10 +490,19 @@ docker compose run --rm adsb-daily-rollup python3 -m app.dailyrollup --day 2026-
 ### Aircraft revisit history (`/static/history.html`)
 
 A "most frequently observed" ranking (7/30/90-day windows) with a
-favorites star — favorites are stored only in your browser's
-`localStorage`, never sent to the server. Click an aircraft (or visit
+favorites star. Favorites are stored server-side (`GET`/`POST`/`DELETE
+/api/favorites`) — the app's one deliberate exception to an otherwise
+fully read-only, unauthenticated API (see CLAUDE.md); a pre-existing
+`localStorage`-only favorites list is migrated automatically, once, the
+first time the page loads after upgrading. Click an aircraft (or visit
 `?icao=<hex>`) for its first/last-seen, days observed, pass count, and
-callsign history.
+callsign history. Optionally, enable `NOTIFY_FAVORITE_SEEN_ENABLED` to
+get a webhook notification the moment a favorited aircraft starts being
+received, even if you're not looking at any page.
+
+An "on this day" section shows which aircraft were seen on today's exact
+calendar date in past years, from `aircraft_day` (kept long-term) —
+another query that never touches raw `observations`.
 
 ### Raw data (`/static/rawdata.html`)
 
@@ -467,6 +578,10 @@ page in this app that still uses it, after the receiver-performance
 page's 3D reception chart (also CesiumJS at one point) was removed for
 being harder to read than a plain 2D chart. Nothing here is persisted.
 
+Same emergency-squawk banner and sun-transit toast as the
+[track map](#track-map-航跡地図-staticfullmaphtml) above, fed by the same
+broadcast.
+
 The aircraft model (`app/static/models/aircraft.glb`) is Cesium's own
 `Cesium_Air.glb` sample model from the
 [CesiumGS/cesium](https://github.com/CesiumGS/cesium) repository
@@ -480,11 +595,24 @@ Distance unit (kilometers / nautical miles) and altitude unit (feet /
 meters), applied everywhere a distance or altitude is displayed
 (dashboard rankings, daily report, aircraft detail sidebar, receiver
 performance charts, map popups). Also: the 3D globe's track-line opacity
-(default 50%). Pure client-side `localStorage`, same zero-backend
-precedent as [aircraft revisit history](#aircraft-revisit-history-statichistoryhtml)'s
-favorites — nothing is sent to the server, and already-open tabs need a
-reload to pick up a change. Language selection was considered but
-deferred (would require i18n-keying every string across every page).
+(default 50%), and a UI language switch (Japanese / English) covering
+every page and the shared aircraft detail sidebar
+(`app/static/js/i18n.js`). Pure client-side `localStorage` — nothing is
+sent to the server, and already-open tabs need a reload to pick up a
+change. (Unlike these, [favorites](#aircraft-revisit-history-statichistoryhtml)
+are server-backed as of Milestone JJ — see that section.)
+
+Also here: a light/dark theme switch (CSS custom properties, applied
+before first paint by a small synchronous `<script src>` in every page's
+`<head>` — not an inline `<script>`, since this app's CSP is `script-src
+'self'` with no `unsafe-inline` and would simply block one); a dashboard
+layout toggle (show/hide the map/traffic/statistics/rankings sections on
+`/`); the spotter-radio announcement toggle; and a favorite-aircraft
+browser-notification toggle plus a button to request the actual browser
+permission (the permission grant itself lives in the browser's own
+store, separate from this toggle, and can't be requested without a user
+gesture). All of these are the same pure client-side `localStorage`
+pattern as the rest of this page.
 
 ### API
 
@@ -515,12 +643,25 @@ independently at the collector's own cadence, never persisted).
 | `GET /api/aircraft/{icao}/positions` | `hours` (1–720, default 6) | One aircraft's own position history (gap-segmented, unlike `/api/tracks`'s all-aircraft view) |
 | `GET /api/aircraft/{icao}/photo` | — | Server-side proxy to Planespotters.net (see Security & Privacy) |
 | `GET /api/aircraft/frequent` | `days`, `limit` | Most frequently observed aircraft |
+| `GET /api/aircraft/frequent.csv` | `days`, `limit` | Same data as a CSV download |
+| `GET /api/aircraft/nationalities` | — | Every aircraft ever seen, grouped by inferred country |
+| `GET /api/aircraft/archive` | `q`, `sort`, `descending`, `limit`, `offset` | Searchable/sortable/paginated browse of every aircraft ever seen |
+| `GET /api/aircraft/on-this-day` | — | Aircraft seen on today's calendar date in past years |
+| `GET /api/aircraft/{icao}/positions.gpx` / `.kml` | `hours` | One aircraft's track as a GPX/KML download |
+| `GET /api/badges` | — | Achievement earned/locked status, recomputed fresh every call |
+| `GET /api/favorites` | — | The server-backed favorites list |
 | `GET /api/config` | — | Non-secret UI config (map style, timezone, version) |
 | `GET /api/receiver/bearing-range` | `hours` | Max reception distance per compass sector |
+| `GET /api/receiver/bearing-range.csv` | `hours` | Same data as a CSV download |
 | `GET /api/receiver/altitude-range` | `hours` | Max reception distance per altitude band |
 | `GET /api/receiver/reception` | `hours` | Message-count / position-rate trend |
 | `GET /api/receiver/rssi-by-distance` | `hours` | Reception-strength (RSSI) vs. distance heatmap cells |
-| `GET /api/receiver/bearing-elevation-range` | `hours` | Max reception distance per (bearing, elevation) cell, for the 3D chart |
+| `GET /api/receiver/day-night-range` | `hours` | Max reception distance, day vs. night |
+| `GET /api/receiver/weekly-trend` | `weeks` | Weekly unique-aircraft/message-count/max-concurrent trend |
+| `GET /api/traffic/monthly` | `year`, `month` | One month's summary, aggregated from `traffic_day`/`aircraft_day` |
+| `GET /api/traffic/yearly` | `year` | One year's summary, same aggregation |
+| `GET /api/rankings.csv` | `hours`, `limit` | Same data as `/api/rankings`, as a CSV download |
+| `GET /api/weather/metar` | — | Current METAR at `METAR_STATION_ICAO`, if configured |
 | `GET /api/distribution/hour-of-day` | `days` | Unique aircraft per hour of day |
 | `GET /api/distribution/altitude` | `hours` | Altitude histogram |
 | `GET /api/distribution/speed` | `hours` | Ground-speed histogram |
@@ -690,9 +831,15 @@ you), since the container itself has neither a `.git` directory nor a
   localhost or a trusted LAN/VPN, not the public internet. Don't set
   `APP_BIND_HOST=0.0.0.0` without deliberately deciding to expose it (and
   putting something in front of it, e.g. a reverse proxy with auth).
-- No mutating API routes exist. The one destructive tool
-  (`scripts/reset_db.py`) is a manual, confirmation-gated CLI script, never
-  reachable over the network.
+- One deliberate exception to an otherwise fully read-only API:
+  `POST`/`DELETE /api/favorites/{icao}` (Milestone JJ), backing the
+  [aircraft revisit history](#aircraft-revisit-history-statichistoryhtml)
+  page's favorites star. There's exactly one shared favorites list (no
+  per-user state, no auth), consistent with this app's single-user/
+  tailnet-only posture — see CLAUDE.md's API surface section for the
+  full rationale. The one destructive tool (`scripts/reset_db.py`) is a
+  manual, confirmation-gated CLI script, never reachable over the
+  network.
 - `/static/receiver.html`'s Content-Security-Policy adds `'unsafe-eval'`
   to `script-src` — every other page except `globe.html` stays without
   it. `echarts`'s internal shader/expression compiler needs it for the
@@ -741,9 +888,12 @@ you), since the container itself has neither a `.git` directory nor a
   generic ones, and a browser's own `fetch()` can never override its
   User-Agent (a forbidden header) — so the original direct-from-browser
   version shipped silently non-functional for every user. The trade-off:
-  the server now sees which aircraft's photo you requested (still nothing
-  persisted, still strictly opt-in per click) — narrower than before, but
-  the feature actually works now.
+  the server now sees which aircraft's photo you requested (still strictly
+  opt-in per click) — narrower than before, but the feature actually works
+  now. As of Milestone PP, a result is also cached in-process for 24h
+  (plain in-memory dict, cleared on every restart, never written to disk
+  or the database) so repeat clicks on the same aircraft don't re-hit
+  Planespotters.
 - The **aircraft detail sidebar**'s live section
   (`WS /ws/aircraft/{icao}`) is a second, separate real-time exception:
   while the sidebar is open for a specific aircraft, the server

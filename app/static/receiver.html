@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<script src="/static/js/theme-init.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>受信性能 - ADS-B Analytics</title>
+<title data-i18n="receiver.pageTitle">受信性能 - ADS-B Analytics</title>
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
@@ -16,37 +17,44 @@
 <body>
 <div class="app">
 
-  <nav class="app-nav" aria-label="ページ">
-    <a href="/">ダッシュボード</a>
-    <a href="/static/daily.html">今日の空</a>
-    <a href="/static/receiver.html" aria-current="page">受信性能</a>
-    <a href="/static/fullmap.html">航跡地図</a>
-    <a href="/static/globe.html">3D航跡</a>
-    <a href="/static/history.html">機体履歴</a>
-    <a href="/static/rawdata.html">生データ</a>
-    <a href="/static/settings.html">設定</a>
+  <nav class="app-nav" data-i18n-aria-label="nav.aria">
+    <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
+    <a href="/static/daily.html" data-i18n="nav.daily">今日の空</a>
+    <a href="/static/receiver.html" aria-current="page" data-i18n="nav.receiver">受信性能</a>
+    <a href="/static/fullmap.html" data-i18n="nav.trackMap">航跡地図</a>
+    <a href="/static/globe.html" data-i18n="nav.globe">3D航跡</a>
+    <a href="/static/history.html" data-i18n="nav.history">機体履歴</a>
+    <a href="/static/rawdata.html" data-i18n="nav.rawdata">生データ</a>
+    <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
+    <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
+    <a href="/static/archive.html" data-i18n="nav.archive">機体アーカイブ</a>
+    <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
+    <form class="nav-search" action="/static/archive.html" method="get" role="search">
+      <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
+    </form>
   </nav>
 
   <header class="app-header">
     <div class="app-header__title">
-      <h1>受信性能</h1>
+      <h1 data-i18n="nav.receiver">受信性能</h1>
       <span class="app-header__version" id="app-version"></span>
     </div>
-    <div class="app-header__period" role="group" aria-label="集計期間">
+    <div class="app-header__period" role="group" data-i18n-aria-label="receiver.period">
       <button type="button" data-hours="24" class="period-btn" aria-pressed="true">24h</button>
-      <button type="button" data-hours="168" class="period-btn">7日</button>
-      <button type="button" data-hours="720" class="period-btn">30日</button>
+      <button type="button" data-hours="168" class="period-btn" data-i18n="receiver.period.7d">7日</button>
+      <button type="button" data-hours="720" class="period-btn" data-i18n="receiver.period.30d">30日</button>
     </div>
   </header>
 
   <section class="main-area">
     <div class="panel panel--chart">
-      <div class="panel__header" id="bearing-heading">方位別受信距離</div>
+      <div class="panel__header" id="bearing-heading" data-i18n="receiver.bearingHeading">方位別受信距離</div>
+      <a href="/api/receiver/bearing-range.csv?hours=24" download class="csv-link" data-i18n="index.csvDownload">CSVダウンロード</a>
       <div id="bearing-chart" class="chart-container" role="img" aria-labelledby="bearing-heading"></div>
       <div id="bearing-chart-error" class="panel__error" hidden></div>
     </div>
     <div class="panel panel--chart">
-      <div class="panel__header" id="altitude-heading">高度帯別受信距離</div>
+      <div class="panel__header" id="altitude-heading" data-i18n="receiver.altitudeHeading">高度帯別受信距離</div>
       <div id="altitude-chart" class="chart-container" role="img" aria-labelledby="altitude-heading"></div>
       <div id="altitude-chart-error" class="panel__error" hidden></div>
     </div>
@@ -54,7 +62,7 @@
 
   <section class="main-area">
     <div class="panel panel--chart" style="grid-column: 1 / -1;">
-      <div class="panel__header" id="reception-heading">メッセージ数・位置取得率の推移</div>
+      <div class="panel__header" id="reception-heading" data-i18n="receiver.receptionHeading">メッセージ数・位置取得率の推移</div>
       <div id="reception-chart" class="chart-container" role="img" aria-labelledby="reception-heading"></div>
       <div id="reception-chart-error" class="panel__error" hidden></div>
     </div>
@@ -62,9 +70,22 @@
 
   <section class="main-area">
     <div class="panel panel--chart" style="grid-column: 1 / -1;">
-      <div class="panel__header" id="rssi-heading">距離別受信強度(RSSI)ヒートマップ</div>
+      <div class="panel__header" id="rssi-heading" data-i18n="receiver.rssiHeading">距離別受信強度(RSSI)ヒートマップ</div>
       <div id="rssi-chart" class="chart-container" role="img" aria-labelledby="rssi-heading"></div>
       <div id="rssi-chart-error" class="panel__error" hidden></div>
+    </div>
+  </section>
+
+  <section class="main-area">
+    <div class="panel">
+      <div class="panel__header" data-i18n="receiver.dayNightHeading">昼夜別受信距離</div>
+      <div id="day-night-summary" class="daily-highlight">--</div>
+      <div id="metar-summary" class="daily-highlight" hidden></div>
+    </div>
+    <div class="panel panel--chart">
+      <div class="panel__header" id="weekly-trend-heading" data-i18n="receiver.weeklyTrendHeading">週次トレンド</div>
+      <div id="weekly-trend-chart" class="chart-container" role="img" aria-labelledby="weekly-trend-heading" style="height: 220px;"></div>
+      <div id="weekly-trend-chart-error" class="panel__error" hidden></div>
     </div>
   </section>
 

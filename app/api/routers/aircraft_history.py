@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import re
+import time
+from collections.abc import Iterator
 from dataclasses import asdict
+from xml.sax.saxutils import escape
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi.responses import Response, StreamingResponse
 
 from app.api.dependencies import get_pool
 from app.api.schemas import (
@@ -21,6 +27,7 @@ from app.api.schemas import (
     TrackPointResponse,
 )
 from app.db.queries.aircraft_history import (
+    FrequentAircraftEntry,
     aircraft_summary,
     callsign_history,
     latest_observation,
@@ -39,19 +46,29 @@ router = APIRouter(prefix="/api", tags=["aircraft-history"])
 # lookup is a server-side proxy rather than the direct-from-browser call
 # Milestone Q originally shipped (discovered via real-browser testing: the
 # direct-from-browser version was silently non-functional for everyone,
-# always falling back to "photo not found"). Never persisted -- same
-# "display-only, not cached" rule as before, the only change is *where*
-# the HTTP call happens. See README Security & Privacy: unlike the
-# registration/type lookup (still direct from the browser, still works
-# fine), the server now sees which aircraft's photo you requested (not
-# stored anywhere) -- a deliberate, narrower privacy trade-off than before,
-# approved by the user in exchange for the feature actually working.
+# always falling back to "photo not found"). See README Security & Privacy:
+# unlike the registration/type lookup (still direct from the browser, still
+# works fine), the server now sees which aircraft's photo you requested --
+# a deliberate, narrower privacy trade-off than before, approved by the
+# user in exchange for the feature actually working.
 PLANESPOTTERS_URL = "https://api.planespotters.net/pub/photos/hex/"
 PLANESPOTTERS_TIMEOUT_SECONDS = 6.0
 
 _EMPTY_PHOTO = AircraftPhotoResponse(
     thumbnail_url=None, thumbnail_width=None, thumbnail_height=None, photographer=None, link=None
 )
+
+# Milestone PP: an in-process, in-memory-only TTL cache (never written to
+# disk or the database -- cleared on every restart) so repeat clicks on the
+# same aircraft within a day don't re-hit Planespotters. A photo/credit
+# essentially never changes day to day, so a day's staleness is a
+# non-issue; a failed lookup is cached too (as _EMPTY_PHOTO) so a
+# consistently-unphotographed aircraft doesn't get re-queried on every
+# click either. Simple dict, not a proper LRU: this app's own aircraft
+# count is small enough (single receiver, personal use) that unbounded
+# growth over the process lifetime is not a realistic concern.
+_PHOTO_CACHE_TTL_SECONDS = 24 * 60 * 60
+_photo_cache: dict[str, tuple[float, AircraftPhotoResponse]] = {}
 
 # Matches the DB's own aircraft_icao_format CHECK constraint
 # (migrations/versions/62c3f8022564_initial_schema.py): 6 hex digits, with
@@ -103,6 +120,93 @@ async def get_aircraft_positions(
     )
 
 
+def _track_name(icao: str, track) -> str:
+    return escape(f"{track.callsign} ({icao})" if track and track.callsign else icao)
+
+
+def _build_gpx(icao: str, track, segments: list[list]) -> str:
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<gpx version="1.1" creator="ADS-B Analytics" '
+        'xmlns="http://www.topografix.com/GPX/1/1">',
+        "<trk>",
+        f"<name>{_track_name(icao, track)}</name>",
+    ]
+    for segment in segments:
+        lines.append("<trkseg>")
+        for point in segment:
+            ele = (
+                f"<ele>{point.altitude_ft * 0.3048:.1f}</ele>"
+                if point.altitude_ft is not None
+                else ""
+            )
+            lines.append(
+                f'<trkpt lat="{point.lat}" lon="{point.lon}">{ele}'
+                f"<time>{point.observed_at.isoformat()}</time></trkpt>"
+            )
+        lines.append("</trkseg>")
+    lines.append("</trk>")
+    lines.append("</gpx>")
+    return "\n".join(lines)
+
+
+def _build_kml(icao: str, track, segments: list[list]) -> str:
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<kml xmlns="http://www.opengis.net/kml/2.2">',
+        "<Document>",
+        f"<name>{_track_name(icao, track)}</name>",
+    ]
+    for index, segment in enumerate(segments, start=1):
+        coords = " ".join(
+            f"{point.lon},{point.lat},"
+            f"{point.altitude_ft * 0.3048 if point.altitude_ft is not None else 0}"
+            for point in segment
+        )
+        lines.append(
+            f"<Placemark><name>segment {index}</name>"
+            "<LineString><altitudeMode>absolute</altitudeMode>"
+            f"<coordinates>{coords}</coordinates></LineString></Placemark>"
+        )
+    lines.append("</Document>")
+    lines.append("</kml>")
+    return "\n".join(lines)
+
+
+@router.get("/aircraft/{icao}/positions.gpx", include_in_schema=False)
+async def get_aircraft_positions_gpx(
+    icao: str = Path(...),
+    hours: int = Query(6, ge=1, le=720),
+    pool=Depends(get_pool),
+) -> Response:
+    if not _ICAO_PATTERN.match(icao):
+        raise HTTPException(status_code=422, detail="invalid icao format")
+    track = await get_aircraft_track(pool, icao, hours)
+    segments = track.segments if track else []
+    return Response(
+        content=_build_gpx(icao, track, segments),
+        media_type="application/gpx+xml",
+        headers={"Content-Disposition": f'attachment; filename="{icao}_track.gpx"'},
+    )
+
+
+@router.get("/aircraft/{icao}/positions.kml", include_in_schema=False)
+async def get_aircraft_positions_kml(
+    icao: str = Path(...),
+    hours: int = Query(6, ge=1, le=720),
+    pool=Depends(get_pool),
+) -> Response:
+    if not _ICAO_PATTERN.match(icao):
+        raise HTTPException(status_code=422, detail="invalid icao format")
+    track = await get_aircraft_track(pool, icao, hours)
+    segments = track.segments if track else []
+    return Response(
+        content=_build_kml(icao, track, segments),
+        media_type="application/vnd.google-earth.kml+xml",
+        headers={"Content-Disposition": f'attachment; filename="{icao}_track.kml"'},
+    )
+
+
 async def _fetch_photo(
     icao: str, *, client: httpx.AsyncClient | None = None
 ) -> AircraftPhotoResponse:
@@ -145,7 +249,14 @@ async def _fetch_photo(
 async def get_aircraft_photo(icao: str = Path(...)) -> AircraftPhotoResponse:
     if not _ICAO_PATTERN.match(icao):
         raise HTTPException(status_code=422, detail="invalid icao format")
-    return await _fetch_photo(icao)
+
+    cached = _photo_cache.get(icao)
+    if cached is not None and time.monotonic() - cached[0] < _PHOTO_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    photo = await _fetch_photo(icao)
+    _photo_cache[icao] = (time.monotonic(), photo)
+    return photo
 
 
 @router.get("/aircraft/frequent", response_model=FrequentAircraftResponse)
@@ -159,4 +270,32 @@ async def get_aircraft_frequent(
         days=days,
         limit=limit,
         aircraft=[FrequentAircraftEntryResponse(**asdict(entry)) for entry in entries],
+    )
+
+
+def _frequent_csv_rows(entries: list[FrequentAircraftEntry]) -> Iterator[str]:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["icao", "last_callsign", "days_observed", "total_pass_count"])
+    yield buffer.getvalue()
+    for entry in entries:
+        buffer.seek(0)
+        buffer.truncate(0)
+        writer.writerow(
+            [entry.icao, entry.last_callsign or "", entry.days_observed, entry.total_pass_count]
+        )
+        yield buffer.getvalue()
+
+
+@router.get("/aircraft/frequent.csv", include_in_schema=False)
+async def get_aircraft_frequent_csv(
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(10, ge=1, le=100),
+    pool=Depends(get_pool),
+) -> StreamingResponse:
+    entries = await most_frequent(pool, days, limit)
+    return StreamingResponse(
+        _frequent_csv_rows(entries),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="frequent_aircraft_{days}d.csv"'},
     )

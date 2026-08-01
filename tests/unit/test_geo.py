@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from app.collector.geo import EARTH_RADIUS_KM, bearing_deg, haversine_distance_km
+from app.domain.geo import EARTH_RADIUS_KM, bearing_deg, haversine_distance_km
 
 
 def test_haversine_distance_one_degree_longitude_at_equator():

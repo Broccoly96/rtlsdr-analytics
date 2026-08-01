@@ -8,6 +8,7 @@ import { api } from "./api.js";
 import { axisStyle, baseChartOption, CHART_COLORS, createChart, formatAxisTime, setTimezone } from "./chart.js";
 import { distanceUnitLabel, formatDistance, toDisplayDistance } from "./units.js";
 import { registerServiceWorker } from "./pwa.js";
+import { t, applyStaticTranslations } from "./i18n.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -25,7 +26,7 @@ function createBearingChart(containerId) {
     tooltip: {
       trigger: "item",
       formatter: (p) =>
-        `${p.name}: ${data.sectors[p.dataIndex].max_distance_km != null ? formatDistance(data.sectors[p.dataIndex].max_distance_km) : "データなし"}`,
+        `${p.name}: ${data.sectors[p.dataIndex].max_distance_km != null ? formatDistance(data.sectors[p.dataIndex].max_distance_km) : t("ui.ingestionState.no_data")}`,
     },
     polar: {},
     angleAxis: {
@@ -54,7 +55,7 @@ function createAltitudeChart(containerId, bandLabels) {
       formatter: (p) => {
         const point = p[0];
         const raw = data.bands[point.dataIndex].max_distance_km;
-        return `${point.name}: ${raw != null ? formatDistance(raw) : "データなし"}`;
+        return `${point.name}: ${raw != null ? formatDistance(raw) : t("ui.ingestionState.no_data")}`;
       },
     },
     xAxis: { type: "value", ...axisStyle() },
@@ -99,16 +100,16 @@ function createRssiHeatmapChart(containerId) {
           const bucketStartKm = distanceValues[p.value[0]];
           const bucketEndKm = bucketStartKm + data.distance_bucket_km;
           return (
-            `距離 ${formatDistance(bucketStartKm)}〜${formatDistance(bucketEndKm)}` +
+            `${t("common.distance")} ${formatDistance(bucketStartKm)}〜${formatDistance(bucketEndKm)}` +
             `<br/>RSSI ${rssiValues[p.value[1]]}〜${rssiValues[p.value[1]] + data.rssi_bucket_db} dB` +
-            `<br/>件数: ${p.value[2]}`
+            `<br/>${t("receiver.rssiCount")}: ${p.value[2]}`
           );
         },
       },
       grid: { left: 60, right: 16, top: 30, bottom: 40 },
       xAxis: {
         type: "category",
-        name: `距離 (${distanceUnitLabel()})`,
+        name: `${t("common.distance")} (${distanceUnitLabel()})`,
         data: distanceValues.map((v) => Math.round(toDisplayDistance(v))),
         ...axisStyle(),
       },
@@ -149,25 +150,25 @@ function createReceptionChart(containerId) {
       ...baseChartOption(),
       tooltip: { trigger: "axis" },
       legend: {
-        data: ["メッセージ数", "位置取得率(%)"],
+        data: [t("receiver.messageCount"), t("receiver.positionRate")],
         textStyle: { color: CHART_COLORS.axisLabel },
         top: 0,
       },
       xAxis: { type: "category", data: times, ...axisStyle() },
       yAxis: [
-        { type: "value", name: "メッセージ数", ...axisStyle() },
+        { type: "value", name: t("receiver.messageCount"), ...axisStyle() },
         { type: "value", name: "%", min: 0, max: 100, ...axisStyle() },
       ],
       series: [
         {
-          name: "メッセージ数",
+          name: t("receiver.messageCount"),
           type: "bar",
           data: messageCounts,
           yAxisIndex: 0,
           itemStyle: { color: CHART_COLORS.seriesA },
         },
         {
-          name: "位置取得率(%)",
+          name: t("receiver.positionRate"),
           type: "line",
           data: positionRates,
           yAxisIndex: 1,
@@ -177,6 +178,60 @@ function createReceptionChart(containerId) {
       ],
     };
   });
+}
+
+function createWeeklyTrendChart(containerId) {
+  return createChart(containerId, "weekly-trend-chart-error", (data) => ({
+    ...baseChartOption(),
+    tooltip: { trigger: "axis" },
+    xAxis: {
+      type: "category",
+      data: data.trend.map((w) => w.week_start),
+      ...axisStyle(),
+    },
+    yAxis: { type: "value", ...axisStyle() },
+    series: [
+      {
+        type: "line",
+        data: data.trend.map((w) => w.unique_aircraft_count),
+        itemStyle: { color: CHART_COLORS.seriesA },
+      },
+    ],
+  }));
+}
+
+async function refreshDayNight(hours) {
+  const el = document.getElementById("day-night-summary");
+  if (!el) return;
+  try {
+    const data = await api.getDayNightRange(hours);
+    const dayText =
+      data.day_max_distance_km != null ? formatDistance(data.day_max_distance_km) : t("ui.ingestionState.no_data");
+    const nightText =
+      data.night_max_distance_km != null ? formatDistance(data.night_max_distance_km) : t("ui.ingestionState.no_data");
+    el.textContent = t("receiver.dayNightSummary", { day: dayText, night: nightText });
+  } catch (err) {
+    console.error("day-night-range refresh failed", err);
+  }
+}
+
+async function refreshMetar() {
+  const el = document.getElementById("metar-summary");
+  if (!el) return;
+  try {
+    const data = await api.getMetar();
+    if (!data.station_icao) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    el.textContent = t("receiver.metarSummary", {
+      station: data.station_icao,
+      raw: data.raw_text || "--",
+    });
+  } catch (err) {
+    console.error("metar refresh failed", err);
+  }
 }
 
 async function refreshAll(charts, bandLabels, hours) {
@@ -204,6 +259,7 @@ async function refreshAll(charts, bandLabels, hours) {
   } catch (err) {
     console.error("rssi-by-distance refresh failed", err);
   }
+  await refreshDayNight(hours);
 }
 
 async function main() {
@@ -215,13 +271,14 @@ async function main() {
     config = { display_timezone: "UTC", altitude_bands: [], version: null, git_revision: null };
   }
 
+  applyStaticTranslations();
   renderVersion(config);
   registerServiceWorker();
   setTimezone(config.display_timezone);
 
   const bandLabels = {};
   for (const band of config.altitude_bands || []) {
-    bandLabels[band.key] = band.label;
+    bandLabels[band.key] = t(`bands.${band.key}`);
   }
 
   const charts = {
@@ -229,7 +286,17 @@ async function main() {
     altitude: createAltitudeChart("altitude-chart", bandLabels),
     reception: createReceptionChart("reception-chart"),
     rssi: createRssiHeatmapChart("rssi-chart"),
+    weeklyTrend: createWeeklyTrendChart("weekly-trend-chart"),
   };
+
+  try {
+    const weeklyTrend = await api.getWeeklyTrend(12);
+    charts.weeklyTrend.setData(weeklyTrend);
+  } catch (err) {
+    console.error("weekly-trend refresh failed", err);
+  }
+
+  await refreshMetar();
 
   let currentHours = 24;
   await refreshAll(charts, bandLabels, currentHours);
@@ -249,6 +316,7 @@ async function main() {
     charts.altitude.resize();
     charts.reception.resize();
     charts.rssi.resize();
+    charts.weeklyTrend.resize();
   });
 }
 

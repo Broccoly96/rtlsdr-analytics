@@ -3,6 +3,7 @@ GET /api/traffic/daily-summary."""
 
 from __future__ import annotations
 
+import calendar
 import csv
 import io
 from collections.abc import Iterator
@@ -15,11 +16,17 @@ from fastapi.responses import StreamingResponse
 from app.api.dependencies import get_pool, get_settings
 from app.api.schemas import (
     DailyTrafficSummaryResponse,
+    PeriodSummaryResponse,
     TrafficBucketResponse,
     TrafficDailyResponse,
     TrafficResponse,
 )
-from app.db.queries.period import compute_daily_summary, get_traffic_day, list_traffic_days
+from app.db.queries.period import (
+    compute_daily_summary,
+    get_period_summary,
+    get_traffic_day,
+    list_traffic_days,
+)
 from app.db.queries.traffic import TrafficBucket, get_traffic
 from app.domain.daytime import day_bounds_utc, today_in_tz, yesterday_in_tz
 
@@ -117,3 +124,35 @@ async def get_traffic_daily_summary(
         summary = await compute_daily_summary(pool, target_day, start_utc, end_utc)
 
     return DailyTrafficSummaryResponse(**asdict(summary))
+
+
+@router.get("/traffic/monthly", response_model=PeriodSummaryResponse)
+async def get_traffic_monthly(
+    year: int = Query(..., ge=2020, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    pool=Depends(get_pool),
+    settings=Depends(get_settings),
+) -> PeriodSummaryResponse:
+    today = today_in_tz(settings.display_timezone)
+    start_day = date(year, month, 1)
+    last_day_num = calendar.monthrange(year, month)[1]
+    end_day = min(date(year, month, last_day_num), today - timedelta(days=1))
+    if start_day > end_day:
+        raise HTTPException(status_code=422, detail="month has no finished days yet")
+    summary = await get_period_summary(pool, start_day, end_day)
+    return PeriodSummaryResponse(**asdict(summary))
+
+
+@router.get("/traffic/yearly", response_model=PeriodSummaryResponse)
+async def get_traffic_yearly(
+    year: int = Query(..., ge=2020, le=2100),
+    pool=Depends(get_pool),
+    settings=Depends(get_settings),
+) -> PeriodSummaryResponse:
+    today = today_in_tz(settings.display_timezone)
+    start_day = date(year, 1, 1)
+    end_day = min(date(year, 12, 31), today - timedelta(days=1))
+    if start_day > end_day:
+        raise HTTPException(status_code=422, detail="year has no finished days yet")
+    summary = await get_period_summary(pool, start_day, end_day)
+    return PeriodSummaryResponse(**asdict(summary))

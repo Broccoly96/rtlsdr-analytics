@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.collector.geo import haversine_distance_km
+from app.domain.geo import haversine_distance_km
 
 SIGNIFICANT_POSITION_CHANGE_KM = 0.5
 SIGNIFICANT_ALTITUDE_CHANGE_FT = 500.0

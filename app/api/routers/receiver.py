@@ -3,28 +3,38 @@ bearing and altitude band, and message-count/position-rate over time."""
 
 from __future__ import annotations
 
+import csv
+import io
+from collections.abc import Iterator
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import get_pool
+from app.api.dependencies import get_pool, get_settings
 from app.api.schemas import (
     AltitudeBandRangeEntryResponse,
     AltitudeRangeResponse,
     BearingRangeEntryResponse,
     BearingRangeResponse,
+    DayNightRangeResponse,
     ReceptionBucketResponse,
     ReceptionResponse,
     RssiByDistanceResponse,
     RssiDistanceCellResponse,
+    WeeklyTrendEntryResponse,
+    WeeklyTrendResponse,
 )
 from app.db.queries.receiver import (
     DEFAULT_DISTANCE_BUCKET_KM,
     DEFAULT_RSSI_BUCKET_DB,
+    BearingRangeEntry,
     altitude_band_range,
     bearing_range,
+    day_night_range,
     reception_timeseries,
     rssi_by_distance,
+    weekly_trend,
 )
 
 router = APIRouter(prefix="/api/receiver", tags=["receiver"])
@@ -39,6 +49,31 @@ async def get_bearing_range(
     return BearingRangeResponse(
         hours=hours,
         sectors=[BearingRangeEntryResponse(**asdict(entry)) for entry in entries],
+    )
+
+
+def _bearing_range_csv_rows(entries: list[BearingRangeEntry]) -> Iterator[str]:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["sector_center_deg", "max_distance_km", "sample_count"])
+    yield buffer.getvalue()
+    for entry in entries:
+        buffer.seek(0)
+        buffer.truncate(0)
+        writer.writerow([entry.sector_center_deg, entry.max_distance_km, entry.sample_count])
+        yield buffer.getvalue()
+
+
+@router.get("/bearing-range.csv", include_in_schema=False)
+async def get_bearing_range_csv(
+    hours: int = Query(24, ge=1, le=720),
+    pool=Depends(get_pool),
+) -> StreamingResponse:
+    entries = await bearing_range(pool, hours)
+    return StreamingResponse(
+        _bearing_range_csv_rows(entries),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="bearing_range_{hours}h.csv"'},
     )
 
 
@@ -77,4 +112,26 @@ async def get_rssi_by_distance(
         distance_bucket_km=DEFAULT_DISTANCE_BUCKET_KM,
         rssi_bucket_db=DEFAULT_RSSI_BUCKET_DB,
         cells=[RssiDistanceCellResponse(**asdict(cell)) for cell in cells],
+    )
+
+
+@router.get("/day-night-range", response_model=DayNightRangeResponse)
+async def get_day_night_range(
+    hours: int = Query(24, ge=1, le=720),
+    pool=Depends(get_pool),
+    settings=Depends(get_settings),
+) -> DayNightRangeResponse:
+    result = await day_night_range(pool, hours, settings.display_timezone)
+    return DayNightRangeResponse(hours=hours, **asdict(result))
+
+
+@router.get("/weekly-trend", response_model=WeeklyTrendResponse)
+async def get_weekly_trend(
+    weeks: int = Query(12, ge=1, le=104),
+    pool=Depends(get_pool),
+) -> WeeklyTrendResponse:
+    entries = await weekly_trend(pool, weeks)
+    return WeeklyTrendResponse(
+        weeks=weeks,
+        trend=[WeeklyTrendEntryResponse(**asdict(entry)) for entry in entries],
     )

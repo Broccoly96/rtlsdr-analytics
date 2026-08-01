@@ -5,21 +5,17 @@
 // dedicated comparison endpoint, matching this API's GET-only philosophy.
 
 import { api } from "./api.js";
+import { ui } from "./ui.js";
 import { createAircraftInfoTrigger } from "./aircraftinfo.js";
+import { setNationalityBlocks } from "./nationality.js";
 import { axisStyle, baseChartOption, CHART_COLORS, createChart } from "./chart.js";
 import { formatDistance, formatAltitude } from "./units.js";
 import { registerServiceWorker } from "./pwa.js";
+import { downloadHighlightImage } from "./highlight-image.js";
+import { getParam, setParam } from "./url-state.js";
+import { t, currentLocale, applyStaticTranslations } from "./i18n.js";
 
-let displayTimezone = "UTC";
-
-function formatTime(isoString) {
-  if (!isoString) return "--";
-  try {
-    return new Date(isoString).toLocaleString("ja-JP", { timeZone: displayTimezone, hour12: false });
-  } catch {
-    return isoString;
-  }
-}
+const formatTime = ui.formatTime;
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -63,7 +59,7 @@ function renderHighlight(elId, icao, callsign, valueText) {
   const el = document.getElementById(elId);
   if (!el) return;
   if (!icao) {
-    el.textContent = "データがありません";
+    el.textContent = t("common.noData");
     return;
   }
   const icaoEl = document.createElement("div");
@@ -145,6 +141,51 @@ function createAircraftTypeChart(containerId) {
   }));
 }
 
+function renderPeriodSummary(summary) {
+  const el = document.getElementById("period-summary");
+  if (!el) return;
+  el.textContent = t("daily.period.summaryLine", {
+    days: summary.days_with_data,
+    unique: summary.unique_aircraft_count,
+    messages: summary.message_count_total.toLocaleString(currentLocale()),
+    concurrent: summary.max_concurrent_count,
+    farthest: summary.farthest_icao
+      ? `${summary.farthest_icao} (${summary.farthest_distance_km.toFixed(1)} km)`
+      : "--",
+  });
+}
+
+function wirePeriodSummary() {
+  const modeSelect = document.getElementById("period-mode");
+  const yearInput = document.getElementById("period-year");
+  const monthSelect = document.getElementById("period-month");
+  const refreshButton = document.getElementById("period-refresh");
+  const errorEl = document.getElementById("period-error");
+  if (!modeSelect || !yearInput || !monthSelect || !refreshButton) return;
+
+  const now = new Date();
+  yearInput.value = String(now.getFullYear());
+  monthSelect.value = String(now.getMonth() + 1);
+
+  refreshButton.addEventListener("click", async () => {
+    if (errorEl) errorEl.hidden = true;
+    const year = Number(yearInput.value);
+    try {
+      const summary =
+        modeSelect.value === "year"
+          ? await api.getTrafficYearly(year)
+          : await api.getTrafficMonthly(year, Number(monthSelect.value));
+      renderPeriodSummary(summary);
+    } catch (err) {
+      console.error("period summary fetch failed", err);
+      if (errorEl) {
+        errorEl.textContent = err && err.message ? err.message : t("chart.trafficFetchFailed");
+        errorEl.hidden = false;
+      }
+    }
+  });
+}
+
 async function main() {
   let config;
   try {
@@ -153,9 +194,18 @@ async function main() {
     console.error("failed to load /api/config", err);
     config = { version: null, git_revision: null };
   }
+  applyStaticTranslations();
   renderVersion(config);
+  setNationalityBlocks(config.nationality_blocks);
   registerServiceWorker();
-  displayTimezone = config.display_timezone || "UTC";
+  ui.setTimezone(config.display_timezone || "UTC");
+
+  const saveImageButton = document.getElementById("save-highlight-image");
+  if (saveImageButton) {
+    saveImageButton.addEventListener("click", () => downloadHighlightImage());
+  }
+
+  wirePeriodSummary();
 
   const aircraftTypeChart = createAircraftTypeChart("aircraft-type-chart");
   const trendChart = createTrendChart("trend-chart");
@@ -163,13 +213,17 @@ async function main() {
   let todaySummary = null;
 
   try {
-    const today = await api.getTrafficDailySummary();
+    // Permalink support (Milestone RR): ?day=YYYY-MM-DD views a specific
+    // past day instead of today, e.g. for sharing a link to a notable day.
+    const dayFromUrl = getParam("day");
+    const today = await api.getTrafficDailySummary(dayFromUrl || undefined);
     todaySummary = today;
     todayDay = today.day;
+    setParam("day", dayFromUrl ? today.day : null);
     setText("summary-day", today.day);
     setText("card-unique", String(today.unique_aircraft_count));
     setText("card-concurrent", String(today.max_concurrent_count));
-    setText("card-messages", today.message_count_total.toLocaleString("ja-JP"));
+    setText("card-messages", today.message_count_total.toLocaleString(currentLocale()));
     setText("card-position-max", String(today.position_aircraft_count_max));
 
     renderHighlight(
@@ -188,7 +242,7 @@ async function main() {
       "highlight-most-observed",
       today.most_observed_icao,
       today.most_observed_callsign,
-      today.most_observed_count != null ? `${today.most_observed_count}回観測` : ""
+      today.most_observed_count != null ? t("daily.timesObserved", { count: today.most_observed_count }) : ""
     );
     renderHighlight(
       "highlight-fastest",
@@ -212,8 +266,8 @@ async function main() {
     const deltasEl = document.getElementById("daily-deltas");
     if (deltasEl) {
       deltasEl.replaceChildren(
-        formatDelta("前日比", today.unique_aircraft_count, yesterday.unique_aircraft_count),
-        formatDelta("先週同曜日比", today.unique_aircraft_count, lastWeek.unique_aircraft_count)
+        formatDelta(t("daily.deltaVsYesterday"), today.unique_aircraft_count, yesterday.unique_aircraft_count),
+        formatDelta(t("daily.deltaVsLastWeek"), today.unique_aircraft_count, lastWeek.unique_aircraft_count)
       );
     }
   } catch (err) {

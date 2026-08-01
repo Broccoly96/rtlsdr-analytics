@@ -22,6 +22,10 @@ import { api } from "./api.js";
 import { formatDistance, formatAltitude } from "./units.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
 import { registerAircraftIcons, iconIdFor, shapeForCategory, UNKNOWN_BAND_KEY } from "./aircraft-icons.js";
+import { ui } from "./ui.js";
+import { t } from "./i18n.js";
+
+const formatTime = ui.formatTime;
 
 // Populated from GET /api/config (see setAltitudeBands below) -- Python
 // (app/domain/bands.py) is the single source of truth so this can't drift
@@ -33,10 +37,8 @@ const UNKNOWN_ALTITUDE_COLOR = "#8fa3bd";
 // existing color tokens (style.css's --accent-2/--accent/--success/--warning/--danger).
 const HEATMAP_COLOR_RAMP = ["#60a5fa", "#22d3ee", "#34d399", "#fbbf24", "#fb7185"];
 
-let displayTimezone = "UTC";
-
 export function setTimezone(tz) {
-  displayTimezone = tz;
+  ui.setTimezone(tz);
 }
 
 // `config.altitude_bands` items have `max_ft` (null for the top,
@@ -50,15 +52,6 @@ export function setAltitudeBands(bands) {
     max: b.max_ft == null ? Infinity : b.max_ft,
     color: b.color,
   }));
-}
-
-function formatTime(isoString) {
-  if (!isoString) return "--";
-  try {
-    return new Date(isoString).toLocaleString("ja-JP", { timeZone: displayTimezone, hour12: false });
-  } catch {
-    return isoString;
-  }
 }
 
 function colorForAltitude(altitudeFt) {
@@ -108,7 +101,7 @@ function isWebGLAvailable() {
 function describeError(err) {
   if (err && typeof err.message === "string" && err.message) return err.message;
   if (typeof err === "string") return err;
-  return "詳細不明のエラー";
+  return t("map.unknownError");
 }
 
 // Walks a segment's [lon, lat, altitude_ft] points and groups consecutive
@@ -216,9 +209,7 @@ export function createTrackMap({ containerId, styleUrl }) {
   };
 
   if (!isWebGLAvailable()) {
-    showMapError(
-      "このブラウザ/環境ではWebGLが利用できないため地図を表示できません(グラフ・ランキングは利用できます)。リモートデスクトップ/VM環境やWebGL無効化設定が原因のことがあります。"
-    );
+    showMapError(t("map.webglUnavailable"));
     return noop;
   }
 
@@ -235,7 +226,7 @@ export function createTrackMap({ containerId, styleUrl }) {
     });
   } catch (err) {
     console.error("map init failed", err);
-    showMapError(`地図の初期化に失敗しました: ${describeError(err)}(グラフ・ランキングは利用できます)`);
+    showMapError(t("map.initFailed", { detail: describeError(err) }));
     return noop;
   }
 
@@ -245,16 +236,14 @@ export function createTrackMap({ containerId, styleUrl }) {
   // otherwise sit silently blank forever with no error shown at all.
   const loadTimeoutId = setTimeout(() => {
     if (!ready) {
-      showMapError(
-        `地図の読み込みがタイムアウトしました(${LOAD_TIMEOUT_MS / 1000}秒)。スタイルURL(${styleUrl})への通信を確認してください。グラフ・ランキングは利用できます。`
-      );
+      showMapError(t("map.loadTimeout", { seconds: LOAD_TIMEOUT_MS / 1000, styleUrl }));
     }
   }, LOAD_TIMEOUT_MS);
 
   map.on("error", (event) => {
     const detail = describeError(event && event.error);
     console.error("map error", event && event.error);
-    showMapError(`地図データの取得に失敗しました: ${detail}(グラフ・ランキングは利用できます)`);
+    showMapError(t("map.dataFetchFailed", { detail }));
   });
 
   map.on("load", () => {
@@ -363,7 +352,7 @@ export function createTrackMap({ containerId, styleUrl }) {
       title.textContent = props.callsign || props.icao;
 
       const altitude =
-        props.last_altitude_ft != null ? formatAltitude(props.last_altitude_ft) : "高度不明";
+        props.last_altitude_ft != null ? formatAltitude(props.last_altitude_ft) : t("common.altitudeUnknown");
       const speed =
         props.last_ground_speed_kt != null ? `${Math.round(props.last_ground_speed_kt)} kt` : null;
       const distance = props.last_distance_km != null ? formatDistance(props.last_distance_km) : null;
@@ -408,7 +397,7 @@ export function createTrackMap({ containerId, styleUrl }) {
       const title = document.createElement("strong");
       title.textContent = props.callsign || props.icao;
 
-      const altitude = props.altitude_ft != null ? formatAltitude(props.altitude_ft) : "高度不明";
+      const altitude = props.altitude_ft != null ? formatAltitude(props.altitude_ft) : t("common.altitudeUnknown");
       const speed = props.ground_speed_kt != null ? `${Math.round(props.ground_speed_kt)} kt` : null;
 
       const line = document.createElement("div");
@@ -633,6 +622,6 @@ export async function refreshTracks(mapController, hours) {
     mapController.setTracks(tracksGeoJSON);
   } catch (err) {
     console.error("tracks refresh failed", err);
-    showMapError("航跡データの取得に失敗しました。");
+    showMapError(t("map.tracksFetchFailed"));
   }
 }

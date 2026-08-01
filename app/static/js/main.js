@@ -14,6 +14,10 @@ import { api } from "./api.js";
 import { ui } from "./ui.js";
 import { renderAltitudeLegend } from "./altitude-legend.js";
 import { registerServiceWorker } from "./pwa.js";
+import { t, applyStaticTranslations } from "./i18n.js";
+import { setNationalityBlocks } from "./nationality.js";
+import { applyDashboardLayout } from "./dashboard-layout.js";
+import { getParam, setParam } from "./url-state.js";
 import {
   axisStyle,
   baseChartOption,
@@ -32,11 +36,11 @@ import {
 // on-page too, since "map fails to load but the server serves everything
 // correctly" was hard to diagnose without asking the user to open devtools.
 document.addEventListener("securitypolicyviolation", (event) => {
-  const detail = `CSPにより読み込みがブロックされました: ${event.blockedURI}(directive: ${event.violatedDirective})`;
+  const detail = t("main.cspBlocked", { blockedURI: event.blockedURI, directive: event.violatedDirective });
   console.error(detail, event);
   const errorEl = document.getElementById("map-error");
   if (errorEl && errorEl.hidden) {
-    errorEl.textContent = `${detail} -- ブラウザの拡張機能やセキュリティソフトが関与している可能性があります。`;
+    errorEl.textContent = t("main.cspBlockedSuffix", { detail });
     errorEl.hidden = false;
   }
 });
@@ -69,7 +73,7 @@ function showMapLoadError(err) {
   const errorEl = document.getElementById("map-error");
   if (errorEl) {
     const detail = err && err.message ? err.message : String(err);
-    errorEl.textContent = `地図モジュールの読み込みに失敗しました: ${detail}(他の情報は利用できます)`;
+    errorEl.textContent = t("map.moduleLoadFailed", { detail }) + t("main.otherDataAvailable");
     errorEl.hidden = false;
   }
 }
@@ -86,11 +90,13 @@ async function loadMapModule() {
   try {
     const res = await fetch(new URL("./map.js", import.meta.url));
     if (!res.ok) {
-      showMapLoadError(new Error(`map.jsの取得に失敗しました (HTTP ${res.status})`));
+      showMapLoadError(new Error(t("map.jsFetchFailed", { status: res.status })));
       return null;
     }
   } catch (err) {
-    showMapLoadError(new Error(`map.jsへのネットワーク接続に失敗しました: ${err && err.message ? err.message : err}`));
+    showMapLoadError(
+      new Error(t("map.jsNetworkFailed", { detail: err && err.message ? err.message : err }))
+    );
     return null;
   }
 
@@ -111,7 +117,7 @@ function createHourOfDayChart(containerId) {
     tooltip: { trigger: "axis" },
     xAxis: {
       type: "category",
-      data: data.hours.map((h) => `${h.hour}時`),
+      data: data.hours.map((h) => t("main.hourLabel", { hour: h.hour })),
       ...axisStyle(),
     },
     yAxis: { type: "value", minInterval: 1, ...axisStyle() },
@@ -169,8 +175,6 @@ async function refreshDistributionPanels(charts) {
   }
 }
 
-const DAY_OF_WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"]; // matches Postgres EXTRACT(DOW): 0=Sunday
-
 function addOption(select, value, label) {
   const option = document.createElement("option");
   option.value = value;
@@ -184,18 +188,20 @@ function populateHeatmapFilterOptions(altitudeBands) {
   const dowSelect = document.getElementById("heatmap-dow");
   if (!bandSelect || !hourSelect || !dowSelect) return;
 
-  addOption(bandSelect, "", "高度: 全て");
+  addOption(bandSelect, "", t("main.heatmap.allAltitudes"));
   for (const band of altitudeBands || []) {
-    addOption(bandSelect, band.key, band.label);
+    addOption(bandSelect, band.key, t(`bands.${band.key}`));
   }
 
-  addOption(hourSelect, "", "時間帯: 全て");
+  addOption(hourSelect, "", t("main.heatmap.allHours"));
   for (let hour = 0; hour < 24; hour++) {
-    addOption(hourSelect, String(hour), `${hour}時台`);
+    addOption(hourSelect, String(hour), t("main.heatmap.hourOption", { hour }));
   }
 
-  addOption(dowSelect, "", "曜日: 全て");
-  DAY_OF_WEEK_LABELS.forEach((label, dow) => addOption(dowSelect, String(dow), `${label}曜`));
+  addOption(dowSelect, "", t("main.heatmap.allDaysOfWeek"));
+  for (let dow = 0; dow < 7; dow++) {
+    addOption(dowSelect, String(dow), t(`common.dow.${dow}`));
+  }
 }
 
 // Heatmap is opt-in (toggle button) and re-fetched only while visible --
@@ -227,15 +233,39 @@ function setupHeatmapControls(mapController, altitudeBands) {
     }
   }
 
+  // Permalink support (Milestone RR): ?heatmap=1&altitude=&hour=&dow=
+  // restore a specific heatmap view; reflected back into the URL (via
+  // replaceState) on every change.
+  function syncUrl() {
+    setParam("heatmap", enabled ? "1" : null);
+    setParam("altitude", bandSelect.value || null);
+    setParam("hour", hourSelect.value || null);
+    setParam("dow", dowSelect.value || null);
+  }
+
+  if (getParam("heatmap") === "1") {
+    enabled = true;
+    toggle.setAttribute("aria-pressed", "true");
+    mapController.setHeatmapVisible(true);
+  }
+  if (getParam("altitude")) bandSelect.value = getParam("altitude");
+  if (getParam("hour")) hourSelect.value = getParam("hour");
+  if (getParam("dow")) dowSelect.value = getParam("dow");
+  if (enabled) refresh();
+
   toggle.addEventListener("click", () => {
     enabled = !enabled;
     toggle.setAttribute("aria-pressed", String(enabled));
     mapController.setHeatmapVisible(enabled);
+    syncUrl();
     if (enabled) refresh();
   });
 
   for (const select of [bandSelect, hourSelect, dowSelect]) {
-    select.addEventListener("change", refresh);
+    select.addEventListener("change", () => {
+      syncUrl();
+      refresh();
+    });
   }
 }
 
@@ -249,7 +279,7 @@ function dailyTrafficChartOption(daily) {
     yAxis: { type: "value", minInterval: 1, ...axisStyle() },
     series: [
       {
-        name: "ユニーク機数",
+        name: t("daily.card.unique"),
         type: "bar",
         data: counts,
         itemStyle: { color: CHART_COLORS.seriesA },
@@ -290,7 +320,10 @@ async function main() {
     config = DEFAULT_CONFIG;
   }
 
+  applyStaticTranslations();
   renderVersion(config);
+  applyDashboardLayout();
+  setNationalityBlocks(config.nationality_blocks);
   registerServiceWorker();
   ui.setTimezone(config.display_timezone);
   setChartTimezone(config.display_timezone);
@@ -395,8 +428,8 @@ async function main() {
         api.getTrafficDailySummary(addDaysToIsoDate(today.day, -7)),
       ]);
       el.replaceChildren(
-        formatDelta("前日比", today.unique_aircraft_count, yesterday.unique_aircraft_count),
-        formatDelta("先週同曜日比", today.unique_aircraft_count, lastWeek.unique_aircraft_count)
+        formatDelta(t("daily.deltaVsYesterday"), today.unique_aircraft_count, yesterday.unique_aircraft_count),
+        formatDelta(t("daily.deltaVsLastWeek"), today.unique_aircraft_count, lastWeek.unique_aircraft_count)
       );
     } catch (err) {
       console.error("traffic deltas refresh failed", err);

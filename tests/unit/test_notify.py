@@ -9,7 +9,14 @@ from pydantic import ValidationError
 
 from app.config import Settings
 from app.db.queries.period import DailyTrafficSummary
-from app.notify import build_payload, send_daily_notification
+from app.notify import (
+    build_emergency_squawk_payload,
+    build_favorite_seen_payload,
+    build_payload,
+    send_daily_notification,
+    send_emergency_squawk_notification,
+    send_favorite_seen_notification,
+)
 
 SUMMARY = DailyTrafficSummary(
     day=date(2026, 7, 28),
@@ -139,3 +146,84 @@ def test_enabling_webhook_without_url_is_rejected():
 def test_notify_webhook_url_must_have_scheme():
     with pytest.raises(ValidationError):
         _settings(notify_webhook_enabled=True, notify_webhook_url="not-a-url")
+
+
+# --- emergency squawk / favorite seen (Milestone KK) -----------------------
+
+
+def test_build_emergency_squawk_payload_prefers_callsign():
+    payload = build_emergency_squawk_payload("aaaaaa", "7700", callsign="TEST001")
+    assert "TEST001" in payload["text"]
+    assert "aaaaaa" in payload["text"]
+    assert "7700" in payload["text"]
+
+
+def test_build_emergency_squawk_payload_falls_back_to_icao():
+    payload = build_emergency_squawk_payload("aaaaaa", "7500", callsign=None)
+    assert payload["text"].count("aaaaaa") >= 1
+
+
+def test_build_favorite_seen_payload_prefers_callsign():
+    payload = build_favorite_seen_payload("bbbbbb", callsign="JAL10")
+    assert "JAL10" in payload["text"]
+    assert "bbbbbb" in payload["text"]
+
+
+async def test_emergency_squawk_disabled_by_default_sends_nothing():
+    settings = _settings()
+    assert settings.notify_emergency_squawk_enabled is False
+
+    def _fail_if_called(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("webhook must not be called when disabled")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_fail_if_called)) as client:
+        await send_emergency_squawk_notification(settings, "aaaaaa", "7700", client=client)
+
+
+async def test_emergency_squawk_enabled_sends_expected_payload():
+    settings = _settings(
+        notify_emergency_squawk_enabled=True,
+        notify_webhook_url="https://hooks.example.invalid/webhook",
+    )
+    captured = {}
+
+    def _capture(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_capture)) as client:
+        await send_emergency_squawk_notification(
+            settings, "aaaaaa", "7700", callsign="TEST001", client=client
+        )
+
+    assert json.loads(captured["body"]) == build_emergency_squawk_payload(
+        "aaaaaa", "7700", callsign="TEST001"
+    )
+
+
+async def test_favorite_seen_disabled_by_default_sends_nothing():
+    settings = _settings()
+    assert settings.notify_favorite_seen_enabled is False
+
+    def _fail_if_called(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("webhook must not be called when disabled")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_fail_if_called)) as client:
+        await send_favorite_seen_notification(settings, "bbbbbb", client=client)
+
+
+async def test_favorite_seen_enabled_sends_expected_payload():
+    settings = _settings(
+        notify_favorite_seen_enabled=True,
+        notify_webhook_url="https://hooks.example.invalid/webhook",
+    )
+    captured = {}
+
+    def _capture(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_capture)) as client:
+        await send_favorite_seen_notification(settings, "bbbbbb", callsign="JAL10", client=client)
+
+    assert json.loads(captured["body"]) == build_favorite_seen_payload("bbbbbb", callsign="JAL10")

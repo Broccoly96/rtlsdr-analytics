@@ -69,6 +69,8 @@ _INSERT_INGESTION_STATUS_SQL = """
     VALUES ($1, $2, $3, $4, $5)
 """
 
+_SELECT_FAVORITE_ICAOS_SQL = "SELECT icao FROM favorites"
+
 
 class PostgresStore:
     def __init__(self, pool: asyncpg.Pool) -> None:
@@ -120,3 +122,7 @@ class PostgresStore:
             status.aircraft_count,
             status.error_code,
         )
+
+    async def get_favorite_icaos(self) -> set[str]:
+        rows = await self._pool.fetch(_SELECT_FAVORITE_ICAOS_SQL)
+        return {row["icao"] for row in rows}

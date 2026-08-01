@@ -17,6 +17,12 @@ from datetime import UTC, datetime
 import httpx
 
 from app.collector.aggregator import MinuteAggregator
+from app.collector.event_watch import (
+    EmergencySquawkWatcher,
+    FavoriteSeenWatcher,
+    NotifyFavoriteFn,
+    NotifySquawkFn,
+)
 from app.collector.normalize import normalize_poll
 from app.collector.sampling import PositionSampler
 from app.collector.store import IngestionStatus, Store
@@ -30,6 +36,14 @@ BACKOFF_MAX_SECONDS = 300.0
 BACKOFF_MULTIPLIER = 2.0
 
 
+async def _noop_notify_squawk(icao: str, squawk: str, callsign: str | None) -> None:
+    pass
+
+
+async def _noop_notify_favorite(icao: str, callsign: str | None) -> None:
+    pass
+
+
 class CollectorService:
     def __init__(
         self,
@@ -41,6 +55,10 @@ class CollectorService:
         receiver_lon: float,
         poll_interval_seconds: float,
         track_sample_seconds: float,
+        emergency_squawk_enabled: bool = False,
+        favorite_seen_enabled: bool = False,
+        notify_emergency_squawk: NotifySquawkFn = _noop_notify_squawk,
+        notify_favorite_seen: NotifyFavoriteFn = _noop_notify_favorite,
     ) -> None:
         self._client = client
         self._url = url
@@ -52,6 +70,14 @@ class CollectorService:
         self._aggregator = MinuteAggregator()
         self._backoff_seconds = BACKOFF_INITIAL_SECONDS
         self._stopping = asyncio.Event()
+        self._squawk_watcher = EmergencySquawkWatcher(
+            enabled=emergency_squawk_enabled, notify=notify_emergency_squawk
+        )
+        self._favorite_watcher = FavoriteSeenWatcher(
+            enabled=favorite_seen_enabled,
+            notify=notify_favorite_seen,
+            load_favorite_icaos=store.get_favorite_icaos,
+        )
 
     def stop(self) -> None:
         self._stopping.set()
@@ -97,6 +123,15 @@ class CollectorService:
         if self._backoff_seconds > BACKOFF_INITIAL_SECONDS:
             logger.info("readsb fetch recovered after backoff")
         self._backoff_seconds = BACKOFF_INITIAL_SECONDS  # reset cadence on recovery
+
+        raw_aircraft = payload.get("aircraft") if isinstance(payload, dict) else None
+        if isinstance(raw_aircraft, list):
+            # Checked against the *raw* per-poll list, not the normalized/
+            # sampled observations below -- see event_watch.py's docstring
+            # for why (an emergency squawk or favorite sighting between
+            # persisted position samples would otherwise go unnoticed).
+            await self._squawk_watcher.check(raw_aircraft)
+            await self._favorite_watcher.check(raw_aircraft)
 
         result = normalize_poll(payload, polled_at, self._receiver_lat, self._receiver_lon)
         if result.excluded_reasons:

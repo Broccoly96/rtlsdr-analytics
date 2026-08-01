@@ -6,6 +6,7 @@
 // {max, color} internally for colorForAltitude() and would otherwise lose it.
 
 import { formatAltitude } from "./units.js";
+import { t } from "./i18n.js";
 
 // Bands arrive in ascending-altitude order (app/domain/bands.py's tuple
 // order, published as-is via /api/config) -- a band's lower bound is
@@ -14,8 +15,8 @@ import { formatAltitude } from "./units.js";
 function rangeTextFor(bands, index) {
   const band = bands[index];
   const prevMax = index === 0 ? null : bands[index - 1].max_ft;
-  if (prevMax == null) return `${formatAltitude(band.max_ft)}以下`;
-  if (band.max_ft == null) return `${formatAltitude(prevMax)}超`;
+  if (prevMax == null) return t("altitudeLegend.upTo", { value: formatAltitude(band.max_ft) });
+  if (band.max_ft == null) return t("altitudeLegend.above", { value: formatAltitude(prevMax) });
   return `${formatAltitude(prevMax)}〜${formatAltitude(band.max_ft)}`;
 }
 
@@ -31,7 +32,7 @@ export function renderAltitudeLegend(container, bands) {
     swatch.style.backgroundColor = band.color;
 
     const label = document.createElement("span");
-    label.textContent = band.label;
+    label.textContent = t(`bands.${band.key}`);
 
     const range = document.createElement("span");
     range.className = "altitude-legend__range";

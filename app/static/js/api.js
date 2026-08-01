@@ -10,11 +10,16 @@ async function getJSON(path, params = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
       url.searchParams.set(key, String(value));
     }
   }
+  return requestJSON(url, {}, timeoutMs);
+}
 
+// POST/DELETE share this instead of getJSON's query-param handling --
+// only /api/favorites uses these today, this app's first mutating calls.
+async function requestJSON(url, init = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetch(url, { ...init, signal: controller.signal });
     if (!response.ok) {
       let detail = response.statusText;
       try {
@@ -27,7 +32,7 @@ async function getJSON(path, params = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
       error.status = response.status;
       throw error;
     }
-    return await response.json();
+    return response.status === 204 ? null : await response.json();
   } finally {
     clearTimeout(timer);
   }
@@ -44,6 +49,9 @@ export const api = {
   getAltitudeRange: (hours) => getJSON("/api/receiver/altitude-range", { hours }),
   getReception: (hours) => getJSON("/api/receiver/reception", { hours }),
   getRssiByDistance: (hours) => getJSON("/api/receiver/rssi-by-distance", { hours }),
+  getDayNightRange: (hours) => getJSON("/api/receiver/day-night-range", { hours }),
+  getWeeklyTrend: (weeks) => getJSON("/api/receiver/weekly-trend", { weeks }),
+  getMetar: () => getJSON("/api/weather/metar"),
   getHourOfDay: (days) => getJSON("/api/distribution/hour-of-day", { days }),
   getAltitudeHistogram: (hours) => getJSON("/api/distribution/altitude", { hours }),
   getSpeedHistogram: (hours) => getJSON("/api/distribution/speed", { hours }),
@@ -56,4 +64,19 @@ export const api = {
   getAircraftPhoto: (icao) => getJSON(`/api/aircraft/${encodeURIComponent(icao)}/photo`),
   getAircraftPositions: (icao, hours) =>
     getJSON(`/api/aircraft/${encodeURIComponent(icao)}/positions`, { hours }),
+  getAircraftNationalities: () => getJSON("/api/aircraft/nationalities"),
+  getBadges: () => getJSON("/api/badges"),
+  getArchive: (params) => getJSON("/api/aircraft/archive", params),
+  getOnThisDay: () => getJSON("/api/aircraft/on-this-day"),
+  getTrafficMonthly: (year, month) => getJSON("/api/traffic/monthly", { year, month }),
+  getTrafficYearly: (year) => getJSON("/api/traffic/yearly", { year }),
+  getFavorites: () => getJSON("/api/favorites"),
+  addFavorite: (icao) =>
+    requestJSON(new URL(`/api/favorites/${encodeURIComponent(icao)}`, window.location.origin), {
+      method: "POST",
+    }),
+  removeFavorite: (icao) =>
+    requestJSON(new URL(`/api/favorites/${encodeURIComponent(icao)}`, window.location.origin), {
+      method: "DELETE",
+    }),
 };

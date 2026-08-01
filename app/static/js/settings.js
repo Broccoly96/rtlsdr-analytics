@@ -5,7 +5,17 @@
 import { api } from "./api.js";
 import { getUnits, setUnits } from "./units.js";
 import { getTrackOpacity, setTrackOpacity } from "./track-settings.js";
+import { isSpeechEnabled, setSpeechEnabled } from "./speech.js";
+import { getHiddenSections, setHiddenSections } from "./dashboard-layout.js";
+import { getTheme, setTheme } from "./theme.js";
+import {
+  isFavoriteNotifyEnabled,
+  setFavoriteNotifyEnabled,
+  getNotificationPermission,
+  requestNotificationPermission,
+} from "./browser-notify.js";
 import { registerServiceWorker } from "./pwa.js";
+import { getLanguage, setLanguage, applyStaticTranslations, t } from "./i18n.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -39,6 +49,7 @@ async function main() {
     console.error("failed to load /api/config", err);
     config = { version: null, git_revision: null };
   }
+  applyStaticTranslations();
   renderVersion(config);
   registerServiceWorker();
 
@@ -48,6 +59,48 @@ async function main() {
   });
   wireButtonGroup("altitude-unit-group", units.altitude, (value) => {
     setUnits({ ...getUnits(), altitude: value });
+  });
+  wireButtonGroup("language-group", getLanguage(), (value) => {
+    setLanguage(value);
+  });
+  wireButtonGroup("theme-group", getTheme(), (value) => {
+    setTheme(value);
+  });
+  wireButtonGroup("speech-enabled-group", isSpeechEnabled() ? "on" : "off", (value) => {
+    setSpeechEnabled(value === "on");
+  });
+  wireButtonGroup(
+    "browser-notify-group",
+    isFavoriteNotifyEnabled() ? "on" : "off",
+    (value) => {
+      setFavoriteNotifyEnabled(value === "on");
+    }
+  );
+
+  const permissionButton = document.getElementById("browser-notify-permission-button");
+  const permissionStatus = document.getElementById("browser-notify-permission-status");
+  function renderPermissionStatus() {
+    if (!permissionStatus) return;
+    permissionStatus.textContent = t(`settings.browserNotify.permission.${getNotificationPermission()}`);
+  }
+  renderPermissionStatus();
+  if (permissionButton) {
+    permissionButton.addEventListener("click", async () => {
+      await requestNotificationPermission();
+      renderPermissionStatus();
+    });
+  }
+
+  const hiddenSections = new Set(getHiddenSections());
+  const sectionCheckboxes = document.querySelectorAll("#dashboard-section-toggles input[type=checkbox]");
+  sectionCheckboxes.forEach((checkbox) => {
+    checkbox.checked = !hiddenSections.has(checkbox.dataset.section);
+    checkbox.addEventListener("change", () => {
+      const nowHidden = new Set(getHiddenSections());
+      if (checkbox.checked) nowHidden.delete(checkbox.dataset.section);
+      else nowHidden.add(checkbox.dataset.section);
+      setHiddenSections(Array.from(nowHidden));
+    });
   });
 
   const slider = document.getElementById("track-opacity-slider");

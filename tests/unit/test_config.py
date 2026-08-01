@@ -116,6 +116,62 @@ def test_settings_accepts_valid_notify_webhook_config(monkeypatch):
     assert settings.notify_webhook_url == "https://hooks.example.invalid/webhook"
 
 
+def test_settings_new_alert_toggles_disabled_by_default(monkeypatch):
+    _set_env(monkeypatch)
+    settings = Settings()
+    assert settings.notify_emergency_squawk_enabled is False
+    assert settings.notify_favorite_seen_enabled is False
+
+
+def test_settings_rejects_emergency_squawk_enabled_without_url(monkeypatch):
+    _set_env(monkeypatch, {"NOTIFY_EMERGENCY_SQUAWK_ENABLED": "true"})
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_rejects_favorite_seen_enabled_without_url(monkeypatch):
+    _set_env(monkeypatch, {"NOTIFY_FAVORITE_SEEN_ENABLED": "true"})
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_accepts_emergency_squawk_enabled_with_shared_url(monkeypatch):
+    _set_env(
+        monkeypatch,
+        {
+            "NOTIFY_EMERGENCY_SQUAWK_ENABLED": "true",
+            "NOTIFY_WEBHOOK_URL": "https://hooks.example.invalid/webhook",
+        },
+    )
+    settings = Settings()
+    assert settings.notify_emergency_squawk_enabled is True
+    assert settings.notify_webhook_enabled is False  # independent toggles
+
+
+def test_settings_metar_station_icao_unset_by_default(monkeypatch):
+    _set_env(monkeypatch)
+    settings = Settings()
+    assert settings.metar_station_icao is None
+
+
+def test_settings_metar_station_icao_normalizes_case(monkeypatch):
+    _set_env(monkeypatch, {"METAR_STATION_ICAO": "rjtt"})
+    settings = Settings()
+    assert settings.metar_station_icao == "RJTT"
+
+
+def test_settings_metar_station_icao_empty_string_is_unset(monkeypatch):
+    _set_env(monkeypatch, {"METAR_STATION_ICAO": ""})
+    settings = Settings()
+    assert settings.metar_station_icao is None
+
+
+def test_settings_rejects_malformed_metar_station_icao(monkeypatch):
+    _set_env(monkeypatch, {"METAR_STATION_ICAO": "toolong"})
+    with pytest.raises(ValidationError):
+        Settings()
+
+
 def test_settings_defaults_beast_host_from_aircraft_url(monkeypatch):
     _set_env(
         monkeypatch,

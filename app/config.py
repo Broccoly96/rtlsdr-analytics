@@ -7,6 +7,7 @@ confusing runtime error later (PLAN.md SS6.3).
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -48,6 +49,22 @@ class Settings(BaseSettings):
     # only enabling without a URL configured is an actual misconfiguration.
     notify_webhook_enabled: bool = False
     notify_webhook_url: str | None = None
+    # Two more independently opt-in event types (Milestone KK), sharing the
+    # same NOTIFY_WEBHOOK_URL above rather than each needing its own --
+    # checked per-poll in app/collector/service.py, never from a request
+    # path. Both default disabled, same "enabling without a URL is the only
+    # real misconfiguration" rule as notify_webhook_enabled above.
+    notify_emergency_squawk_enabled: bool = False
+    notify_favorite_seen_enabled: bool = False
+    # Optional METAR weather display (Milestone QQ) on /static/receiver.html,
+    # correlating reception range/RSSI with weather. No automatic "nearest
+    # airport" lookup -- that would need an airport-location dataset, the
+    # same licensing/effort question that already ruled out bundling
+    # aircraft-type data (see aircraft_lookup.py's docstring) -- so this is
+    # simply the ICAO station code the user configures by hand (e.g. the
+    # nearest airport to RECEIVER_LAT/RECEIVER_LON). Unset by default;
+    # unset means the feature is simply not shown, not an error.
+    metar_station_icao: str | None = None
 
     @field_validator("readsb_aircraft_url")
     @classmethod
@@ -135,10 +152,28 @@ class Settings(BaseSettings):
             raise ValueError("NOTIFY_WEBHOOK_URL must start with http:// or https://")
         return value
 
+    @field_validator("metar_station_icao", mode="before")
+    @classmethod
+    def _validate_metar_station_icao(cls, value: str | None) -> str | None:
+        if value in (None, ""):
+            return None
+        value = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{4}", value):
+            raise ValueError("METAR_STATION_ICAO must be a 4-character ICAO station code")
+        return value
+
     @model_validator(mode="after")
     def _validate_notify_webhook_enabled_has_url(self) -> Settings:
-        if self.notify_webhook_enabled and not self.notify_webhook_url:
-            raise ValueError("NOTIFY_WEBHOOK_URL must be set when NOTIFY_WEBHOOK_ENABLED is true")
+        any_enabled = (
+            self.notify_webhook_enabled
+            or self.notify_emergency_squawk_enabled
+            or self.notify_favorite_seen_enabled
+        )
+        if any_enabled and not self.notify_webhook_url:
+            raise ValueError(
+                "NOTIFY_WEBHOOK_URL must be set when NOTIFY_WEBHOOK_ENABLED, "
+                "NOTIFY_EMERGENCY_SQUAWK_ENABLED, or NOTIFY_FAVORITE_SEEN_ENABLED is true"
+            )
         return self
 
     @model_validator(mode="after")

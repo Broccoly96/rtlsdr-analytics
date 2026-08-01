@@ -1,5 +1,13 @@
 """Great-circle distance and initial bearing calculations, used to compute
 each observation's distance/bearing from the configured receiver location.
+
+Moved here from app/collector/geo.py (Milestone LL of the 2026-08 feature
+roadmap) -- pure geometry with no collector-specific dependency, and the
+sun-transit-alert feature needed it importable from the API layer
+(app/api/routers/aircraft_positions.py) too. app/db/queries/tracks.py was
+already importing this cross-package before the move (collector -> API),
+which is the "reads oddly" smell that prompted moving it now rather than
+adding a third cross-package import on top.
 """
 
 from __future__ import annotations

@@ -282,3 +282,85 @@ async def list_traffic_days(
         summaries.append(DailyTrafficSummary(**dict(row)) if row else _zero_summary(cursor))
         cursor += timedelta(days=1)
     return summaries
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodSummary:
+    start_day: date
+    end_day: date
+    days_with_data: int
+    unique_aircraft_count: int
+    message_count_total: int
+    max_concurrent_count: int
+    farthest_icao: str | None
+    farthest_distance_km: float | None
+    closest_icao: str | None
+    closest_distance_km: float | None
+    most_observed_icao: str | None
+    most_observed_count: int | None
+
+
+async def get_period_summary(pool: asyncpg.Pool, start_day: date, end_day: date) -> PeriodSummary:
+    """Monthly/yearly rollups (Milestone PP), aggregated entirely from the
+    permanent `traffic_day`/`aircraft_day` tables -- never re-scans raw
+    `observations` (purged after RAW_RETENTION_DAYS, and would be far too
+    slow over a year regardless). `unique_aircraft_count` comes from
+    `aircraft_day` (one row per icao per day it was seen) rather than
+    summing `traffic_day.unique_aircraft_count` across days, which would
+    double-count any aircraft seen on more than one day in the period."""
+    unique_count = await pool.fetchval(
+        "SELECT count(DISTINCT icao) FROM aircraft_day WHERE day >= $1 AND day <= $2",
+        start_day,
+        end_day,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    totals_row = await pool.fetchrow(
+        "SELECT count(*) AS days_with_data, "
+        "coalesce(sum(message_count_total), 0) AS message_total, "
+        "coalesce(max(max_concurrent_count), 0) AS max_concurrent "
+        "FROM traffic_day WHERE day >= $1 AND day <= $2",
+        start_day,
+        end_day,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    farthest_row = await pool.fetchrow(
+        "SELECT farthest_icao, farthest_distance_km FROM traffic_day "
+        "WHERE day >= $1 AND day <= $2 AND farthest_distance_km IS NOT NULL "
+        "ORDER BY farthest_distance_km DESC LIMIT 1",
+        start_day,
+        end_day,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    closest_row = await pool.fetchrow(
+        "SELECT closest_icao, closest_distance_km FROM traffic_day "
+        "WHERE day >= $1 AND day <= $2 AND closest_distance_km IS NOT NULL "
+        "ORDER BY closest_distance_km ASC LIMIT 1",
+        start_day,
+        end_day,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    most_observed_row = await pool.fetchrow(
+        "SELECT most_observed_icao, most_observed_count FROM traffic_day "
+        "WHERE day >= $1 AND day <= $2 AND most_observed_count IS NOT NULL "
+        "ORDER BY most_observed_count DESC LIMIT 1",
+        start_day,
+        end_day,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+
+    return PeriodSummary(
+        start_day=start_day,
+        end_day=end_day,
+        days_with_data=totals_row["days_with_data"],
+        unique_aircraft_count=unique_count or 0,
+        message_count_total=totals_row["message_total"],
+        max_concurrent_count=totals_row["max_concurrent"],
+        farthest_icao=farthest_row["farthest_icao"] if farthest_row else None,
+        farthest_distance_km=farthest_row["farthest_distance_km"] if farthest_row else None,
+        closest_icao=closest_row["closest_icao"] if closest_row else None,
+        closest_distance_km=closest_row["closest_distance_km"] if closest_row else None,
+        most_observed_icao=most_observed_row["most_observed_icao"] if most_observed_row else None,
+        most_observed_count=(
+            most_observed_row["most_observed_count"] if most_observed_row else None
+        ),
+    )

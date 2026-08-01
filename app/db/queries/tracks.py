@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import asyncpg
 
-from app.collector.geo import haversine_distance_km
+from app.domain.geo import haversine_distance_km
 
 QUERY_TIMEOUT_SECONDS = 5.0
 MAX_AIRCRAFT = 100

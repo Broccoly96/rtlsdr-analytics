@@ -21,12 +21,20 @@ class AltitudeBandResponse(BaseModel):
     color: str
 
 
+class NationalityBlockResponse(BaseModel):
+    start: int
+    end: int
+    code: str
+    name: str
+
+
 class ConfigResponse(BaseModel):
     map_style_url: str
     map_show_receiver_marker: bool
     map_receiver_marker_precision: int
     display_timezone: str
     altitude_bands: list[AltitudeBandResponse]
+    nationality_blocks: list[NationalityBlockResponse]
     version: str
     git_revision: str | None
 
@@ -97,6 +105,21 @@ class TrafficDailyResponse(BaseModel):
     daily: list[DailyTrafficSummaryResponse]
 
 
+class PeriodSummaryResponse(BaseModel):
+    start_day: date
+    end_day: date
+    days_with_data: int
+    unique_aircraft_count: int
+    message_count_total: int
+    max_concurrent_count: int
+    farthest_icao: str | None
+    farthest_distance_km: float | None
+    closest_icao: str | None
+    closest_distance_km: float | None
+    most_observed_icao: str | None
+    most_observed_count: int | None
+
+
 class RankingEntryResponse(BaseModel):
     icao: str
     callsign: str | None
@@ -118,6 +141,63 @@ class RecentAircraftResponse(BaseModel):
     callsign: str | None
     first_seen_at: datetime
     last_seen_at: datetime
+
+
+class FavoriteEntryResponse(BaseModel):
+    icao: str
+    added_at: datetime
+    last_callsign: str | None
+    last_seen_at: datetime
+
+
+class FavoritesResponse(BaseModel):
+    favorites: list[FavoriteEntryResponse]
+
+
+class ArchiveEntryResponse(BaseModel):
+    icao: str
+    callsign: str | None
+    first_seen_at: datetime
+    last_seen_at: datetime
+    days_observed: int
+    total_pass_count: int
+
+
+class ArchiveResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    sort: str
+    descending: bool
+    aircraft: list[ArchiveEntryResponse]
+
+
+class OnThisDayEntryResponse(BaseModel):
+    icao: str
+    callsign: str | None
+    pass_count: int
+
+
+class OnThisDayYearResponse(BaseModel):
+    year: int
+    aircraft: list[OnThisDayEntryResponse]
+
+
+class OnThisDayResponse(BaseModel):
+    month: int
+    day: int
+    years: list[OnThisDayYearResponse]
+
+
+class NationalityCountResponse(BaseModel):
+    code: str
+    name: str
+    aircraft_count: int
+    first_seen_at: datetime
+
+
+class NationalitySummaryResponse(BaseModel):
+    countries: list[NationalityCountResponse]
 
 
 class GeoJSONMultiLineString(BaseModel):
@@ -169,6 +249,26 @@ class AltitudeBandRangeEntryResponse(BaseModel):
 class AltitudeRangeResponse(BaseModel):
     hours: int
     bands: list[AltitudeBandRangeEntryResponse]
+
+
+class DayNightRangeResponse(BaseModel):
+    hours: int
+    day_max_distance_km: float | None
+    day_sample_count: int
+    night_max_distance_km: float | None
+    night_sample_count: int
+
+
+class WeeklyTrendEntryResponse(BaseModel):
+    week_start: date
+    message_count_total: int
+    max_concurrent_count: int
+    unique_aircraft_count: int
+
+
+class WeeklyTrendResponse(BaseModel):
+    weeks: int
+    trend: list[WeeklyTrendEntryResponse]
 
 
 class ReceptionBucketResponse(BaseModel):
@@ -308,3 +408,26 @@ class GridCellResponse(BaseModel):
 class HeatmapResponse(BaseModel):
     hours: int
     cells: list[GridCellResponse]
+
+
+class MetarResponse(BaseModel):
+    station_icao: str | None
+    raw_text: str | None
+    observed_at: datetime | None
+    temperature_c: float | None
+    wind_dir_deg: float | None
+    wind_speed_kt: float | None
+    visibility_statute_mi: float | None
+    altimeter_in_hg: float | None
+    flight_category: str | None
+
+
+class BadgeResponse(BaseModel):
+    key: str
+    icon: str
+    earned: bool
+    progress: int | None
+
+
+class BadgesResponse(BaseModel):
+    badges: list[BadgeResponse]

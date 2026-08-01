@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<script src="/static/js/theme-init.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="archive.pageTitle">機体アーカイブ - ADS-B Analytics</title>
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
+>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
+<meta name="theme-color" content="#08111f">
+</head>
+<body>
+<div class="app">
+
+  <nav class="app-nav" data-i18n-aria-label="nav.aria">
+    <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
+    <a href="/static/daily.html" data-i18n="nav.daily">今日の空</a>
+    <a href="/static/receiver.html" data-i18n="nav.receiver">受信性能</a>
+    <a href="/static/fullmap.html" data-i18n="nav.trackMap">航跡地図</a>
+    <a href="/static/globe.html" data-i18n="nav.globe">3D航跡</a>
+    <a href="/static/history.html" data-i18n="nav.history">機体履歴</a>
+    <a href="/static/rawdata.html" data-i18n="nav.rawdata">生データ</a>
+    <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
+    <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
+    <a href="/static/archive.html" aria-current="page" data-i18n="nav.archive">機体アーカイブ</a>
+    <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
+    <form class="nav-search" action="/static/archive.html" method="get" role="search">
+      <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
+    </form>
+  </nav>
+
+  <header class="app-header">
+    <div class="app-header__title">
+      <h1 data-i18n="nav.archive">機体アーカイブ</h1>
+      <span class="app-header__version" id="app-version"></span>
+    </div>
+    <div class="app-header__period" role="group" data-i18n-aria-label="archive.filterGroupLabel">
+      <input
+        type="text"
+        id="archive-search"
+        class="filter-input"
+        placeholder="ICAO / コールサイン"
+        data-i18n-placeholder="archive.searchPlaceholder"
+      >
+      <select id="archive-sort" class="filter-input">
+        <option value="last_seen_at" data-i18n="archive.sort.lastSeen">最終観測</option>
+        <option value="first_seen_at" data-i18n="archive.sort.firstSeen">初観測</option>
+        <option value="days_observed" data-i18n="archive.sort.daysObserved">観測日数</option>
+        <option value="total_pass_count" data-i18n="archive.sort.totalPasses">総パス数</option>
+        <option value="icao" data-i18n="archive.sort.icao">ICAO</option>
+      </select>
+    </div>
+  </header>
+
+  <section class="main-area" style="grid-template-columns: 1fr;">
+    <div class="panel">
+      <table class="ranking-table" id="archive-table">
+        <thead>
+          <tr>
+            <th scope="col" data-i18n="common.aircraft">機体</th>
+            <th scope="col" data-i18n="archive.col.icao">ICAO</th>
+            <th scope="col" data-i18n="archive.col.firstSeen">初観測</th>
+            <th scope="col" data-i18n="archive.col.lastSeen">最終観測</th>
+            <th scope="col" data-i18n="history.daysObserved">観測日数</th>
+            <th scope="col" data-i18n="history.totalPasses">総パス数</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="panel__empty" id="archive-empty" hidden data-i18n="common.noData">データがありません</p>
+      <div class="app-header__period" role="group" style="margin-top: 12px;">
+        <button type="button" id="archive-prev" class="period-btn" data-i18n="archive.prev">前へ</button>
+        <span id="archive-page-info" class="panel__empty" style="padding: 0 8px;"></span>
+        <button type="button" id="archive-next" class="period-btn" data-i18n="archive.next">次へ</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="app-footer">
+    <span>ADS-B Analytics</span>
+  </footer>
+
+</div>
+
+<script type="module" src="/static/js/archive.js"></script>
+</body>
+</html>

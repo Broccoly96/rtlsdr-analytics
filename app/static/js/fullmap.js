@@ -13,6 +13,13 @@
 import { api } from "./api.js";
 import { renderAltitudeLegend } from "./altitude-legend.js";
 import { registerServiceWorker } from "./pwa.js";
+import { t, applyStaticTranslations } from "./i18n.js";
+import { setNationalityBlocks } from "./nationality.js";
+import { updateEmergencySquawkBanner } from "./squawk-alert.js";
+import { checkTransitAlerts, resetTransitAlerts } from "./transit-alert.js";
+import { checkNewArrivals, resetKnownAircraft } from "./speech.js";
+import { loadFavorites } from "./favorites.js";
+import { checkFavoriteArrivals, resetFavoriteArrivals } from "./browser-notify.js";
 
 const HISTORY_AUTO_REFRESH_INTERVAL_MS = 30000;
 const DEFAULT_CONFIG = {
@@ -51,7 +58,7 @@ function showMapLoadError(err) {
   const errorEl = document.getElementById("map-error");
   if (errorEl) {
     const detail = err && err.message ? err.message : String(err);
-    errorEl.textContent = `地図モジュールの読み込みに失敗しました: ${detail}`;
+    errorEl.textContent = t("map.moduleLoadFailed", { detail });
     errorEl.hidden = false;
   }
 }
@@ -60,11 +67,13 @@ async function loadMapModule() {
   try {
     const res = await fetch(new URL("./map.js", import.meta.url));
     if (!res.ok) {
-      showMapLoadError(new Error(`map.jsの取得に失敗しました (HTTP ${res.status})`));
+      showMapLoadError(new Error(t("map.jsFetchFailed", { status: res.status })));
       return null;
     }
   } catch (err) {
-    showMapLoadError(new Error(`map.jsへのネットワーク接続に失敗しました: ${err && err.message ? err.message : err}`));
+    showMapLoadError(
+      new Error(t("map.jsNetworkFailed", { detail: err && err.message ? err.message : err }))
+    );
     return null;
   }
 
@@ -139,6 +148,10 @@ function connectBroadcast() {
     mapController.updateLiveTracks(positions);
     mapController.pruneLiveTracks(seenIcaos);
     applyLivePositions();
+    updateEmergencySquawkBanner(positions);
+    checkTransitAlerts(positions);
+    checkNewArrivals(positions);
+    checkFavoriteArrivals(positions);
   });
   socket.addEventListener("error", () => console.error("fullmap: live connection error"));
 }
@@ -152,6 +165,10 @@ function teardownLiveView() {
   latestPositions.clear();
   mapController.clearLivePositions();
   mapController.clearLiveTracks();
+  updateEmergencySquawkBanner([]);
+  resetTransitAlerts();
+  resetKnownAircraft();
+  resetFavoriteArrivals();
 }
 
 function sendFastMode() {
@@ -266,7 +283,7 @@ async function refreshHistory() {
     console.error("tracks refresh failed", err);
     const errorEl = document.getElementById("map-error");
     if (errorEl) {
-      errorEl.textContent = "航跡データの取得に失敗しました。";
+      errorEl.textContent = t("map.tracksFetchFailed");
       errorEl.hidden = false;
     }
   }
@@ -342,9 +359,7 @@ function wireIsolateExit() {
 }
 
 function wireModeButtons() {
-  const liveButton = document.querySelector(
-    '.app-header__period[aria-label="表示モード"] button[data-mode="live"]'
-  );
+  const liveButton = document.querySelector("#mode-switch-group button[data-mode=\"live\"]");
   const slider = document.getElementById("history-hours-slider");
   const valueLabel = document.getElementById("history-hours-value");
   if (!liveButton || !slider || !valueLabel) return;
@@ -374,7 +389,9 @@ async function main() {
     config = DEFAULT_CONFIG;
   }
 
+  applyStaticTranslations();
   renderVersion(config);
+  setNationalityBlocks(config.nationality_blocks);
   registerServiceWorker();
   renderAltitudeLegend(document.getElementById("altitude-legend"), config.altitude_bands);
 
@@ -386,6 +403,7 @@ async function main() {
     mapController.setLiveFeatureShiftClickHandler(toggleIsolate);
   }
 
+  await loadFavorites();
   await refreshPickerFromRecent();
   wirePicker();
   wireFastModeToggle();

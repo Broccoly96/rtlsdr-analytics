@@ -11,6 +11,7 @@ import httpx
 from app.collector.service import CollectorService
 from app.config import Settings
 from app.db.postgres_store import PostgresStore
+from app.notify import send_emergency_squawk_notification, send_favorite_seen_notification
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -18,6 +19,13 @@ logger = logging.getLogger(__name__)
 
 async def _run(settings: Settings) -> None:
     store = await PostgresStore.connect(settings.database_url)
+
+    async def notify_emergency_squawk(icao: str, squawk: str, callsign: str | None) -> None:
+        await send_emergency_squawk_notification(settings, icao, squawk, callsign=callsign)
+
+    async def notify_favorite_seen(icao: str, callsign: str | None) -> None:
+        await send_favorite_seen_notification(settings, icao, callsign=callsign)
+
     try:
         async with httpx.AsyncClient() as client:
             service = CollectorService(
@@ -28,6 +36,10 @@ async def _run(settings: Settings) -> None:
                 receiver_lon=settings.receiver_lon,
                 poll_interval_seconds=settings.poll_interval_seconds,
                 track_sample_seconds=settings.track_sample_seconds,
+                emergency_squawk_enabled=settings.notify_emergency_squawk_enabled,
+                favorite_seen_enabled=settings.notify_favorite_seen_enabled,
+                notify_emergency_squawk=notify_emergency_squawk,
+                notify_favorite_seen=notify_favorite_seen,
             )
 
             loop = asyncio.get_running_loop()

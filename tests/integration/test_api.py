@@ -258,6 +258,46 @@ async def test_traffic_daily_includes_seeded_past_day_not_today(
     assert today_in_tz("Asia/Tokyo").isoformat() not in by_day
 
 
+# --- traffic/monthly, traffic/yearly (Milestone PP) ------------------------
+
+
+async def test_traffic_monthly_empty_month_is_zeroed(client: AsyncClient) -> None:
+    response = await client.get("/api/traffic/monthly", params={"year": 2020, "month": 1})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["days_with_data"] == 0
+    assert body["unique_aircraft_count"] == 0
+    assert body["message_count_total"] == 0
+
+
+async def test_traffic_monthly_aggregates_seeded_days(postgres_url, client: AsyncClient) -> None:
+    await _insert_traffic_day(postgres_url, date(2020, 1, 5), most_observed_count=10)
+    await _insert_traffic_day(postgres_url, date(2020, 1, 15), most_observed_count=20)
+
+    response = await client.get("/api/traffic/monthly", params={"year": 2020, "month": 1})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["days_with_data"] == 2
+    assert body["message_count_total"] == 999 * 2
+    assert body["most_observed_count"] == 20  # the larger of the two days wins
+
+
+async def test_traffic_monthly_future_month_rejected(client: AsyncClient) -> None:
+    response = await client.get("/api/traffic/monthly", params={"year": 2100, "month": 1})
+    assert response.status_code == 422
+
+
+async def test_traffic_yearly_aggregates_seeded_days(postgres_url, client: AsyncClient) -> None:
+    await _insert_traffic_day(postgres_url, date(2020, 3, 1), most_observed_count=5)
+    await _insert_traffic_day(postgres_url, date(2020, 9, 1), most_observed_count=8)
+
+    response = await client.get("/api/traffic/yearly", params={"year": 2020})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["days_with_data"] == 2
+    assert body["message_count_total"] == 999 * 2
+
+
 async def test_traffic_daily_summary_today_is_computed_live(
     postgres_url, client: AsyncClient
 ) -> None:
@@ -629,6 +669,26 @@ async def test_recent_aircraft_bounds_rejected(client: AsyncClient) -> None:
     assert (await client.get("/api/aircraft/recent", params={"offset": -1})).status_code == 422
 
 
+async def test_nationalities_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/nationalities")
+    assert response.status_code == 200
+    assert response.json() == {"countries": []}
+
+
+async def test_nationalities_groups_seeded_aircraft(postgres_url, client: AsyncClient) -> None:
+    # _seed_fresh_success upserts "aaaaaa" (0xAAAAAA, inside the US block)
+    # and "bbbbbb" (0xBBBBBB, outside every known block) -- so only the
+    # matched one should surface, proving unmatched ICAOs are silently
+    # excluded rather than erroring.
+    await _seed_fresh_success(postgres_url)
+    response = await client.get("/api/aircraft/nationalities")
+    assert response.status_code == 200
+    countries = response.json()["countries"]
+    assert len(countries) == 1
+    assert countries[0]["code"] == "US"
+    assert countries[0]["aircraft_count"] == 1
+
+
 async def test_recent_aircraft_returns_seeded_row(postgres_url, client: AsyncClient) -> None:
     await _seed_fresh_success(postgres_url)
     response = await client.get("/api/aircraft/recent")
@@ -679,6 +739,7 @@ async def test_receiver_bounds_rejected(client: AsyncClient) -> None:
         "/api/receiver/altitude-range",
         "/api/receiver/reception",
         "/api/receiver/rssi-by-distance",
+        "/api/receiver/day-night-range",
     ):
         assert (await client.get(path, params={"hours": 0})).status_code == 422
         assert (await client.get(path, params={"hours": 721})).status_code == 422
@@ -803,6 +864,52 @@ async def test_receiver_reception_with_seeded_minute(postgres_url, client: Async
     matching = [b for b in body["buckets"] if b["message_count"] == 40]
     assert len(matching) == 1
     assert matching[0]["position_rate"] == 0.5
+
+
+async def test_receiver_day_night_range_counts_add_up(postgres_url, client: AsyncClient) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10000.0,
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=50.0,
+                bearing_deg=90.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/receiver/day-night-range", params={"hours": 24})
+    assert response.status_code == 200
+    body = response.json()
+    # Exactly one of day/night must claim the single seeded observation,
+    # regardless of what time of day the test happens to run.
+    assert body["day_sample_count"] + body["night_sample_count"] == 1
+
+
+async def test_receiver_weekly_trend_aggregates_traffic_day(
+    postgres_url, client: AsyncClient
+) -> None:
+    await _insert_traffic_day(postgres_url, date.today(), most_observed_count=5)
+    response = await client.get("/api/receiver/weekly-trend", params={"weeks": 4})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["weeks"] == 4
+    total_messages = sum(w["message_count_total"] for w in body["trend"])
+    assert total_messages >= 999
 
 
 # --- distribution ------------------------------------------------------------
@@ -1082,6 +1189,30 @@ async def test_traffic_csv_returns_csv_content(client: AsyncClient) -> None:
     assert len(lines) == 1 + 60  # header + 60 zero-filled minute buckets
 
 
+async def test_rankings_csv_returns_csv_content(client: AsyncClient) -> None:
+    response = await client.get("/api/rankings.csv", params={"hours": 24})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    lines = response.text.strip().splitlines()
+    assert lines[0] == "category,icao,callsign,distance_km,bearing_deg,altitude_ft,observed_at"
+
+
+async def test_frequent_csv_returns_csv_content(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/frequent.csv", params={"days": 30})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    lines = response.text.strip().splitlines()
+    assert lines[0] == "icao,last_callsign,days_observed,total_pass_count"
+
+
+async def test_bearing_range_csv_returns_csv_content(client: AsyncClient) -> None:
+    response = await client.get("/api/receiver/bearing-range.csv", params={"hours": 24})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    lines = response.text.strip().splitlines()
+    assert lines[0] == "sector_center_deg,max_distance_km,sample_count"
+
+
 # --- heatmap ------------------------------------------------------------------
 
 
@@ -1346,6 +1477,61 @@ async def test_aircraft_positions_with_seeded_data(postgres_url, client: AsyncCl
     assert body["segments"][1][0]["altitude_ft"] == 12000.0
 
 
+# --- GPX/KML track export (Milestone PP) -----------------------------------
+
+
+async def test_aircraft_positions_gpx_invalid_format_is_422(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/not-an-icao/positions.gpx")
+    assert response.status_code == 422
+
+
+async def test_aircraft_positions_gpx_empty_track_is_valid_xml(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/aaaaaa/positions.gpx")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/gpx+xml")
+    assert "<gpx" in response.text
+    assert "<trkseg>" not in response.text
+
+
+async def test_aircraft_positions_gpx_with_seeded_data(postgres_url, client: AsyncClient) -> None:
+    now = datetime.now(UTC)
+    store = await PostgresStore.connect(postgres_url)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "AAA001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="AAA001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10000.0,
+                ground_speed_kt=300.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-20.0,
+                distance_km=10.0,
+                bearing_deg=45.0,
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    gpx_response = await client.get("/api/aircraft/aaaaaa/positions.gpx", params={"hours": 1})
+    assert gpx_response.status_code == 200
+    assert "<trkpt" in gpx_response.text
+    assert 'lat="35.0"' in gpx_response.text
+    assert "AAA001" in gpx_response.text
+
+    kml_response = await client.get("/api/aircraft/aaaaaa/positions.kml", params={"hours": 1})
+    assert kml_response.status_code == 200
+    assert kml_response.headers["content-type"].startswith("application/vnd.google-earth.kml+xml")
+    assert "<coordinates>" in kml_response.text
+    assert "139.0,35.0" in kml_response.text
+
+
 async def test_aircraft_frequent_empty(client: AsyncClient) -> None:
     response = await client.get("/api/aircraft/frequent")
     assert response.status_code == 200
@@ -1389,6 +1575,177 @@ async def test_aircraft_frequent_orders_by_days_observed(postgres_url, client: A
     assert body["aircraft"][1]["days_observed"] == 1
 
 
+# --- aircraft archive -------------------------------------------------
+
+
+async def test_archive_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/archive")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 0
+    assert body["aircraft"] == []
+
+
+async def test_archive_returns_seeded_rows_with_search_filter(
+    postgres_url, client: AsyncClient
+) -> None:
+    await _seed_fresh_success(postgres_url)
+    response = await client.get("/api/aircraft/archive")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+
+    filtered = await client.get("/api/aircraft/archive", params={"q": "TEST001"})
+    filtered_body = filtered.json()
+    assert filtered_body["total"] == 1
+    assert filtered_body["aircraft"][0]["icao"] == "aaaaaa"
+
+
+async def test_archive_invalid_sort_falls_back_to_default(
+    postgres_url, client: AsyncClient
+) -> None:
+    await _seed_fresh_success(postgres_url)
+    response = await client.get("/api/aircraft/archive", params={"sort": "'; DROP TABLE aircraft"})
+    assert response.status_code == 200
+    assert response.json()["sort"] == "last_seen_at"
+
+
+# --- on-this-day (Milestone QQ) --------------------------------------------
+
+
+async def test_on_this_day_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/aircraft/on-this-day")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["years"] == []
+
+
+async def test_on_this_day_finds_past_year_matches(postgres_url, client: AsyncClient) -> None:
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    today = _datetime.now(_UTC).date()
+    last_year_same_day = today.replace(year=today.year - 1)
+
+    conn = await asyncpg.connect(postgres_url)
+    try:
+        await conn.execute(
+            "INSERT INTO aircraft (icao, first_seen_at, last_seen_at, last_callsign) "
+            "VALUES ($1, now(), now(), $2)",
+            "aaaaaa",
+            "TEST001",
+        )
+        await conn.execute(
+            "INSERT INTO aircraft_day (icao, day, pass_count, observation_count) "
+            "VALUES ($1, $2, 3, 10)",
+            "aaaaaa",
+            last_year_same_day,
+        )
+    finally:
+        await conn.close()
+
+    response = await client.get("/api/aircraft/on-this-day")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["years"]) == 1
+    assert body["years"][0]["year"] == last_year_same_day.year
+    assert body["years"][0]["aircraft"][0]["icao"] == "aaaaaa"
+    assert body["years"][0]["aircraft"][0]["pass_count"] == 3
+
+
+# --- favorites ----------------------------------------------------------
+
+
+async def test_favorites_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/favorites")
+    assert response.status_code == 200
+    assert response.json() == {"favorites": []}
+
+
+async def test_favorite_unknown_aircraft_is_404(client: AsyncClient) -> None:
+    response = await client.post("/api/favorites/aaaaaa")
+    assert response.status_code == 404
+
+
+async def test_favorite_invalid_icao_is_422(client: AsyncClient) -> None:
+    assert (await client.post("/api/favorites/not-hex")).status_code == 422
+    assert (await client.delete("/api/favorites/not-hex")).status_code == 422
+
+
+async def test_favorite_add_list_remove_roundtrip(
+    postgres_url, client: AsyncClient
+) -> None:
+    await _seed_fresh_success(postgres_url)
+
+    post_response = await client.post("/api/favorites/aaaaaa")
+    assert post_response.status_code == 201
+    body = post_response.json()
+    assert body["icao"] == "aaaaaa"
+    assert body["last_callsign"] == "TEST001"
+
+    list_response = await client.get("/api/favorites")
+    assert list_response.status_code == 200
+    favorites = list_response.json()["favorites"]
+    assert len(favorites) == 1
+    assert favorites[0]["icao"] == "aaaaaa"
+
+    delete_response = await client.delete("/api/favorites/aaaaaa")
+    assert delete_response.status_code == 204
+
+    list_response_after = await client.get("/api/favorites")
+    assert list_response_after.json() == {"favorites": []}
+
+
+async def test_favorite_post_is_idempotent(postgres_url, client: AsyncClient) -> None:
+    await _seed_fresh_success(postgres_url)
+    first = await client.post("/api/favorites/aaaaaa")
+    second = await client.post("/api/favorites/aaaaaa")
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["added_at"] == second.json()["added_at"]
+    favorites = (await client.get("/api/favorites")).json()["favorites"]
+    assert len(favorites) == 1
+
+
+async def test_favorite_delete_is_idempotent(client: AsyncClient) -> None:
+    first = await client.delete("/api/favorites/aaaaaa")
+    second = await client.delete("/api/favorites/aaaaaa")
+    assert first.status_code == 204
+    assert second.status_code == 204
+
+
+# --- badges ---------------------------------------------------------------
+
+
+async def test_badges_empty_db_none_earned(client: AsyncClient) -> None:
+    response = await client.get("/api/badges")
+    assert response.status_code == 200
+    badges = response.json()["badges"]
+    assert len(badges) > 0
+    assert all(not b["earned"] for b in badges)
+
+
+async def test_badges_first_contact_earned_after_seeding(
+    postgres_url, client: AsyncClient
+) -> None:
+    await _seed_fresh_success(postgres_url)
+    response = await client.get("/api/badges")
+    badges = {b["key"]: b for b in response.json()["badges"]}
+    assert badges["first_contact"]["earned"] is True
+    assert badges["first_contact"]["progress"] == 2  # aaaaaa + bbbbbb
+
+
+# --- weather/metar (Milestone QQ) -------------------------------------------
+
+
+async def test_metar_unconfigured_returns_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/weather/metar")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["station_icao"] is None
+    assert body["raw_text"] is None
+
+
 # --- config -----------------------------------------------------------------
 
 
@@ -1400,6 +1757,7 @@ async def test_config_exposes_no_secrets(client: AsyncClient) -> None:
     assert body["display_timezone"] == "Asia/Tokyo"
     assert len(body["altitude_bands"]) == 5
     assert body["altitude_bands"][-1]["max_ft"] is None
+    assert len(body["nationality_blocks"]) > 0
     assert body["version"] not in (None, "", "unknown")
     assert "database_url" not in body
     assert "readsb_aircraft_url" not in body
@@ -1430,6 +1788,8 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/receiver/altitude-range",
         "/api/receiver/reception",
         "/api/receiver/rssi-by-distance",
+        "/api/receiver/day-night-range",
+        "/api/receiver/weekly-trend",
         "/api/distribution/hour-of-day",
         "/api/distribution/altitude",
         "/api/distribution/speed",
@@ -1437,8 +1797,17 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/heatmap",
         "/api/traffic/daily",
         "/api/traffic/daily-summary",
+        "/api/traffic/monthly",
+        "/api/traffic/yearly",
         "/api/aircraft/{icao}/history",
         "/api/aircraft/frequent",
+        "/api/aircraft/nationalities",
+        "/api/aircraft/archive",
+        "/api/aircraft/on-this-day",
+        "/api/favorites",
+        "/api/favorites/{icao}",
+        "/api/badges",
+        "/api/weather/metar",
     }
 
 

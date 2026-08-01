@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<script src="/static/js/theme-init.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>3D航跡 - ADS-B Analytics</title>
+<title data-i18n="globe.pageTitle">3D航跡 - ADS-B Analytics</title>
 <!--
   script-src includes 'unsafe-eval' on this page ONLY (same precedent as
   receiver.html's echarts-gl chart): CesiumJS's own top-level script
@@ -29,26 +30,32 @@
 <body>
 <div class="app">
 
-  <nav class="app-nav" aria-label="ページ">
-    <a href="/">ダッシュボード</a>
-    <a href="/static/daily.html">今日の空</a>
-    <a href="/static/receiver.html">受信性能</a>
-    <a href="/static/fullmap.html">航跡地図</a>
-    <a href="/static/globe.html" aria-current="page">3D航跡</a>
-    <a href="/static/history.html">機体履歴</a>
-    <a href="/static/rawdata.html">生データ</a>
-    <a href="/static/settings.html">設定</a>
+  <nav class="app-nav" data-i18n-aria-label="nav.aria">
+    <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
+    <a href="/static/daily.html" data-i18n="nav.daily">今日の空</a>
+    <a href="/static/receiver.html" data-i18n="nav.receiver">受信性能</a>
+    <a href="/static/fullmap.html" data-i18n="nav.trackMap">航跡地図</a>
+    <a href="/static/globe.html" aria-current="page" data-i18n="nav.globe">3D航跡</a>
+    <a href="/static/history.html" data-i18n="nav.history">機体履歴</a>
+    <a href="/static/rawdata.html" data-i18n="nav.rawdata">生データ</a>
+    <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
+    <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
+    <a href="/static/archive.html" data-i18n="nav.archive">機体アーカイブ</a>
+    <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
+    <form class="nav-search" action="/static/archive.html" method="get" role="search">
+      <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
+    </form>
   </nav>
 
   <header class="app-header">
     <div class="app-header__title">
-      <h1>3D航跡</h1>
+      <h1 data-i18n="nav.globe">3D航跡</h1>
       <span class="app-header__version" id="app-version"></span>
     </div>
-    <div class="app-header__period" role="group" aria-label="表示モード">
-      <button type="button" data-mode="live" class="period-btn" aria-pressed="true">ライブ</button>
+    <div class="app-header__period" role="group" id="mode-switch-group" data-i18n-aria-label="trackControls.modeGroupLabel">
+      <button type="button" data-mode="live" class="period-btn" aria-pressed="true" data-i18n="trackControls.live">ライブ</button>
       <div class="globe-history-slider">
-        <label for="history-hours-slider">過去</label>
+        <label for="history-hours-slider" data-i18n="trackControls.historyLabel">過去</label>
         <input
           type="range"
           id="history-hours-slider"
@@ -61,28 +68,30 @@
         <span id="history-hours-value">6.0H</span>
       </div>
     </div>
-    <div class="app-header__period" role="group" aria-label="表示機体" id="live-controls">
+    <div class="app-header__period" role="group" aria-label="表示機体" id="live-controls" data-i18n-aria-label="trackControls.aircraftGroupLabel">
       <div class="globe-picker-wrapper">
-        <button type="button" id="aircraft-picker-toggle" class="period-btn" aria-expanded="false">
+        <button type="button" id="aircraft-picker-toggle" class="period-btn" aria-expanded="false" data-i18n="trackControls.aircraftPicker">
           機体選択 ▾
         </button>
         <div class="globe-picker" id="aircraft-picker" hidden>
           <div class="globe-picker__header">
-            <button type="button" id="aircraft-picker-all" class="globe-picker__link">すべて表示</button>
-            <button type="button" id="aircraft-picker-none" class="globe-picker__link">すべて非表示</button>
+            <button type="button" id="aircraft-picker-all" class="globe-picker__link" data-i18n="trackControls.showAll">すべて表示</button>
+            <button type="button" id="aircraft-picker-none" class="globe-picker__link" data-i18n="trackControls.hideAll">すべて非表示</button>
           </div>
           <div class="globe-picker__list" id="aircraft-picker-list"></div>
         </div>
       </div>
-      <button type="button" id="aircraft-refresh" class="period-btn">一覧更新</button>
-      <button type="button" id="follow-toggle" class="period-btn" aria-pressed="false">カメラ自動追従</button>
-      <button type="button" id="fast-mode-toggle" class="period-btn" aria-pressed="false">更新頻度: 1秒</button>
-      <button type="button" id="exit-isolate" class="period-btn" hidden>全機体表示に戻す</button>
+      <button type="button" id="aircraft-refresh" class="period-btn" data-i18n="trackControls.refreshList">一覧更新</button>
+      <button type="button" id="follow-toggle" class="period-btn" aria-pressed="false" data-i18n="globe.followToggle">カメラ自動追従</button>
+      <button type="button" id="fast-mode-toggle" class="period-btn" aria-pressed="false" data-i18n="trackControls.fastMode">更新頻度: 1秒</button>
+      <button type="button" id="exit-isolate" class="period-btn" hidden data-i18n="trackControls.exitIsolate">全機体表示に戻す</button>
     </div>
   </header>
 
+  <div id="emergency-squawk-banner" class="emergency-squawk-banner" role="alert" hidden></div>
+
   <p class="panel__empty" style="padding: 0;">
-    衛星画像(<a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>,
+    <span data-i18n="globe.description.pre">衛星画像(</span><a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a><span data-i18n="globe.description.post">,
     Maxar, Earthstar Geographics, GIS User Community)を背景に、現在受信中の全機体を3D機体モデルで
     高度別に色分けしてライブ表示します(機首方向・傾きも可能な範囲で反映)。各機体は過去の軌跡(実線)と
     ライブ延伸中の軌跡(透明度は設定タブで変更可)を重ねて表示します。機体をクリックすると詳細サイド
@@ -90,7 +99,7 @@
     「全機体表示に戻す」で解除)。「更新頻度: 1秒」でライブ更新をより高頻度に。
     スライダー(15分単位、最大24時間)で過去の航跡のみを全機体分表示し(3D機体モデルは表示されません)、
     航跡にカーソルを合わせると機体情報がポップアップします。ドラッグで回転、スクロールでズームできます。
-    データはサーバーに保存されません。
+    データはサーバーに保存されません。</span>
   </p>
 
   <section class="main-area" style="grid-template-columns: 1fr;">

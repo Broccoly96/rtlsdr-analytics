@@ -5,17 +5,12 @@
 import { api } from "./api.js";
 import { createAircraftInfoTrigger, isAnyAircraftInfoPanelOpen } from "./aircraftinfo.js";
 import { formatDistance, formatAltitude } from "./units.js";
+import { t, currentLocale } from "./i18n.js";
 
 // Matches the collector's default POLL_INTERVAL_SECONDS (5s) -- the
 // active-aircraft count can't actually change any faster than that, so
 // polling faster than this would just add load without fresher data.
 const REFRESH_INTERVAL_MS = 5000;
-const INGESTION_STATE_LABELS = {
-  ok: "正常",
-  stale: "データ取得停止中",
-  error: "取得エラー",
-  no_data: "データなし",
-};
 
 let displayTimezone = "UTC";
 
@@ -23,10 +18,17 @@ function setTimezone(tz) {
   displayTimezone = tz;
 }
 
-function formatTime(isoString) {
+// Canonical formatTime -- this used to be independently copy-pasted in
+// daily.js/globe.js/map.js (each hardcoding toLocaleString("ja-JP", ...));
+// consolidated here (already the one file history.js imported it from)
+// so the locale becomes a single language-aware spot instead of four.
+// hour12 stays false regardless of language -- 24h time is this app's
+// existing convention either way, not something the language setting
+// should change.
+export function formatTime(isoString) {
   if (!isoString) return "--";
   try {
-    return new Date(isoString).toLocaleString("ja-JP", {
+    return new Date(isoString).toLocaleString(currentLocale(), {
       timeZone: displayTimezone,
       hour12: false,
     });
@@ -46,7 +48,7 @@ function renderIngestionBadge(status) {
   badge.dataset.state = status.ingestion_state;
   const textEl = badge.querySelector(".status-text");
   if (textEl) {
-    textEl.textContent = INGESTION_STATE_LABELS[status.ingestion_state] || status.ingestion_state;
+    textEl.textContent = t(`ui.ingestionState.${status.ingestion_state}`);
   }
 }
 
@@ -64,7 +66,7 @@ function renderStatusCards(status) {
   const footer = document.getElementById("footer-last-fetch");
   if (footer) {
     footer.textContent = status.last_ingestion_at
-      ? `最終取得: ${formatTime(status.last_ingestion_at)}`
+      ? t("ui.footerLastFetch", { time: formatTime(status.last_ingestion_at) })
       : "";
   }
 }
@@ -147,7 +149,7 @@ async function refreshStatusAndRankings() {
     if (badge) {
       badge.dataset.state = "error";
       const textEl = badge.querySelector(".status-text");
-      if (textEl) textEl.textContent = "APIエラー";
+      if (textEl) textEl.textContent = t("ui.apiError");
     }
   }
 

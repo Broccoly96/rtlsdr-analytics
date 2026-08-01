@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<script src="/static/js/theme-init.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ADS-B Analytics</title>
+<title data-i18n="index.pageTitle">ADS-B Analytics</title>
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
@@ -17,15 +18,21 @@
 <body>
 <div class="app">
 
-  <nav class="app-nav" aria-label="ページ">
-    <a href="/" aria-current="page">ダッシュボード</a>
-    <a href="/static/daily.html">今日の空</a>
-    <a href="/static/receiver.html">受信性能</a>
-    <a href="/static/fullmap.html">航跡地図</a>
-    <a href="/static/globe.html">3D航跡</a>
-    <a href="/static/history.html">機体履歴</a>
-    <a href="/static/rawdata.html">生データ</a>
-    <a href="/static/settings.html">設定</a>
+  <nav class="app-nav" data-i18n-aria-label="nav.aria">
+    <a href="/" aria-current="page" data-i18n="nav.dashboard">ダッシュボード</a>
+    <a href="/static/daily.html" data-i18n="nav.daily">今日の空</a>
+    <a href="/static/receiver.html" data-i18n="nav.receiver">受信性能</a>
+    <a href="/static/fullmap.html" data-i18n="nav.trackMap">航跡地図</a>
+    <a href="/static/globe.html" data-i18n="nav.globe">3D航跡</a>
+    <a href="/static/history.html" data-i18n="nav.history">機体履歴</a>
+    <a href="/static/rawdata.html" data-i18n="nav.rawdata">生データ</a>
+    <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
+    <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
+    <a href="/static/archive.html" data-i18n="nav.archive">機体アーカイブ</a>
+    <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
+    <form class="nav-search" action="/static/archive.html" method="get" role="search">
+      <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
+    </form>
   </nav>
 
   <header class="app-header">
@@ -35,62 +42,62 @@
     </div>
     <div class="app-header__status" id="ingestion-badge" role="status" aria-live="polite">
       <span class="status-dot" aria-hidden="true"></span>
-      <span class="status-text">読み込み中…</span>
+      <span class="status-text" data-i18n="index.loading">読み込み中…</span>
     </div>
     <div class="app-header__updated">
-      最終更新: <time id="last-update">--</time>
+      <span data-i18n="index.lastUpdated">最終更新:</span> <time id="last-update">--</time>
     </div>
-    <div class="app-header__period" role="group" aria-label="航跡表示期間">
+    <div class="app-header__period" role="group" data-i18n-aria-label="index.trackPeriod">
       <button type="button" data-hours="1" class="period-btn">1h</button>
       <button type="button" data-hours="6" class="period-btn" aria-pressed="true">6h</button>
       <button type="button" data-hours="24" class="period-btn">24h</button>
     </div>
   </header>
 
-  <section class="status-cards" aria-label="現在の状況">
+  <section class="status-cards" data-i18n-aria-label="index.currentStatus">
     <div class="card">
-      <div class="card__label">現在受信中</div>
+      <div class="card__label" data-i18n="index.card.active">現在受信中</div>
       <div class="card__value" id="card-active">--</div>
     </div>
     <div class="card">
-      <div class="card__label">位置取得中</div>
+      <div class="card__label" data-i18n="index.card.position">位置取得中</div>
       <div class="card__value" id="card-position">--</div>
     </div>
     <div class="card">
-      <div class="card__label">24時間ユニーク機数</div>
+      <div class="card__label" data-i18n="index.card.unique24h">24時間ユニーク機数</div>
       <div class="card__value" id="card-unique">--</div>
     </div>
     <div class="card">
-      <div class="card__label">最終取得成功</div>
+      <div class="card__label" data-i18n="index.card.lastFetch">最終取得成功</div>
       <div class="card__value" id="card-last-fetch">--</div>
     </div>
   </section>
 
   <section class="main-area">
-    <div class="panel panel--map">
+    <div class="panel panel--map" data-dashboard-section="map">
       <div class="panel__header" id="map-heading">
-        航跡地図
-        <div class="heatmap-controls" role="group" aria-label="ヒートマップ設定">
-          <button type="button" id="heatmap-toggle" class="period-btn" aria-pressed="false">ヒートマップ</button>
-          <select id="heatmap-altitude-band" aria-label="高度帯フィルタ"></select>
-          <select id="heatmap-hour" aria-label="時間帯フィルタ"></select>
-          <select id="heatmap-dow" aria-label="曜日フィルタ"></select>
+        <span data-i18n="index.trackMapHeading">航跡地図</span>
+        <div class="heatmap-controls" data-i18n-aria-label="index.heatmapSettings">
+          <button type="button" id="heatmap-toggle" class="period-btn" aria-pressed="false" data-i18n="index.heatmap">ヒートマップ</button>
+          <select id="heatmap-altitude-band" data-i18n-aria-label="index.heatmapAltitudeFilter"></select>
+          <select id="heatmap-hour" data-i18n-aria-label="index.heatmapHourFilter"></select>
+          <select id="heatmap-dow" data-i18n-aria-label="index.heatmapDowFilter"></select>
         </div>
       </div>
       <div id="map" class="map-container" role="img" aria-labelledby="map-heading"></div>
       <div id="altitude-legend" class="altitude-legend"></div>
       <div id="map-error" class="panel__error" hidden></div>
     </div>
-    <div class="panel panel--chart">
+    <div class="panel panel--chart" data-dashboard-section="traffic">
       <div class="panel__header">
-        <span id="chart-heading">交通量</span>
+        <span id="chart-heading" data-i18n="index.trafficHeading">交通量</span>
         <div class="chart-controls">
-          <div class="granularity-controls" role="group" aria-label="表示粒度">
-            <button type="button" data-granularity="day" class="period-btn granularity-btn" aria-pressed="true">日</button>
-            <button type="button" data-granularity="week" class="period-btn granularity-btn" aria-pressed="false">週</button>
-            <button type="button" data-granularity="month" class="period-btn granularity-btn" aria-pressed="false">月</button>
+          <div class="granularity-controls" data-i18n-aria-label="index.granularity">
+            <button type="button" data-granularity="day" class="period-btn granularity-btn" aria-pressed="true" data-i18n="index.granularity.day">日</button>
+            <button type="button" data-granularity="week" class="period-btn granularity-btn" aria-pressed="false" data-i18n="index.granularity.week">週</button>
+            <button type="button" data-granularity="month" class="period-btn granularity-btn" aria-pressed="false" data-i18n="index.granularity.month">月</button>
           </div>
-          <a href="/api/traffic.csv?hours=24" download class="csv-link">CSVダウンロード</a>
+          <a href="/api/traffic.csv?hours=24" download class="csv-link" data-i18n="index.csvDownload">CSVダウンロード</a>
         </div>
       </div>
       <div id="chart" class="chart-container" role="img" aria-labelledby="chart-heading"></div>
@@ -99,73 +106,74 @@
     </div>
   </section>
 
-  <section class="distribution-area" aria-label="統計パターン">
+  <section class="distribution-area" data-i18n-aria-label="index.statisticalPatterns" data-dashboard-section="distribution">
     <div class="panel panel--chart">
-      <div class="panel__header" id="hour-of-day-heading">時間帯別ユニーク機数(直近7日)</div>
+      <div class="panel__header" id="hour-of-day-heading" data-i18n="index.hourOfDayHeading">時間帯別ユニーク機数(直近7日)</div>
       <div id="hour-of-day-chart" class="chart-container" role="img" aria-labelledby="hour-of-day-heading"></div>
       <div id="hour-of-day-chart-error" class="panel__error" hidden></div>
     </div>
     <div class="panel panel--chart">
-      <div class="panel__header" id="altitude-hist-heading">高度分布(24時間)</div>
+      <div class="panel__header" id="altitude-hist-heading" data-i18n="index.altitudeHistHeading">高度分布(24時間)</div>
       <div id="altitude-hist-chart" class="chart-container" role="img" aria-labelledby="altitude-hist-heading"></div>
       <div id="altitude-hist-chart-error" class="panel__error" hidden></div>
     </div>
     <div class="panel panel--chart">
-      <div class="panel__header" id="speed-hist-heading">速度分布(24時間)</div>
+      <div class="panel__header" id="speed-hist-heading" data-i18n="index.speedHistHeading">速度分布(24時間)</div>
       <div id="speed-hist-chart" class="chart-container" role="img" aria-labelledby="speed-hist-heading"></div>
       <div id="speed-hist-chart-error" class="panel__error" hidden></div>
     </div>
   </section>
 
-  <section class="bottom-area" aria-label="ランキングと最近の機体">
+  <section class="bottom-area" data-i18n-aria-label="index.rankingsAndRecent" data-dashboard-section="rankings">
     <div class="panel">
-      <div class="panel__header">最遠</div>
+      <div class="panel__header" data-i18n="daily.farthest">最遠</div>
+      <a href="/api/rankings.csv?hours=24" download class="csv-link" data-i18n="index.csvDownload">CSVダウンロード</a>
       <table class="ranking-table" id="ranking-farthest">
-        <caption class="sr-only">受信局から最も遠い機体</caption>
+        <caption class="sr-only" data-i18n="index.farthestCaption">受信局から最も遠い機体</caption>
         <thead>
           <tr>
-            <th scope="col">機体</th>
-            <th scope="col">距離</th>
-            <th scope="col">高度</th>
-            <th scope="col">観測時刻</th>
+            <th scope="col" data-i18n="common.aircraft">機体</th>
+            <th scope="col" data-i18n="common.distance">距離</th>
+            <th scope="col" data-i18n="common.altitude">高度</th>
+            <th scope="col" data-i18n="common.observedAt">観測時刻</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
-      <p class="panel__empty" hidden>データがありません</p>
+      <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
     </div>
 
     <div class="panel">
-      <div class="panel__header">最接近</div>
+      <div class="panel__header" data-i18n="daily.closest">最接近</div>
       <table class="ranking-table" id="ranking-closest">
-        <caption class="sr-only">受信局に最も近づいた機体</caption>
+        <caption class="sr-only" data-i18n="index.closestCaption">受信局に最も近づいた機体</caption>
         <thead>
           <tr>
-            <th scope="col">機体</th>
-            <th scope="col">距離</th>
-            <th scope="col">高度</th>
-            <th scope="col">観測時刻</th>
+            <th scope="col" data-i18n="common.aircraft">機体</th>
+            <th scope="col" data-i18n="common.distance">距離</th>
+            <th scope="col" data-i18n="common.altitude">高度</th>
+            <th scope="col" data-i18n="common.observedAt">観測時刻</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
-      <p class="panel__empty" hidden>データがありません</p>
+      <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
     </div>
 
     <div class="panel">
-      <div class="panel__header">最近観測した機体</div>
+      <div class="panel__header" data-i18n="index.recentAircraft">最近観測した機体</div>
       <table class="ranking-table" id="recent-aircraft">
-        <caption class="sr-only">最終観測時刻が新しい機体</caption>
+        <caption class="sr-only" data-i18n="index.recentAircraftCaption">最終観測時刻が新しい機体</caption>
         <thead>
           <tr>
-            <th scope="col">機体</th>
-            <th scope="col">初観測</th>
-            <th scope="col">最終観測</th>
+            <th scope="col" data-i18n="common.aircraft">機体</th>
+            <th scope="col" data-i18n="index.firstSeen">初観測</th>
+            <th scope="col" data-i18n="index.lastSeen">最終観測</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
-      <p class="panel__empty" hidden>データがありません</p>
+      <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
     </div>
   </section>
 

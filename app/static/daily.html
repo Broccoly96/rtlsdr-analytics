@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<script src="/static/js/theme-init.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>今日の空 - ADS-B Analytics</title>
+<title data-i18n="daily.pageTitle">今日の空 - ADS-B Analytics</title>
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
@@ -16,42 +17,51 @@
 <body>
 <div class="app">
 
-  <nav class="app-nav" aria-label="ページ">
-    <a href="/">ダッシュボード</a>
-    <a href="/static/daily.html" aria-current="page">今日の空</a>
-    <a href="/static/receiver.html">受信性能</a>
-    <a href="/static/fullmap.html">航跡地図</a>
-    <a href="/static/globe.html">3D航跡</a>
-    <a href="/static/history.html">機体履歴</a>
-    <a href="/static/rawdata.html">生データ</a>
-    <a href="/static/settings.html">設定</a>
+  <nav class="app-nav" data-i18n-aria-label="nav.aria">
+    <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
+    <a href="/static/daily.html" aria-current="page" data-i18n="nav.daily">今日の空</a>
+    <a href="/static/receiver.html" data-i18n="nav.receiver">受信性能</a>
+    <a href="/static/fullmap.html" data-i18n="nav.trackMap">航跡地図</a>
+    <a href="/static/globe.html" data-i18n="nav.globe">3D航跡</a>
+    <a href="/static/history.html" data-i18n="nav.history">機体履歴</a>
+    <a href="/static/rawdata.html" data-i18n="nav.rawdata">生データ</a>
+    <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
+    <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
+    <a href="/static/archive.html" data-i18n="nav.archive">機体アーカイブ</a>
+    <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
+    <form class="nav-search" action="/static/archive.html" method="get" role="search">
+      <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
+    </form>
   </nav>
 
   <header class="app-header">
     <div class="app-header__title">
-      <h1>今日の空</h1>
+      <h1 data-i18n="nav.daily">今日の空</h1>
       <span class="app-header__version" id="app-version"></span>
     </div>
     <div class="app-header__updated">
-      対象日: <time id="summary-day">--</time>
+      <span data-i18n="daily.targetDay">対象日:</span> <time id="summary-day">--</time>
+    </div>
+    <div class="app-header__period" role="group">
+      <button type="button" id="save-highlight-image" class="period-btn" data-i18n="highlightImage.saveButton">画像として保存</button>
     </div>
   </header>
 
-  <section class="status-cards" aria-label="今日の状況">
+  <section class="status-cards" data-i18n-aria-label="daily.todayStatus">
     <div class="card">
-      <div class="card__label">ユニーク機数</div>
+      <div class="card__label" data-i18n="daily.card.unique">ユニーク機数</div>
       <div class="card__value" id="card-unique">--</div>
     </div>
     <div class="card">
-      <div class="card__label">最大同時受信数</div>
+      <div class="card__label" data-i18n="daily.card.concurrent">最大同時受信数</div>
       <div class="card__value" id="card-concurrent">--</div>
     </div>
     <div class="card">
-      <div class="card__label">メッセージ数</div>
+      <div class="card__label" data-i18n="daily.card.messages">メッセージ数</div>
       <div class="card__value" id="card-messages">--</div>
     </div>
     <div class="card">
-      <div class="card__label">位置取得最大数</div>
+      <div class="card__label" data-i18n="daily.card.positionMax">位置取得最大数</div>
       <div class="card__value" id="card-position-max">--</div>
     </div>
   </section>
@@ -60,57 +70,79 @@
 
   <section class="main-area" style="grid-template-columns: 1fr;">
     <div class="panel panel--chart">
-      <div class="panel__header" id="aircraft-type-heading">機種別 機数 (Top10)</div>
+      <div class="panel__header" id="aircraft-type-heading" data-i18n="daily.aircraftTypeHeading">機種別 機数 (Top10)</div>
       <div id="aircraft-type-chart" class="chart-container" role="img" aria-labelledby="aircraft-type-heading"></div>
       <div id="aircraft-type-chart-error" class="panel__error" hidden></div>
-      <p class="panel__empty" id="aircraft-type-empty" hidden>
+      <p class="panel__empty" id="aircraft-type-empty" hidden data-i18n="daily.aircraftTypeEmpty">
         機種データはまだありません(adsb-daily-rollupが未実行の機体は集計対象外です)
       </p>
     </div>
   </section>
 
-  <section class="bottom-area" aria-label="今日のランキング">
+  <section class="bottom-area" data-i18n-aria-label="daily.todayRanking">
     <div class="panel">
-      <div class="panel__header">最遠</div>
+      <div class="panel__header" data-i18n="daily.farthest">最遠</div>
       <div class="daily-highlight" id="highlight-farthest">--</div>
     </div>
     <div class="panel">
-      <div class="panel__header">最接近</div>
+      <div class="panel__header" data-i18n="daily.closest">最接近</div>
       <div class="daily-highlight" id="highlight-closest">--</div>
     </div>
     <div class="panel">
-      <div class="panel__header">最多観測</div>
+      <div class="panel__header" data-i18n="daily.mostObserved">最多観測</div>
       <div class="daily-highlight" id="highlight-most-observed">--</div>
     </div>
     <div class="panel">
-      <div class="panel__header">最高速度</div>
+      <div class="panel__header" data-i18n="daily.fastest">最高速度</div>
       <div class="daily-highlight" id="highlight-fastest">--</div>
     </div>
     <div class="panel">
-      <div class="panel__header">最高高度</div>
+      <div class="panel__header" data-i18n="daily.highest">最高高度</div>
       <div class="daily-highlight" id="highlight-highest">--</div>
     </div>
   </section>
 
   <section class="main-area" style="grid-template-columns: 1fr 1fr;">
     <div class="panel">
-      <div class="panel__header">本日初観測の機体</div>
+      <div class="panel__header" data-i18n="daily.firstSeenTodayHeading">本日初観測の機体</div>
       <table class="ranking-table" id="first-seen-today">
-        <caption class="sr-only">今日はじめて観測した機体</caption>
+        <caption class="sr-only" data-i18n="daily.firstSeenTodayCaption">今日はじめて観測した機体</caption>
         <thead>
           <tr>
-            <th scope="col">機体</th>
-            <th scope="col">初観測時刻</th>
+            <th scope="col" data-i18n="common.aircraft">機体</th>
+            <th scope="col" data-i18n="daily.firstSeenTime">初観測時刻</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
-      <p class="panel__empty" id="first-seen-today-empty" hidden>今日はまだ新規機体はありません</p>
+      <p class="panel__empty" id="first-seen-today-empty" hidden data-i18n="daily.firstSeenTodayEmpty">今日はまだ新規機体はありません</p>
     </div>
     <div class="panel panel--chart">
-      <div class="panel__header" id="trend-heading">直近7日間のユニーク機数トレンド</div>
+      <div class="panel__header" id="trend-heading" data-i18n="daily.trendHeading">直近7日間のユニーク機数トレンド</div>
       <div id="trend-chart" class="chart-container" role="img" aria-labelledby="trend-heading" style="height: 180px;"></div>
       <div id="trend-chart-error" class="panel__error" hidden></div>
+    </div>
+  </section>
+
+  <section class="main-area" style="grid-template-columns: 1fr;">
+    <div class="panel">
+      <div class="panel__header" data-i18n="daily.period.heading">月次・年次サマリー</div>
+      <div class="app-header__period" role="group" data-i18n-aria-label="daily.period.heading">
+        <select id="period-mode" class="filter-input">
+          <option value="month" data-i18n="daily.period.month">月次</option>
+          <option value="year" data-i18n="daily.period.year">年次</option>
+        </select>
+        <input type="number" id="period-year" class="filter-input" style="width: 90px;">
+        <select id="period-month" class="filter-input">
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+          <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+          <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+          <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+        </select>
+        <button type="button" id="period-refresh" class="period-btn" data-i18n="daily.period.show">表示</button>
+      </div>
+      <div id="period-summary" class="daily-highlight" style="margin-top: 12px;">--</div>
+      <div id="period-error" class="panel__error" hidden></div>
     </div>
   </section>
 

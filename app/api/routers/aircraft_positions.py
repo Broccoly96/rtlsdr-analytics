@@ -34,9 +34,19 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
+from datetime import UTC, datetime
 
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.domain.celestial import (
+    ANGULAR_SEPARATION_THRESHOLD_DEG,
+    CelestialPosition,
+    angular_separation_deg,
+    solar_position,
+)
+from app.domain.geo import bearing_deg, haversine_distance_km
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +106,46 @@ def extract_position(raw: dict) -> dict | None:
         # fullscreen map's live mode (app/static/js/aircraft-icons.js).
         # Equipage-dependent like roll/vertical_rate above; often absent.
         "category": raw.get("category"),
+        # Milestone KK: surfaces an emergency squawk (7500/7600/7700) as an
+        # on-page banner on the two pages that already consume this
+        # broadcast (app/static/js/squawk-alert.js) -- this is a same-page
+        # visual only; the "notify me even when I'm not looking" path is
+        # the separate, independent NOTIFY_EMERGENCY_SQUAWK_ENABLED webhook
+        # (app/collector/event_watch.py), which checks the raw readsb poll
+        # directly rather than this broadcast.
+        "squawk": raw.get("squawk"),
     }
+
+
+def compute_transit_candidate(
+    position: dict, receiver_lat: float, receiver_lon: float, sun: CelestialPosition
+) -> bool:
+    """True if this aircraft's position, as seen from the receiver, is
+    within ANGULAR_SEPARATION_THRESHOLD_DEG of the sun's current position
+    -- Milestone LL's "transit alert". Requires altitude data (an aircraft
+    with no altitude fix can't have its elevation angle computed, so it's
+    never flagged) and the sun above the horizon (no visible transit
+    possible otherwise, and it's a cheap early-out).
+
+    Treats the receiver as being at ground level (no configured receiver
+    altitude exists -- see app/config.py) and ignores Earth's curvature;
+    both are fine approximations at the ranges/altitudes ADS-B covers for
+    a "worth a look" alert, not a precision instrument.
+    """
+    if sun.elevation_deg <= 0:
+        return False
+    altitude_ft = position.get("altitude_ft")
+    if not isinstance(altitude_ft, int | float):
+        return False
+
+    lat, lon = position["lat"], position["lon"]
+    ground_distance_km = haversine_distance_km(receiver_lat, receiver_lon, lat, lon)
+    azimuth = bearing_deg(receiver_lat, receiver_lon, lat, lon)
+    altitude_m = altitude_ft * 0.3048
+    elevation = math.degrees(math.atan2(altitude_m, ground_distance_km * 1000.0))
+
+    separation = angular_separation_deg(azimuth, elevation, sun.azimuth_deg, sun.elevation_deg)
+    return separation <= ANGULAR_SEPARATION_THRESHOLD_DEG
 
 
 class PositionBroadcaster:
@@ -105,9 +154,17 @@ class PositionBroadcaster:
     stored on app.state so the WS route handler (which gets a fresh
     `websocket` per connection, not a shared object) can reach it."""
 
-    def __init__(self, readsb_aircraft_url: str, poll_interval_seconds: float) -> None:
+    def __init__(
+        self,
+        readsb_aircraft_url: str,
+        poll_interval_seconds: float,
+        receiver_lat: float,
+        receiver_lon: float,
+    ) -> None:
         self._url = readsb_aircraft_url
         self._interval = poll_interval_seconds
+        self._receiver_lat = receiver_lat
+        self._receiver_lon = receiver_lon
         self._clients: set[WebSocket] = set()
         self._fast_clients: set[WebSocket] = set()
         self._latest: dict = {"aircraft": []}
@@ -157,6 +214,11 @@ class PositionBroadcaster:
                     positions = [
                         p for p in (extract_position(a) for a in aircraft_list) if p is not None
                     ]
+                    sun = solar_position(datetime.now(UTC), self._receiver_lat, self._receiver_lon)
+                    for position in positions:
+                        position["transit_candidate"] = compute_transit_candidate(
+                            position, self._receiver_lat, self._receiver_lon, sun
+                        )
                     self._latest = {"aircraft": positions}
                 except asyncio.CancelledError:
                     raise

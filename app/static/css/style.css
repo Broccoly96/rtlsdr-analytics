@@ -266,7 +266,18 @@
   }
 
   .workspace {
-    --workspace-canvas-height: clamp(360px, 70dvh, 680px);
+    /* PR#3 ("Fix map and chart UI regressions") replaced the original
+       minmax(360px, 1fr) row track -- which collapsed to near-zero height
+       in some browsers because 1fr has no definite space to distribute
+       inside a grid container with only an intrinsic (not viewport-tied)
+       height -- with this explicit, viewport-relative height. That fixed
+       the collapse, but its 680px ceiling then capped the map/globe well
+       below the available viewport on any normal desktop monitor. The
+       ceiling here is deliberately generous (in practice never binding on
+       real hardware) so the *dvh-based preferred value does the actual
+       sizing work, same intent as the original design of "fill nearly the
+       whole viewport minus header/toolbar chrome". */
+    --workspace-canvas-height: clamp(360px, 70dvh, 1600px);
 
     display: grid;
     min-width: 0;
@@ -1600,7 +1611,7 @@
     .app-header__actions { width: 100%; justify-content: flex-end; }
 
     .workspace {
-      --workspace-canvas-height: clamp(360px, 66dvh, 620px);
+      --workspace-canvas-height: clamp(360px, 66dvh, 1600px);
     }
   }
 
@@ -1830,7 +1841,7 @@
     }
 
     .workspace {
-      --workspace-canvas-height: clamp(420px, calc(100dvh - 235px), 680px);
+      --workspace-canvas-height: clamp(420px, calc(100dvh - 235px), 1600px);
     }
 
     .aircraft-sidebar {

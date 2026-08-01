@@ -5,21 +5,9 @@
 <script src="/static/js/theme-init.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="receiver.pageTitle">受信性能 - ADS-B Analytics</title>
-<!--
-  script-src includes 'unsafe-eval' on this page ONLY, for the reception-
-  dome chart's echarts-gl (grid3D/scatter3D): its shader/expression
-  compiler eagerly eval()s at chart-init time -- without this, that throws
-  a CSP violation and the chart never renders (confirmed by reproducing the
-  exact failure in an earlier attempt at this same chart). This app never
-  uses eval()/Function() itself and never renders API/user data as HTML, so
-  the realistic added risk is narrow -- same disclosure as globe.html's
-  CesiumJS, which needs the same flag for the same class of reason (though
-  that page additionally needs blob: for Cesium's WASM/worker loading,
-  which this page's echarts-gl does not).
--->
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
 >
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
@@ -99,9 +87,16 @@
       <div id="reception-dome-chart" class="chart-container" role="img" aria-labelledby="reception-dome-heading" style="height: 480px;"></div>
       <div id="reception-dome-chart-error" class="panel__error" hidden></div>
       <p class="panel__empty" data-i18n="receiver.receptionDomeCaption">
-        方位・距離を平面座標、高度を縦軸(見やすさのため誇張表示)、色を平均受信強度(赤=強、青=弱)、
-        不透明度を観測密度で表しています。ドラッグで回転・スクロールでズームできます。
+        方位・距離・高度(見やすさのため誇張表示)ごとの観測密度を、雲状の半透明な塊
+        (等密度面)として表示しています。色は平均受信強度(赤=強、青=弱)、塊の大きさ・
+        不透明度は観測密度を表します。個々の観測点も併せて表示しています。ドラッグで回転・
+        スクロールでズームできます。
       </p>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <span class="panel__empty" style="padding: 0;" data-i18n="receiver.rssiStrengthWeak">弱</span>
+        <span style="flex: 1; max-width: 200px; height: 8px; border-radius: 4px; background: linear-gradient(to right, hsl(216, 80%, 55%), hsl(170, 80%, 55%), hsl(90, 80%, 55%), hsl(0, 80%, 55%));"></span>
+        <span class="panel__empty" style="padding: 0;" data-i18n="receiver.rssiStrengthStrong">強</span>
+      </div>
     </div>
   </section>
 
@@ -127,7 +122,6 @@
 </div>
 
 <script src="/static/js/vendor/echarts/echarts.min.js"></script>
-<script src="/static/js/vendor/echarts-gl/echarts-gl.min.js"></script>
 <script type="module" src="/static/js/shell.js"></script>
 <script type="module" src="/static/js/receiver.js"></script>
 </body>

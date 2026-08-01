@@ -450,44 +450,58 @@ out easier to read than the plain 2D bearing chart above. `GET
 direction reaches furthest" question without that readability problem.
 
 A third attempt — the **reception dome** below the RSSI heatmap — is a
-structurally different visualization, not a retry of the first two: a 3D
-point cloud (`echarts-gl`'s `scatter3D` again, re-vendored at v2.1.0) of
-*every* bearing×distance×altitude bucket's observation density and average
-signal strength at once, rather than one collapsed number per direction.
-Bearing/distance form the horizontal (X/Y) position, altitude the vertical
-(Z) axis — exaggerated via `grid3D.boxHeight` for readability, since real
-altitudes (a few km) are tiny next to real distances (hundreds of km) and
-would render as a nearly flat disc otherwise; scaling the raw Z *data*
-instead has no visual effect, since `grid3D` auto-fits each axis to its own
-box dimension regardless of data range — confirmed empirically before
-relying on it, after the first attempt's own experience of `echarts-gl`'s
-docs not quite matching its real behavior. The reference frame is drawn as
-concentric distance rings + compass spokes rather than `grid3D`'s default
-rectangular box — `echarts-gl` has no native polar/cylindrical 3D
-coordinate system at all (checked the library source directly: only
-`cartesian3D`, `geo3D` and `globe` exist), so the rings/spokes are hand-drawn
-`line3D` series on the horizontal plane, with the box's own axis chrome
-hidden (altitude keeps its own ruler, since the rings only cover the
-horizontal plane). Color encodes average RSSI (red = strong, blue = weak);
-opacity encodes observation count per cell, and points blend with
-`blendMode: 'lighter'` (additive) so dense, overlapping cells glow brighter
-rather than just stacking as solid dots — closer to a real volumetric haze.
-Both values are computed per-point in JS rather than via `visualMap`
-channels, since `scatter3D` doesn't reliably support a second `visualMap`
-dimension for opacity, and (found while building this) silently fails to
-render custom image symbols at all — a soft-edged sprite meant to fake a
-"fog" look produced zero pixels with no console error, so a custom-texture
-approach was dropped in favor of built-in blending. `GET
-/api/receiver/reception-dome` backs it, binning raw `observations` the same
-way `rssi-by-distance` does (sparse, occupied-cells-only, capped at 5,000
-cells). If this doesn't earn its place either, removal is a single,
-contained diff: `reception_dome()`/`ReceptionDomeCell` in
-`app/db/queries/receiver.py`, the route + two response models, `app/static/
-js/reception-dome.js`, four integration lines in `receiver.js`, the new
-`<section>` + `echarts-gl` script tag + CSP loosening in `receiver.html`,
-`app/static/js/vendor/echarts-gl/`, five `i18n.js` keys, and this page's
-Playwright smoke test (`tests/integration/test_reception_dome_playwright.py`)
-— nothing else needs touching.
+structurally different visualization, not a retry of the first two: rather
+than one collapsed value per direction, it renders a genuine 3D
+kernel-density-style isosurface over *every* bearing×distance×altitude
+bucket's observation density and average signal strength at once, plus the
+individual buckets themselves as overlaid points — a soft, translucent,
+cloud-like "blob" wrapping the point cloud, closer to a real volumetric
+probability distribution than a chart. Bearing/distance form the horizontal
+position, altitude the vertical axis (exaggerated for readability, since
+real altitudes — a few km — are tiny next to real distances — hundreds of
+km — and would render as a nearly flat disc otherwise).
+
+This went through two earlier designs within this same third attempt
+before landing here — an `echarts-gl` point cloud, then a polar-grid version
+with additive-blended points — both judged not quite what "dome-shaped
+volumetric probability distribution" meant. Getting an actual isosurface
+needed a different library entirely: `echarts-gl` has no volume/isosurface
+capability of any kind (checked the library source directly — no
+`polar3D`, `volume`, or `voxel` primitives exist), so this final version
+uses [Three.js](https://threejs.org/) (MIT, r185, vendored — no CDN) and
+its `MarchingCubes` "metaballs" utility instead: each bucket becomes a ball
+sized by observation count and colored by average RSSI, and marching cubes
+extracts a smooth isosurface at a fixed density threshold — this is a
+well-precedented technique (the same one used for classic "metaball" demos),
+not a from-scratch ray-marching shader. A few non-obvious things had to be
+verified empirically rather than trusted from docs, continuing this
+feature's running theme: `MarchingCubes.addBall`'s `[0,1]` input coordinates
+map to a `[-1,1]` *output* mesh range, not `[0,1]` (confirmed by comparing
+input against actual rendered geometry — an earlier draft placed the
+overlaid points using the wrong range, so they visibly floated outside the
+blob); overlapping translucent triangles need `depthWrite: false` on the
+material, or the depth buffer makes whichever triangle renders first
+opaquely occlude the rest, defeating the "translucent volume" look entirely;
+and the RSSI→color mapping uses each query's own actual min/max RSSI rather
+than realistic hardware bounds (–50 to –3 dBFS), since the *densest* cells
+(which dominate the isosurface's shape) turned out to cluster tightly
+around one "typical" mid-strength value in real data, so a fixed wide range
+compressed almost the whole blob into one flat hue. Three.js needs **no**
+CSP loosening at all — better than either `echarts-gl` (needed
+`'unsafe-eval'`) or `globe.html`'s CesiumJS (needs `'unsafe-eval'` and
+`blob:`).
+
+`GET /api/receiver/reception-dome` backs it (unchanged since the first
+design), binning raw `observations` the same way `rssi-by-distance` does
+(sparse, occupied-cells-only, capped at 5,000 cells). If this doesn't earn
+its place either, removal is a single, contained diff: `reception_dome()`/
+`ReceptionDomeCell` in `app/db/queries/receiver.py`, the route + two
+response models, `app/static/js/reception-dome.js`, four integration lines
+in `receiver.js`, the new `<section>` in `receiver.html` (this version needs
+no CSP change to revert), `app/static/js/vendor/three/`, five `i18n.js`
+keys, and this page's Playwright smoke test
+(`tests/integration/test_reception_dome_playwright.py`) — nothing else
+needs touching.
 
 Also on this page: a day/night max-range comparison (a simple local-hour
 split — `[6, 18)` counts as "day" — not a sunrise/sunset-precise one) and
@@ -623,7 +637,7 @@ Built with [CesiumJS](https://github.com/CesiumGS/cesium) — the only
 page in this app that uses it. The receiver-performance page had a
 CesiumJS reception chart too at one point (see that section above); it
 was removed for being harder to read than a plain 2D chart, and its
-current 3D reception dome uses `echarts-gl` instead, not CesiumJS.
+current reception dome uses Three.js instead, not CesiumJS.
 Nothing here is persisted.
 
 Same emergency-squawk banner and sun-transit toast as the
@@ -893,17 +907,7 @@ you), since the container itself has neither a `.git` directory nor a
   full rationale. The one destructive tool (`scripts/reset_db.py`) is a
   manual, confirmation-gated CLI script, never reachable over the
   network.
-- `/static/receiver.html`'s Content-Security-Policy adds `'unsafe-eval'`
-  to `script-src` — every other page except `globe.html` stays without
-  it. Only the [reception dome](#receiver-performance-staticreceiverhtml)
-  chart needs this (its `echarts-gl` extension's shader/expression
-  compiler eval()s at chart-init time; the page's other, plain `echarts`
-  bearing/altitude/RSSI charts don't need it at all) — confirmed by
-  reproducing and fixing the exact failure. This app never uses
-  `eval()`/`Function()` itself and never renders API/user data as HTML
-  (always `textContent`), so the realistic added risk is narrow — worth
-  knowing if you're auditing this page specifically.
-- `/static/globe.html`'s CSP similarly adds `'unsafe-eval'` (CesiumJS's
+- `/static/globe.html`'s CSP adds `'unsafe-eval'` (CesiumJS's
   own script eagerly compiles WebAssembly for terrain/imagery decoding;
   without it, Cesium's own top-level script throws mid-execution and
   never finishes loading at all) and `blob:` to `script-src` (Cesium

@@ -276,12 +276,10 @@ const DICT = {
     "receiver.rssiCount": "件数",
     "receiver.receptionDomeHeading": "受信範囲 3D表示(方位・距離・高度)",
     "receiver.receptionDomeCaption":
-      "方位・距離を平面座標、高度を縦軸(見やすさのため誇張表示)、色を平均受信強度" +
-      "(赤=強、青=弱)、不透明度を観測密度で表しています。ドラッグで回転・スクロールで" +
-      "ズームできます。",
-    "receiver.receptionDomeEastWestAxis": "東西",
-    "receiver.receptionDomeNorthSouthAxis": "南北",
-    "receiver.receptionDomeAltitudeAxis": "高度",
+      "方位・距離・高度(見やすさのため誇張表示)ごとの観測密度を、雲状の半透明な塊" +
+      "(等密度面)として表示しています。色は平均受信強度(赤=強、青=弱)、塊の大きさ・" +
+      "不透明度は観測密度を表します。個々の観測点も併せて表示しています。ドラッグで回転・" +
+      "スクロールでズームできます。",
     "receiver.rssiStrengthWeak": "弱",
     "receiver.rssiStrengthStrong": "強",
     "receiver.messageCount": "メッセージ数",
@@ -739,13 +737,11 @@ const DICT = {
     "receiver.rssiCount": "Count",
     "receiver.receptionDomeHeading": "Reception Range 3D View (Bearing / Distance / Altitude)",
     "receiver.receptionDomeCaption":
-      "Bearing and distance are plotted on the horizontal plane, altitude on the vertical " +
-      "axis (exaggerated for readability), color shows average signal strength (red = " +
-      "strong, blue = weak), and opacity shows observation density. Drag to rotate, " +
-      "scroll to zoom.",
-    "receiver.receptionDomeEastWestAxis": "East-West",
-    "receiver.receptionDomeNorthSouthAxis": "North-South",
-    "receiver.receptionDomeAltitudeAxis": "Altitude",
+      "Observation density by bearing, distance, and altitude (exaggerated for " +
+      "readability) is shown as a soft, cloud-like blob (an isodensity surface). Color " +
+      "shows average signal strength (red = strong, blue = weak); the blob's size/opacity " +
+      "shows observation density. Individual observations are also shown as points. Drag " +
+      "to rotate, scroll to zoom.",
     "receiver.rssiStrengthWeak": "Weak",
     "receiver.rssiStrengthStrong": "Strong",
     "receiver.messageCount": "Messages",

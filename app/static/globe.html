@@ -6,16 +6,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="globe.pageTitle">3D航跡 - ADS-B Analytics</title>
 <!--
-  script-src includes 'unsafe-eval' on this page ONLY (same precedent as
-  receiver.html's echarts-gl chart): CesiumJS's own top-level script
-  eagerly compiles WebAssembly (and, separately, uses a plain string-eval
-  path) for its terrain/imagery decoding -- without this, those calls
-  throw CSP violations *during* Cesium.js's own script execution, which
-  aborts partway through and leaves `window.Cesium` undefined entirely
-  (confirmed by reproducing the exact failure). Same disclosure as
-  receiver.html: this app never uses eval()/Function() itself and never
-  renders API/user data as HTML, so the realistic added risk is narrow,
-  but it's a real loosening of this page's CSP.
+  script-src includes 'unsafe-eval' on this page ONLY: CesiumJS's own
+  top-level script eagerly compiles WebAssembly (and, separately, uses a
+  plain string-eval path) for its terrain/imagery decoding -- without this,
+  those calls throw CSP violations *during* Cesium.js's own script
+  execution, which aborts partway through and leaves `window.Cesium`
+  undefined entirely (confirmed by reproducing the exact failure). This app
+  never uses eval()/Function() itself and never renders API/user data as
+  HTML, so the realistic added risk is narrow, but it's a real loosening of
+  this page's CSP. (receiver.html's reception-dome chart looked like it
+  might need the same flag at one point -- it doesn't: its final Three.js-
+  based implementation needs no CSP loosening at all.)
 -->
 <meta
   http-equiv="Content-Security-Policy"

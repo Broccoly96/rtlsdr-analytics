@@ -733,12 +733,23 @@ async def test_receiver_rssi_by_distance_empty(client: AsyncClient) -> None:
     assert body["rssi_bucket_db"] > 0
 
 
+async def test_receiver_reception_dome_empty(client: AsyncClient) -> None:
+    response = await client.get("/api/receiver/reception-dome")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cells"] == []
+    assert body["distance_bucket_km"] > 0
+    assert body["altitude_bucket_ft"] > 0
+    assert body["sector_width_deg"] == 22.5
+
+
 async def test_receiver_bounds_rejected(client: AsyncClient) -> None:
     for path in (
         "/api/receiver/bearing-range",
         "/api/receiver/altitude-range",
         "/api/receiver/reception",
         "/api/receiver/rssi-by-distance",
+        "/api/receiver/reception-dome",
         "/api/receiver/day-night-range",
     ):
         assert (await client.get(path, params={"hours": 0})).status_code == 422
@@ -849,6 +860,45 @@ async def test_receiver_rssi_by_distance_with_seeded_data(
     assert cell["count"] == 1
     assert cell["distance_bucket_km"] == 100.0  # floor(105 / 20) * 20
     assert cell["rssi_bucket_db"] == -25.0  # floor(-22 / 5) * 5
+
+
+async def test_receiver_reception_dome_with_seeded_data(
+    postgres_url, client: AsyncClient
+) -> None:
+    store = await PostgresStore.connect(postgres_url)
+    now = datetime.now(UTC)
+    try:
+        await store.upsert_aircraft("aaaaaa", now, "TEST001")
+        await store.insert_observation(
+            AircraftObservation(
+                icao="aaaaaa",
+                observed_at=now,
+                callsign="TEST001",
+                lat=35.0,
+                lon=139.0,
+                altitude_ft=10500.0,
+                ground_speed_kt=400.0,
+                track_deg=90.0,
+                vertical_rate_fpm=0.0,
+                rssi=-25.0,
+                distance_km=105.0,
+                bearing_deg=11.25,  # center of sector 0
+                source_age_seconds=0.5,
+                reception_state=ReceptionState.POSITION_ACQUIRED,
+            )
+        )
+    finally:
+        await store.close()
+
+    response = await client.get("/api/receiver/reception-dome", params={"hours": 24})
+    body = response.json()
+    assert len(body["cells"]) == 1
+    cell = body["cells"][0]
+    assert cell["sector_index"] == 0
+    assert cell["distance_bucket_km"] == 100.0  # floor(105 / 20) * 20
+    assert cell["altitude_bucket_ft"] == 10000.0  # floor(10500 / 2000) * 2000
+    assert cell["avg_rssi"] == -25.0
+    assert cell["count"] == 1
 
 
 async def test_receiver_reception_with_seeded_minute(postgres_url, client: AsyncClient) -> None:
@@ -1788,6 +1838,7 @@ async def test_openapi_lists_all_endpoints(client: AsyncClient) -> None:
         "/api/receiver/altitude-range",
         "/api/receiver/reception",
         "/api/receiver/rssi-by-distance",
+        "/api/receiver/reception-dome",
         "/api/receiver/day-night-range",
         "/api/receiver/weekly-trend",
         "/api/distribution/hour-of-day",

@@ -74,6 +74,25 @@ class WeeklyTrendEntry:
     unique_aircraft_count: int
 
 
+DEFAULT_DOME_ALTITUDE_BUCKET_FT = 2000.0
+# 16 sectors x ~19 distance buckets (364km max / 20km) x ~24 altitude buckets
+# (47,000ft max / 2000ft) is a worst-case ~7,300 cells; the result is sparse
+# (occupied cells only, see reception_dome()'s docstring) so this is rarely
+# reached today, but caps it defensively as RAW_RETENTION_DAYS fills toward
+# 30 days of raw observations.
+DOME_MAX_CELLS = 5000
+
+
+@dataclass(frozen=True, slots=True)
+class ReceptionDomeCell:
+    sector_index: int
+    sector_center_deg: float
+    distance_bucket_km: float
+    altitude_bucket_ft: float
+    avg_rssi: float
+    count: int
+
+
 async def bearing_range(pool: asyncpg.Pool, hours: int) -> list[BearingRangeEntry]:
     since = datetime.now(UTC) - timedelta(hours=hours)
     rows = await pool.fetch(
@@ -220,6 +239,62 @@ async def rssi_by_distance(
         RssiDistanceCell(row["distance_bucket"], row["rssi_bucket"], row["cell_count"])
         for row in rows
     ]
+
+
+async def reception_dome(
+    pool: asyncpg.Pool,
+    hours: int,
+    distance_bucket_km: float = DEFAULT_DISTANCE_BUCKET_KM,
+    altitude_bucket_ft: float = DEFAULT_DOME_ALTITUDE_BUCKET_FT,
+) -> list[ReceptionDomeCell]:
+    """Sparse (bearing sector, distance, altitude) bucket cells with average
+    RSSI and observation count -- the 3D generalization of rssi_by_distance's
+    2D (distance, RSSI) bucketing above, reusing BEARING_SECTOR_COUNT/
+    SECTOR_WIDTH_DEG from bearing_range so both charts agree on sector
+    boundaries. A fixed altitude step (not ALTITUDE_BANDS' 5 coarse bands)
+    is used deliberately: 5 bands would collapse the vertical axis to 5 flat
+    shells rather than a continuous point cloud.
+
+    Capped at DOME_MAX_CELLS (ORDER BY count DESC LIMIT, then re-sorted for a
+    deterministic response body) -- at the cap boundary, denser cells win,
+    same bias as the dashboard heatmap's own grid cap.
+    """
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    rows = await pool.fetch(
+        f"""
+        SELECT
+            ((width_bucket(bearing_deg, 0, 360, {BEARING_SECTOR_COUNT}) - 1)
+                % {BEARING_SECTOR_COUNT}) AS sector_index,
+            floor(distance_km / $2) * $2 AS distance_bucket,
+            floor(altitude_ft / $3) * $3 AS altitude_bucket,
+            avg(rssi) AS avg_rssi,
+            count(*) AS cell_count
+        FROM observations
+        WHERE observed_at >= $1
+          AND bearing_deg IS NOT NULL AND distance_km IS NOT NULL
+          AND altitude_ft IS NOT NULL AND rssi IS NOT NULL
+        GROUP BY sector_index, distance_bucket, altitude_bucket
+        ORDER BY cell_count DESC
+        LIMIT {DOME_MAX_CELLS}
+        """,
+        since,
+        distance_bucket_km,
+        altitude_bucket_ft,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    cells = [
+        ReceptionDomeCell(
+            sector_index=row["sector_index"],
+            sector_center_deg=row["sector_index"] * SECTOR_WIDTH_DEG + SECTOR_WIDTH_DEG / 2,
+            distance_bucket_km=row["distance_bucket"],
+            altitude_bucket_ft=row["altitude_bucket"],
+            avg_rssi=row["avg_rssi"],
+            count=row["cell_count"],
+        )
+        for row in rows
+    ]
+    cells.sort(key=lambda c: (c.sector_index, c.distance_bucket_km, c.altitude_bucket_ft))
+    return cells
 
 
 async def day_night_range(pool: asyncpg.Pool, hours: int, tz_name: str) -> DayNightRange:

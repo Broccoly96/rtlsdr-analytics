@@ -9,6 +9,7 @@ import { axisStyle, baseChartOption, CHART_COLORS, createChart, formatAxisTime, 
 import { distanceUnitLabel, formatDistance, toDisplayDistance } from "./units.js";
 import { registerServiceWorker } from "./pwa.js";
 import { t, applyStaticTranslations } from "./i18n.js";
+import { createReceptionDomeChart } from "./reception-dome.js";
 
 function renderVersion(config) {
   const el = document.getElementById("app-version");
@@ -260,6 +261,12 @@ async function refreshAll(charts, bandLabels, hours) {
   } catch (err) {
     console.error("rssi-by-distance refresh failed", err);
   }
+  try {
+    const dome = await api.getReceptionDome(hours);
+    charts.dome.setData(dome);
+  } catch (err) {
+    console.error("reception-dome refresh failed", err);
+  }
   await refreshDayNight(hours);
 }
 
@@ -287,6 +294,7 @@ async function main() {
     altitude: createAltitudeChart("altitude-chart", bandLabels),
     reception: createReceptionChart("reception-chart"),
     rssi: createRssiHeatmapChart("rssi-chart"),
+    dome: createReceptionDomeChart("reception-dome-chart"),
     weeklyTrend: createWeeklyTrendChart("weekly-trend-chart"),
   };
 
@@ -317,6 +325,7 @@ async function main() {
     charts.altitude.resize();
     charts.reception.resize();
     charts.rssi.resize();
+    charts.dome.resize();
     charts.weeklyTrend.resize();
   });
 }

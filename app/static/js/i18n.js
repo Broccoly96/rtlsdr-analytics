@@ -274,6 +274,16 @@ const DICT = {
     "receiver.receptionHeading": "メッセージ数・位置取得率の推移",
     "receiver.rssiHeading": "距離別受信強度(RSSI)ヒートマップ",
     "receiver.rssiCount": "件数",
+    "receiver.receptionDomeHeading": "受信範囲 3D表示(方位・距離・高度)",
+    "receiver.receptionDomeCaption":
+      "方位・距離を平面座標、高度を縦軸(見やすさのため誇張表示)、色を平均受信強度" +
+      "(赤=強、青=弱)、不透明度を観測密度で表しています。ドラッグで回転・スクロールで" +
+      "ズームできます。",
+    "receiver.receptionDomeEastWestAxis": "東西",
+    "receiver.receptionDomeNorthSouthAxis": "南北",
+    "receiver.receptionDomeAltitudeAxis": "高度",
+    "receiver.rssiStrengthWeak": "弱",
+    "receiver.rssiStrengthStrong": "強",
     "receiver.messageCount": "メッセージ数",
     "receiver.positionRate": "位置取得率(%)",
     "receiver.dayNightHeading": "昼夜別受信距離",
@@ -727,6 +737,17 @@ const DICT = {
     "receiver.receptionHeading": "Messages / position-acquisition rate over time",
     "receiver.rssiHeading": "Signal strength (RSSI) by distance heatmap",
     "receiver.rssiCount": "Count",
+    "receiver.receptionDomeHeading": "Reception Range 3D View (Bearing / Distance / Altitude)",
+    "receiver.receptionDomeCaption":
+      "Bearing and distance are plotted on the horizontal plane, altitude on the vertical " +
+      "axis (exaggerated for readability), color shows average signal strength (red = " +
+      "strong, blue = weak), and opacity shows observation density. Drag to rotate, " +
+      "scroll to zoom.",
+    "receiver.receptionDomeEastWestAxis": "East-West",
+    "receiver.receptionDomeNorthSouthAxis": "North-South",
+    "receiver.receptionDomeAltitudeAxis": "Altitude",
+    "receiver.rssiStrengthWeak": "Weak",
+    "receiver.rssiStrengthStrong": "Strong",
     "receiver.messageCount": "Messages",
     "receiver.positionRate": "Position rate (%)",
     "receiver.dayNightHeading": "Day/Night Reception Range",

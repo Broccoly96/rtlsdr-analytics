@@ -295,6 +295,23 @@ class RssiByDistanceResponse(BaseModel):
     cells: list[RssiDistanceCellResponse]
 
 
+class ReceptionDomeCellResponse(BaseModel):
+    sector_index: int
+    sector_center_deg: float
+    distance_bucket_km: float
+    altitude_bucket_ft: float
+    avg_rssi: float
+    count: int
+
+
+class ReceptionDomeResponse(BaseModel):
+    hours: int
+    distance_bucket_km: float
+    altitude_bucket_ft: float
+    sector_width_deg: float
+    cells: list[ReceptionDomeCellResponse]
+
+
 class HourOfDayEntryResponse(BaseModel):
     hour: int
     unique_aircraft_count: int

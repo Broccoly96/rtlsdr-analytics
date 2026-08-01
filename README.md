@@ -441,15 +441,41 @@ range), and a message-count/position-rate trend, all built with
 [`echarts`](https://echarts.apache.org/) (BSD-3-Clause, vendored — no
 CDN), over 24h/7d/30d.
 
-An earlier version of this page also had a 3D "reception dome" (max
-reception distance per bearing/elevation direction as a rotatable 3D
-mesh, first built with `echarts-gl`'s scatter3D, later rebuilt in
-CesiumJS). It was removed after user feedback that neither version was
-actually easier to read than the plain 2D bearing chart above — the
-underlying data (bearing/elevation/distance per direction) just isn't
-well served by a 3D scene here. `GET /api/receiver/bearing-range` (2D,
-still in use) covers the same "which direction reaches furthest"
-question without the readability problem.
+This page has been through two earlier 3D reception visualizations, both
+removed: first a rotatable mesh over `echarts-gl`'s scatter3D, then a
+CesiumJS rebuild of the same idea — both plotted one derived value (max
+reception distance) per bearing/elevation direction, and neither turned
+out easier to read than the plain 2D bearing chart above. `GET
+/api/receiver/bearing-range` (2D, still in use) covers the same "which
+direction reaches furthest" question without that readability problem.
+
+A third attempt — the **reception dome** below the RSSI heatmap — is a
+structurally different visualization, not a retry of the first two: a 3D
+point cloud (`echarts-gl`'s `scatter3D` again, re-vendored at v2.1.0) of
+*every* bearing×distance×altitude bucket's observation density and average
+signal strength at once, rather than one collapsed number per direction.
+Bearing/distance form the horizontal (X/Y) position, altitude the vertical
+(Z) axis — exaggerated via `grid3D.boxHeight` for readability, since real
+altitudes (a few km) are tiny next to real distances (hundreds of km) and
+would render as a nearly flat disc otherwise; scaling the raw Z *data*
+instead has no visual effect, since `grid3D` auto-fits each axis to its own
+box dimension regardless of data range — confirmed empirically before
+relying on it, after the first attempt's own experience of `echarts-gl`'s
+docs not quite matching its real behavior. Color encodes average RSSI (red
+= strong, blue = weak); opacity encodes observation count per cell (denser
+directions render more solid, sparser ones more translucent) — computed
+per-point in JS rather than via a second `visualMap` channel, since GL
+series don't consistently document opacity as a supported channel. `GET
+/api/receiver/reception-dome` backs it, binning raw `observations` the same
+way `rssi-by-distance` does (sparse, occupied-cells-only, capped at 5,000
+cells). If this doesn't earn its place either, removal is a single,
+contained diff: `reception_dome()`/`ReceptionDomeCell` in
+`app/db/queries/receiver.py`, the route + two response models, `app/static/
+js/reception-dome.js`, four integration lines in `receiver.js`, the new
+`<section>` + `echarts-gl` script tag + CSP loosening in `receiver.html`,
+`app/static/js/vendor/echarts-gl/`, five `i18n.js` keys, and this page's
+Playwright smoke test (`tests/integration/test_reception_dome_playwright.py`)
+— nothing else needs touching.
 
 Also on this page: a day/night max-range comparison (a simple local-hour
 split — `[6, 18)` counts as "day" — not a sunrise/sunset-precise one) and
@@ -582,9 +608,11 @@ popup, click to open the sidebar, same as live mode. Switching back to
 
 Drag to orbit, scroll to zoom, click the home icon to reset the view.
 Built with [CesiumJS](https://github.com/CesiumGS/cesium) — the only
-page in this app that still uses it, after the receiver-performance
-page's 3D reception chart (also CesiumJS at one point) was removed for
-being harder to read than a plain 2D chart. Nothing here is persisted.
+page in this app that uses it. The receiver-performance page had a
+CesiumJS reception chart too at one point (see that section above); it
+was removed for being harder to read than a plain 2D chart, and its
+current 3D reception dome uses `echarts-gl` instead, not CesiumJS.
+Nothing here is persisted.
 
 Same emergency-squawk banner and sun-transit toast as the
 [track map](#track-map-航跡地図-staticfullmaphtml) above, fed by the same
@@ -855,12 +883,14 @@ you), since the container itself has neither a `.git` directory nor a
   network.
 - `/static/receiver.html`'s Content-Security-Policy adds `'unsafe-eval'`
   to `script-src` — every other page except `globe.html` stays without
-  it. `echarts`'s internal shader/expression compiler needs it for the
-  bearing/altitude/RSSI charts (confirmed by reproducing and fixing the
-  exact failure). This app never uses `eval()`/`Function()` itself and
-  never renders API/user data as HTML (always `textContent`), so the
-  realistic added risk is narrow — worth knowing if you're auditing this
-  page specifically.
+  it. Only the [reception dome](#receiver-performance-staticreceiverhtml)
+  chart needs this (its `echarts-gl` extension's shader/expression
+  compiler eval()s at chart-init time; the page's other, plain `echarts`
+  bearing/altitude/RSSI charts don't need it at all) — confirmed by
+  reproducing and fixing the exact failure. This app never uses
+  `eval()`/`Function()` itself and never renders API/user data as HTML
+  (always `textContent`), so the realistic added risk is narrow — worth
+  knowing if you're auditing this page specifically.
 - `/static/globe.html`'s CSP similarly adds `'unsafe-eval'` (CesiumJS's
   own script eagerly compiles WebAssembly for terrain/imagery decoding;
   without it, Cesium's own top-level script throws mid-execution and

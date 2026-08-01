@@ -49,6 +49,7 @@ export const api = {
   getAltitudeRange: (hours) => getJSON("/api/receiver/altitude-range", { hours }),
   getReception: (hours) => getJSON("/api/receiver/reception", { hours }),
   getRssiByDistance: (hours) => getJSON("/api/receiver/rssi-by-distance", { hours }),
+  getReceptionDome: (hours) => getJSON("/api/receiver/reception-dome", { hours }),
   getDayNightRange: (hours) => getJSON("/api/receiver/day-night-range", { hours }),
   getWeeklyTrend: (weeks) => getJSON("/api/receiver/weekly-trend", { weeks }),
   getMetar: () => getJSON("/api/weather/metar"),

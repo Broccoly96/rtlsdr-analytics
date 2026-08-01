@@ -19,6 +19,8 @@ from app.api.schemas import (
     BearingRangeResponse,
     DayNightRangeResponse,
     ReceptionBucketResponse,
+    ReceptionDomeCellResponse,
+    ReceptionDomeResponse,
     ReceptionResponse,
     RssiByDistanceResponse,
     RssiDistanceCellResponse,
@@ -27,11 +29,14 @@ from app.api.schemas import (
 )
 from app.db.queries.receiver import (
     DEFAULT_DISTANCE_BUCKET_KM,
+    DEFAULT_DOME_ALTITUDE_BUCKET_FT,
     DEFAULT_RSSI_BUCKET_DB,
+    SECTOR_WIDTH_DEG,
     BearingRangeEntry,
     altitude_band_range,
     bearing_range,
     day_night_range,
+    reception_dome,
     reception_timeseries,
     rssi_by_distance,
     weekly_trend,
@@ -112,6 +117,21 @@ async def get_rssi_by_distance(
         distance_bucket_km=DEFAULT_DISTANCE_BUCKET_KM,
         rssi_bucket_db=DEFAULT_RSSI_BUCKET_DB,
         cells=[RssiDistanceCellResponse(**asdict(cell)) for cell in cells],
+    )
+
+
+@router.get("/reception-dome", response_model=ReceptionDomeResponse)
+async def get_reception_dome(
+    hours: int = Query(24, ge=1, le=720),
+    pool=Depends(get_pool),
+) -> ReceptionDomeResponse:
+    cells = await reception_dome(pool, hours)
+    return ReceptionDomeResponse(
+        hours=hours,
+        distance_bucket_km=DEFAULT_DISTANCE_BUCKET_KM,
+        altitude_bucket_ft=DEFAULT_DOME_ALTITUDE_BUCKET_FT,
+        sector_width_deg=SECTOR_WIDTH_DEG,
+        cells=[ReceptionDomeCellResponse(**asdict(cell)) for cell in cells],
     )
 
 

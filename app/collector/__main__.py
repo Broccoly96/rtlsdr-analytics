@@ -13,6 +13,11 @@ from app.config import Settings
 from app.db.postgres_store import PostgresStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# HTTP 2xx request logs are high-volume at the collector's five-second poll
+# cadence.  Keep warnings/errors visible while avoiding a Docker-log write for
+# every successful request (and its associated microSD churn).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

@@ -14,8 +14,8 @@
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
 <meta name="theme-color" content="#08111f">
 </head>
-<body>
-<div class="app">
+<body data-page="badges">
+<div class="app app-shell">
 
   <nav class="app-nav" data-i18n-aria-label="nav.aria">
     <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
@@ -34,19 +34,24 @@
     </form>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1 data-i18n="badges.heading">実績バッジ</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow" data-i18n="badges.eyebrow">Achievements</span>
+      <div class="app-header__title">
+        <h1 data-i18n="badges.heading">実績バッジ</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
   </header>
 
-  <p class="panel__empty" style="padding: 0;" data-i18n="badges.description">
+  <p class="page-note" data-i18n="badges.description">
     これまでの観測記録から自動的に判定される実績です。データを都度再計算しているだけで、
     達成日時などは記録していません。
   </p>
 
-  <section class="main-area" style="grid-template-columns: 1fr;">
+  <section class="main-area layout--single">
     <div class="panel">
       <div id="badges-grid" class="badges-grid"></div>
       <div id="badges-error" class="panel__error" hidden></div>
@@ -57,8 +62,11 @@
     <span>ADS-B Analytics</span>
   </footer>
 
+  </main>
+
 </div>
 
+<script type="module" src="/static/js/shell.js"></script>
 <script type="module" src="/static/js/badges.js"></script>
 </body>
 </html>

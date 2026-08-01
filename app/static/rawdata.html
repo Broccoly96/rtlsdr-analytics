@@ -12,10 +12,10 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 </head>
-<body>
-<div class="app">
+<body data-page="rawdata">
+<div class="app app-shell">
 
   <nav class="app-nav" data-i18n-aria-label="nav.aria">
     <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
@@ -34,10 +34,15 @@
     </form>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1 data-i18n="rawdata.heading">生データ (Beastストリーム)</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow" data-i18n="rawdata.eyebrow">Beast stream</span>
+      <div class="app-header__title">
+        <h1 data-i18n="rawdata.heading">生データ (Beastストリーム)</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
     <div class="app-header__status" id="connection-badge" role="status" aria-live="polite">
       <span class="status-dot" aria-hidden="true"></span>
@@ -72,19 +77,20 @@
     </div>
   </header>
 
-  <p class="panel__empty" style="padding: 0;" data-i18n="rawdata.description">
+  <p class="page-note" data-i18n="rawdata.description">
     readsbの生のBeastフォーマットストリームを表示しています。サーバーには保存されません
     (ブラウザを閉じれば消えます)。DF/ICAO/種別は簡易デコードです — 位置・速度などの本格的な
     デコードはreadsb自身が正しく行っているものをこのダッシュボードの他のページで表示しています。
     フィルタは表示のみに影響し、受信・保持するフレーム数(最大5000件)には影響しません。
   </p>
 
-  <section class="main-area" style="grid-template-columns: 1fr;">
+  <section class="main-area layout--single">
     <div class="panel">
       <div class="panel__header">
         <span data-i18n="rawdata.frameCountPre">フレーム (直近</span><span id="row-count">0</span><span data-i18n="rawdata.frameCountPost">件、最大5000件)</span>
       </div>
-      <div style="max-height: 70vh; overflow-y: auto;">
+      <p class="table-scroll__hint" data-i18n="common.scrollHintBoth">表は縦・横方向にスクロールできます</p>
+      <div class="table-scroll table-scroll--tall" tabindex="0" role="region" aria-label="受信した生データ一覧">
         <table class="ranking-table" id="rawdata-table">
           <caption class="sr-only" data-i18n="rawdata.tableCaption">受信した生のBeastフレーム</caption>
           <thead>
@@ -109,8 +115,11 @@
     <span>ADS-B Analytics</span>
   </footer>
 
+  </main>
+
 </div>
 
+<script type="module" src="/static/js/shell.js"></script>
 <script type="module" src="/static/js/rawdata.js"></script>
 </body>
 </html>

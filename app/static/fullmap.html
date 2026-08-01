@@ -12,11 +12,11 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 <link rel="stylesheet" href="/static/js/vendor/maplibre-gl/maplibre-gl.css">
 </head>
-<body>
-<div class="app">
+<body data-page="fullmap">
+<div class="app app-shell app-shell--workspace">
 
   <nav class="app-nav" data-i18n-aria-label="nav.aria">
     <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
@@ -35,10 +35,15 @@
     </form>
   </nav>
 
+  <main class="page-content workspace">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1 data-i18n="nav.trackMap">航跡地図</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow" data-i18n="fullmap.eyebrow">Live airspace</span>
+      <div class="app-header__title">
+        <h1 data-i18n="nav.trackMap">航跡地図</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
     <div class="app-header__period" role="group" id="mode-switch-group" data-i18n-aria-label="trackControls.modeGroupLabel">
       <button type="button" data-mode="live" class="period-btn" aria-pressed="true" data-i18n="trackControls.live">ライブ</button>
@@ -77,23 +82,29 @@
 
   <div id="emergency-squawk-banner" class="emergency-squawk-banner" role="alert" hidden></div>
 
-  <p class="panel__empty" style="padding: 0;" data-i18n="fullmap.description">
-    「ライブ」表示中は現在受信中の全機体を機種カテゴリ別のアイコン(高度帯で色分け)で表示し、
-    各機体の過去の軌跡とライブ延伸中の軌跡(高度帯で色分け)も重ねて表示します。
-    アイコンをクリックすると詳細サイドパネルを開きます。「機体選択」で表示する機体を絞り込めます。
-    スライダー(1時間単位、最大72時間)で過去の航跡表示に切り替えられます。
-  </p>
+  <details class="workspace__help">
+    <summary data-i18n="fullmap.helpSummary">使い方</summary>
+    <p data-i18n="fullmap.description">
+      「ライブ」表示中は現在受信中の全機体を機種カテゴリ別のアイコン(高度帯で色分け)で表示し、
+      各機体の過去の軌跡とライブ延伸中の軌跡(高度帯で色分け)も重ねて表示します。
+      アイコンをクリックすると詳細サイドパネルを開きます。「機体選択」で表示する機体を絞り込めます。
+      スライダー(1時間単位、最大72時間)で過去の航跡表示に切り替えられます。
+    </p>
+  </details>
 
-  <section class="main-area" style="grid-template-columns: 1fr;">
-    <div class="panel panel--map">
+  <section class="main-area layout--single workspace__canvas">
+    <div class="panel panel--map panel--workspace">
       <div id="map" class="map-container map-container--full" role="img" aria-label="航跡地図" data-i18n-aria-label="fullmap.mapAriaLabel"></div>
       <div id="altitude-legend" class="altitude-legend"></div>
       <div id="map-error" class="panel__error" hidden></div>
     </div>
   </section>
 
+  </main>
+
 </div>
 
+<script type="module" src="/static/js/shell.js"></script>
 <script type="module" src="/static/js/fullmap.js"></script>
 </body>
 </html>

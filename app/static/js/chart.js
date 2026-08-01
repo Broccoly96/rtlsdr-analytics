@@ -25,16 +25,50 @@ export function formatAxisTime(isoString) {
   }
 }
 
-// Design tokens shared with style.css's CSS custom properties -- kept as
-// plain values here because ECharts options are JS objects, not CSS.
-export const CHART_COLORS = {
-  text: "#e8f0fa",
-  axisLine: "#263750",
-  axisLabel: "#8fa3bd",
-  splitLine: "#162338",
-  seriesA: "#60a5fa",
-  seriesB: "#22d3ee",
-};
+// Resolve visual chrome from the CSS design system. Getters keep the
+// long-standing CHART_COLORS.foo interface used by the page modules while
+// ensuring options built after a theme/style change use the current tokens.
+// Fallbacks also make the pure option builders safe in non-browser tests.
+export function cssColor(customProperty, fallback) {
+  if (typeof document === "undefined" || typeof getComputedStyle === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(customProperty).trim();
+  return value || fallback;
+}
+
+export const CHART_COLORS = Object.freeze({
+  get text() {
+    return cssColor("--text", "#f2f5f7");
+  },
+  get axisLine() {
+    return cssColor("--border", "rgba(255, 255, 255, 0.08)");
+  },
+  get axisLabel() {
+    return cssColor("--chart-axis", "#96a2b3");
+  },
+  get splitLine() {
+    return cssColor("--chart-grid", "rgba(255, 255, 255, 0.08)");
+  },
+  get seriesA() {
+    return cssColor("--chart-series-a", "#7ca8b5");
+  },
+  get seriesB() {
+    return cssColor("--chart-series-b", "#65d8e8");
+  },
+});
+
+export function colorWithAlpha(color, alpha) {
+  if (typeof document === "undefined") return color;
+  const probe = document.createElement("span");
+  probe.style.color = color;
+  probe.style.display = "none";
+  (document.body || document.documentElement).appendChild(probe);
+  const resolved = getComputedStyle(probe).color;
+  probe.remove();
+  const components = resolved.match(/[\d.]+/g);
+  return components && components.length >= 3
+    ? `rgba(${components[0]}, ${components[1]}, ${components[2]}, ${alpha})`
+    : color;
+}
 
 function showError(errorElId, message) {
   const errorEl = document.getElementById(errorElId);
@@ -56,7 +90,7 @@ export function baseChartOption() {
   return {
     backgroundColor: "transparent",
     textStyle: { color: CHART_COLORS.text },
-    grid: { left: 40, right: 16, top: 30, bottom: 30 },
+    grid: { left: 40, right: 16, top: 30, bottom: 30, containLabel: true },
   };
 }
 
@@ -65,6 +99,20 @@ export function axisStyle() {
     axisLine: { lineStyle: { color: CHART_COLORS.axisLine } },
     axisLabel: { color: CHART_COLORS.axisLabel },
     splitLine: { lineStyle: { color: CHART_COLORS.splitLine } },
+  };
+}
+
+function chartTheme() {
+  return {
+    color: [CHART_COLORS.seriesA, CHART_COLORS.seriesB],
+    textStyle: { color: CHART_COLORS.text },
+    categoryAxis: axisStyle(),
+    valueAxis: axisStyle(),
+    tooltip: {
+      backgroundColor: cssColor("--chart-tooltip-bg", "#161d26"),
+      borderColor: cssColor("--chart-tooltip-border", "rgba(255, 255, 255, 0.15)"),
+      textStyle: { color: CHART_COLORS.text },
+    },
   };
 }
 
@@ -78,7 +126,7 @@ function initChart(containerId, errorElId) {
     return null;
   }
   try {
-    return echarts.init(container, null, { renderer: "canvas" });
+    return echarts.init(container, chartTheme(), { renderer: "canvas" });
   } catch (err) {
     console.error("chart init failed", err);
     showError(errorElId, t("chart.initFailed"));
@@ -167,7 +215,7 @@ export function trafficChartOption(traffic) {
         data: active,
         showSymbol: false,
         lineStyle: { color: CHART_COLORS.seriesA },
-        areaStyle: { color: "rgba(96, 165, 250, 0.15)" },
+        areaStyle: { color: colorWithAlpha(CHART_COLORS.seriesA, 0.15) },
       },
       {
         name: t("chart.positionAcquired"),

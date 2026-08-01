@@ -34,6 +34,7 @@ FETCH_TIMEOUT_SECONDS = 5.0
 BACKOFF_INITIAL_SECONDS = 5.0
 BACKOFF_MAX_SECONDS = 300.0
 BACKOFF_MULTIPLIER = 2.0
+INGESTION_STATUS_INTERVAL_SECONDS = 30.0
 
 
 async def _noop_notify_squawk(icao: str, squawk: str, callsign: str | None) -> None:
@@ -78,6 +79,13 @@ class CollectorService:
             notify=notify_favorite_seen,
             load_favorite_icaos=store.get_favorite_icaos,
         )
+        # A successful status checkpoint is deliberately less frequent than
+        # the readsb poll cadence.  Keep this as monotonic time so wall-clock
+        # adjustments cannot make checkpoints fire early or stop entirely.
+        self._last_ingestion_status_at: float | None = None
+        # The first successful poll after a readsb outage is always recorded,
+        # even if the normal checkpoint interval has not elapsed yet.
+        self._ingestion_status_needs_recovery = False
 
     def stop(self) -> None:
         self._stopping.set()
@@ -107,6 +115,7 @@ class CollectorService:
         except (httpx.HTTPError, ValueError) as exc:
             latency_ms = (time.monotonic() - start) * 1000
             logger.warning("readsb fetch failed: %s", exc)
+            self._ingestion_status_needs_recovery = True
             await self._safe_store_call(
                 self._store.record_ingestion_status(
                     IngestionStatus(polled_at, False, latency_ms, None, type(exc).__name__)
@@ -135,7 +144,7 @@ class CollectorService:
 
         result = normalize_poll(payload, polled_at, self._receiver_lat, self._receiver_lon)
         if result.excluded_reasons:
-            logger.info(
+            logger.debug(
                 "poll excluded %d record(s): %s",
                 sum(result.excluded_reasons.values()),
                 result.excluded_reasons,
@@ -152,11 +161,8 @@ class CollectorService:
                 self._store.upsert_traffic_minute(completed_minute), "traffic minute"
             )
 
-        await self._safe_store_call(
-            self._store.record_ingestion_status(
-                IngestionStatus(polled_at, True, latency_ms, result.received_count, None)
-            ),
-            "ingestion status (success)",
+        await self._record_success_status_if_due(
+            IngestionStatus(polled_at, True, latency_ms, result.received_count, None)
         )
 
         return self._poll_interval_seconds
@@ -190,8 +196,30 @@ class CollectorService:
             self._sampler.forget(icao)
 
     @staticmethod
-    async def _safe_store_call(coro, description: str) -> None:
+    async def _safe_store_call(coro, description: str) -> bool:
         try:
             await coro
+            return True
         except Exception:
             logger.exception("store write failed (%s); continuing", description)
+            return False
+
+    async def _record_success_status_if_due(self, status: IngestionStatus) -> None:
+        now = time.monotonic()
+        is_due = (
+            self._last_ingestion_status_at is None
+            or self._ingestion_status_needs_recovery
+            or now - self._last_ingestion_status_at >= INGESTION_STATUS_INTERVAL_SECONDS
+        )
+        if not is_due:
+            return
+
+        saved = await self._safe_store_call(
+            self._store.record_ingestion_status(status), "ingestion status (success)"
+        )
+        # Advance the checkpoint only after the write has completed
+        # successfully.  A failed write will therefore be retried on the next
+        # eligible poll rather than silently extending the checkpoint window.
+        if saved:
+            self._last_ingestion_status_at = time.monotonic()
+            self._ingestion_status_needs_recovery = False

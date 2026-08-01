@@ -28,8 +28,21 @@ import { countryForIcao, flagEmoji } from "./nationality.js";
 const ADSBDB_TIMEOUT_MS = 6000;
 
 let sidebarEl = null;
+let backdropEl = null;
 let currentIcao = null;
 let currentSocket = null;
+let lastFocusedElement = null;
+
+const SIDEBAR_ID = "aircraft-detail-drawer";
+const SIDEBAR_TITLE_ID = "aircraft-detail-title";
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
 
 export function isAnyAircraftInfoPanelOpen() {
   return currentIcao !== null;
@@ -217,11 +230,55 @@ function renderLive(container, data) {
 
 function ensureSidebar() {
   if (sidebarEl) return sidebarEl;
+
+  backdropEl = document.createElement("div");
+  backdropEl.className = "aircraft-sidebar-backdrop";
+  backdropEl.hidden = true;
+  backdropEl.setAttribute("aria-hidden", "true");
+  backdropEl.addEventListener("click", closeAircraftSidebar);
+
   sidebarEl = document.createElement("aside");
   sidebarEl.className = "aircraft-sidebar";
+  sidebarEl.id = SIDEBAR_ID;
+  sidebarEl.setAttribute("role", "dialog");
+  sidebarEl.setAttribute("aria-modal", "true");
+  sidebarEl.setAttribute("aria-labelledby", SIDEBAR_TITLE_ID);
+  sidebarEl.tabIndex = -1;
   sidebarEl.hidden = true;
-  document.body.appendChild(sidebarEl);
+  document.body.append(backdropEl, sidebarEl);
   return sidebarEl;
+}
+
+function handleDrawerKeydown(event) {
+  if (!sidebarEl || sidebarEl.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeAircraftSidebar();
+    return;
+  }
+  if (event.key !== "Tab") return;
+
+  const focusable = Array.from(sidebarEl.querySelectorAll(FOCUSABLE_SELECTOR)).filter(
+    (element) => !element.hidden && element.getAttribute("aria-hidden") !== "true"
+  );
+  if (focusable.length === 0) {
+    event.preventDefault();
+    sidebarEl.focus();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (!sidebarEl.contains(document.activeElement)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  } else if (event.shiftKey && (document.activeElement === first || document.activeElement === sidebarEl)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 export function closeAircraftSidebar() {
@@ -231,6 +288,11 @@ export function closeAircraftSidebar() {
   }
   currentIcao = null;
   if (sidebarEl) sidebarEl.hidden = true;
+  if (backdropEl) backdropEl.hidden = true;
+  document.body.classList.remove("aircraft-drawer-open");
+  document.removeEventListener("keydown", handleDrawerKeydown, true);
+  if (lastFocusedElement && lastFocusedElement.isConnected) lastFocusedElement.focus();
+  lastFocusedElement = null;
 }
 
 export function openAircraftSidebar(icao) {
@@ -242,10 +304,17 @@ export function openAircraftSidebar(icao) {
     currentSocket.close();
     currentSocket = null;
   }
+  const wasOpen = sidebarEl && !sidebarEl.hidden;
   currentIcao = icao;
+  if (!wasOpen) {
+    lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
 
   const sidebar = ensureSidebar();
   sidebar.hidden = false;
+  backdropEl.hidden = false;
+  document.body.classList.add("aircraft-drawer-open");
+  document.addEventListener("keydown", handleDrawerKeydown, true);
   sidebar.replaceChildren();
 
   const header = document.createElement("div");
@@ -257,6 +326,7 @@ export function openAircraftSidebar(icao) {
   closeButton.setAttribute("aria-label", t("aircraftinfo.close"));
   closeButton.addEventListener("click", closeAircraftSidebar);
   const title = document.createElement("h2");
+  title.id = SIDEBAR_TITLE_ID;
   title.textContent = icao;
   const hexLabel = document.createElement("div");
   hexLabel.className = "aircraft-sidebar__hex";
@@ -291,6 +361,10 @@ export function openAircraftSidebar(icao) {
   kmlLink.textContent = t("aircraftinfo.downloadKml");
   trackExportRow.append(gpxLink, kmlLink);
   sidebar.appendChild(trackExportRow);
+
+  requestAnimationFrame(() => {
+    if (currentIcao === icao) closeButton.focus();
+  });
 
   const typePhotoSection = document.createElement("div");
   typePhotoSection.className = "aircraft-sidebar__type-photo";
@@ -354,6 +428,8 @@ export function createAircraftInfoTrigger(icao, label = icao) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "aircraft-info-trigger";
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", SIDEBAR_ID);
   button.textContent = label;
   button.addEventListener("click", () => openAircraftSidebar(icao));
   return button;

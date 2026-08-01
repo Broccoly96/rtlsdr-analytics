@@ -12,10 +12,10 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 </head>
-<body>
-<div class="app">
+<body data-page="settings">
+<div class="app app-shell">
 
   <nav class="app-nav" data-i18n-aria-label="nav.aria">
     <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
@@ -34,60 +34,65 @@
     </form>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1 data-i18n="settings.title">設定</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow" data-i18n="settings.eyebrow">Preferences</span>
+      <div class="app-header__title">
+        <h1 data-i18n="settings.title">設定</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
   </header>
 
-  <section class="main-area" style="grid-template-columns: 1fr;">
-    <div class="panel">
+  <section class="main-area layout--single settings-grid">
+    <div class="panel setting-group">
       <div class="panel__header" data-i18n="settings.units.header">表示単位</div>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.localOnly">
+      <p class="setting-group__description" data-i18n="settings.localOnly">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
 
-      <div style="margin-bottom: 16px;">
-        <div style="margin-bottom: 6px; color: var(--text-muted); font-size: 0.85rem;" data-i18n="settings.distanceUnit">距離の単位</div>
-        <div class="app-header__period" role="group" data-i18n-aria-label="settings.distanceUnit" id="distance-unit-group">
+      <div class="setting-field">
+        <div class="field-label" data-i18n="settings.distanceUnit">距離の単位</div>
+        <div class="app-header__period segmented-control" role="group" data-i18n-aria-label="settings.distanceUnit" id="distance-unit-group">
           <button type="button" data-value="km" class="period-btn" data-i18n="settings.distanceUnit.km">キロメートル (km)</button>
           <button type="button" data-value="nm" class="period-btn" data-i18n="settings.distanceUnit.nm">海里 (nm)</button>
         </div>
       </div>
 
-      <div>
-        <div style="margin-bottom: 6px; color: var(--text-muted); font-size: 0.85rem;" data-i18n="settings.altitudeUnit">高度の単位</div>
-        <div class="app-header__period" role="group" data-i18n-aria-label="settings.altitudeUnit" id="altitude-unit-group">
+      <div class="setting-field">
+        <div class="field-label" data-i18n="settings.altitudeUnit">高度の単位</div>
+        <div class="app-header__period segmented-control" role="group" data-i18n-aria-label="settings.altitudeUnit" id="altitude-unit-group">
           <button type="button" data-value="ft" class="period-btn" data-i18n="settings.altitudeUnit.ft">フィート (ft)</button>
           <button type="button" data-value="m" class="period-btn" data-i18n="settings.altitudeUnit.m">メートル (m)</button>
         </div>
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel setting-group">
       <div class="panel__header" data-i18n="settings.language">言語 / Language</div>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.localOnly">
+      <p class="setting-group__description" data-i18n="settings.localOnly">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
-      <div>
-        <div class="app-header__period" role="group" data-i18n-aria-label="settings.language" id="language-group">
+      <div class="setting-field">
+        <div class="app-header__period segmented-control" role="group" data-i18n-aria-label="settings.language" id="language-group">
           <button type="button" data-value="ja" class="period-btn" data-i18n="settings.language.ja">日本語</button>
           <button type="button" data-value="en" class="period-btn" data-i18n="settings.language.en">English</button>
         </div>
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel setting-group">
       <div class="panel__header" data-i18n="settings.track.header">3D航跡</div>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.localOnly">
+      <p class="setting-group__description" data-i18n="settings.localOnly">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
-      <div>
-        <label for="track-opacity-slider" style="display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 0.85rem;">
+      <div class="setting-field">
+        <label for="track-opacity-slider" class="field-label">
           <span data-i18n="settings.track.opacity">航跡ラインの透明度:</span> <span id="track-opacity-value">50%</span>
         </label>
         <input
@@ -102,27 +107,27 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel setting-group">
       <div class="panel__header" data-i18n="settings.theme.header">テーマ</div>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.localOnly">
+      <p class="setting-group__description" data-i18n="settings.localOnly">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
-      <div>
-        <div class="app-header__period" role="group" data-i18n-aria-label="settings.theme.header" id="theme-group">
+      <div class="setting-field">
+        <div class="app-header__period segmented-control" role="group" data-i18n-aria-label="settings.theme.header" id="theme-group">
           <button type="button" data-value="dark" class="period-btn" data-i18n="settings.theme.dark">ダーク</button>
           <button type="button" data-value="light" class="period-btn" data-i18n="settings.theme.light">ライト</button>
         </div>
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel setting-group">
       <div class="panel__header" data-i18n="settings.dashboard.header">ダッシュボード表示</div>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.localOnly">
+      <p class="setting-group__description" data-i18n="settings.localOnly">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
-      <div id="dashboard-section-toggles">
+      <div id="dashboard-section-toggles" class="setting-field">
         <label style="display: block; margin-bottom: 6px;">
           <input type="checkbox" data-section="map" checked>
           <span data-i18n="index.trackMapHeading">航跡地図</span>
@@ -142,36 +147,36 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel setting-group">
       <div class="panel__header" data-i18n="settings.browserNotify.header">お気に入り機体のブラウザ通知</div>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.localOnly">
+      <p class="setting-group__description" data-i18n="settings.localOnly">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.browserNotify.description">
+      <p class="setting-group__description" data-i18n="settings.browserNotify.description">
         航跡地図・3D航跡のライブ表示中に、お気に入り登録した機体が現れたらブラウザ通知します。
       </p>
-      <div style="margin-bottom: 10px;">
-        <div class="app-header__period" role="group" data-i18n-aria-label="settings.browserNotify.header" id="browser-notify-group">
+      <div class="setting-field">
+        <div class="app-header__period segmented-control" role="group" data-i18n-aria-label="settings.browserNotify.header" id="browser-notify-group">
           <button type="button" data-value="off" class="period-btn" data-i18n="settings.speech.off">オフ</button>
           <button type="button" data-value="on" class="period-btn" data-i18n="settings.speech.on">オン</button>
         </div>
       </div>
       <button type="button" id="browser-notify-permission-button" class="period-btn" data-i18n="settings.browserNotify.requestPermission">通知の許可をリクエスト</button>
-      <span id="browser-notify-permission-status" class="panel__empty" style="padding: 0 0 0 8px;"></span>
+      <span id="browser-notify-permission-status" class="setting-group__description" style="display: inline-block; padding-left: 8px;"></span>
     </div>
 
-    <div class="panel">
+    <div class="panel setting-group">
       <div class="panel__header" data-i18n="settings.speech.header">スポッターラジオ風読み上げ</div>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.localOnly">
+      <p class="setting-group__description" data-i18n="settings.localOnly">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
-      <p class="panel__empty" style="padding: 0 0 12px;" data-i18n="settings.speech.description">
+      <p class="setting-group__description" data-i18n="settings.speech.description">
         航跡地図・3D航跡のライブ表示中に、新しく現れた機体をブラウザの音声合成で読み上げます。
       </p>
-      <div>
-        <div class="app-header__period" role="group" data-i18n-aria-label="settings.speech.header" id="speech-enabled-group">
+      <div class="setting-field">
+        <div class="app-header__period segmented-control" role="group" data-i18n-aria-label="settings.speech.header" id="speech-enabled-group">
           <button type="button" data-value="off" class="period-btn" data-i18n="settings.speech.off">オフ</button>
           <button type="button" data-value="on" class="period-btn" data-i18n="settings.speech.on">オン</button>
         </div>
@@ -183,8 +188,11 @@
     <span>ADS-B Analytics</span>
   </footer>
 
+  </main>
+
 </div>
 
+<script type="module" src="/static/js/shell.js"></script>
 <script type="module" src="/static/js/settings.js"></script>
 </body>
 </html>

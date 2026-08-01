@@ -106,7 +106,7 @@ function createRssiHeatmapChart(containerId) {
           );
         },
       },
-      grid: { left: 60, right: 16, top: 30, bottom: 40 },
+      grid: { left: 60, right: 16, top: 30, bottom: 40, containLabel: true },
       xAxis: {
         type: "category",
         name: `${t("common.distance")} (${distanceUnitLabel()})`,
@@ -122,10 +122,11 @@ function createRssiHeatmapChart(containerId) {
       visualMap: {
         min: 0,
         max: maxCount || 1,
-        calculable: true,
+        calculable: false,
         orient: "horizontal",
         left: "center",
         bottom: 0,
+        text: ["多", "少"],
         inRange: { color: RSSI_HEATMAP_COLOR_RAMP },
         textStyle: { color: CHART_COLORS.axisLabel },
       },

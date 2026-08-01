@@ -53,6 +53,38 @@ const DICT = {
     "nav.rawdata": "生データ",
     "nav.settings": "設定",
 
+    // --- shell.js (nav rail brand/mobile nav, built from the plain <a>
+    // list every page ships so it degrades gracefully with JS disabled) ---
+    "nav.homeAriaLabel": "ADS-B Analytics ホーム",
+    "nav.mobileAriaLabel": "モバイルナビゲーション",
+    "nav.more": "その他",
+    "nav.morePagesHeading": "その他のページ",
+    "nav.closeMenu": "メニューを閉じる",
+
+    // --- app-header__eyebrow labels (PR#2 UI refresh) -- deliberately
+    // English in both languages, same flourish as the "ADS-B Analytics"
+    // brand name itself never being translated ---
+    "index.eyebrow": "Live observatory",
+    "daily.eyebrow": "Daily brief",
+    "fullmap.eyebrow": "Live airspace",
+    "globe.eyebrow": "Spatial view",
+    "history.eyebrow": "Aircraft archive",
+    "rawdata.eyebrow": "Beast stream",
+    "receiver.eyebrow": "Receiver health",
+    "settings.eyebrow": "Preferences",
+    "archive.eyebrow": "Aircraft log",
+    "badges.eyebrow": "Achievements",
+    "flags.eyebrow": "Flag collection",
+
+    // --- shared table-scroll hints/region labels (PR#2 UI refresh) ---
+    "common.scrollHintHorizontal": "表は横方向にもスクロールできます",
+    "common.scrollHintBoth": "表は縦・横方向にスクロールできます",
+    "index.farthestRegionLabel": "最遠の機体一覧",
+    "index.closestRegionLabel": "最接近の機体一覧",
+    "index.recentRegionLabel": "最近観測した機体一覧",
+    "daily.firstSeenRegionLabel": "本日初観測の機体一覧",
+    "history.frequentRegionLabel": "最頻観測機体一覧",
+
     // --- settings page ---
     "settings.pageTitle": "設定 - ADS-B Analytics",
     "settings.title": "設定",
@@ -287,6 +319,7 @@ const DICT = {
     // --- fullmap.js / fullmap.html ---
     "fullmap.pageTitle": "航跡地図 - ADS-B Analytics",
     "fullmap.mapAriaLabel": "航跡地図",
+    "fullmap.helpSummary": "使い方",
     "fullmap.description":
       "「ライブ」表示中は現在受信中の全機体を機種カテゴリ別のアイコン(高度帯で色分け)で表示し、" +
       "各機体の過去の軌跡とライブ延伸中の軌跡(高度帯で色分け)も重ねて表示します。" +
@@ -296,6 +329,7 @@ const DICT = {
     // --- globe.js / globe.html ---
     "globe.pageTitle": "3D航跡 - ADS-B Analytics",
     "globe.followToggle": "カメラ自動追従",
+    "globe.helpSummary": "使い方とデータ提供元",
     "globe.description.pre": "衛星画像(",
     "globe.description.post":
       ", Maxar, Earthstar Geographics, GIS User Community)を背景に、現在受信中の全機体を3D機体モデルで" +
@@ -488,6 +522,32 @@ const DICT = {
     "nav.history": "Aircraft History",
     "nav.rawdata": "Raw Data",
     "nav.settings": "Settings",
+
+    "nav.homeAriaLabel": "ADS-B Analytics Home",
+    "nav.mobileAriaLabel": "Mobile navigation",
+    "nav.more": "More",
+    "nav.morePagesHeading": "More pages",
+    "nav.closeMenu": "Close menu",
+
+    "index.eyebrow": "Live observatory",
+    "daily.eyebrow": "Daily brief",
+    "fullmap.eyebrow": "Live airspace",
+    "globe.eyebrow": "Spatial view",
+    "history.eyebrow": "Aircraft archive",
+    "rawdata.eyebrow": "Beast stream",
+    "receiver.eyebrow": "Receiver health",
+    "settings.eyebrow": "Preferences",
+    "archive.eyebrow": "Aircraft log",
+    "badges.eyebrow": "Achievements",
+    "flags.eyebrow": "Flag collection",
+
+    "common.scrollHintHorizontal": "This table also scrolls horizontally.",
+    "common.scrollHintBoth": "This table scrolls both vertically and horizontally.",
+    "index.farthestRegionLabel": "Farthest aircraft list",
+    "index.closestRegionLabel": "Closest aircraft list",
+    "index.recentRegionLabel": "Recently observed aircraft list",
+    "daily.firstSeenRegionLabel": "Aircraft first seen today list",
+    "history.frequentRegionLabel": "Most frequently observed aircraft list",
 
     "settings.pageTitle": "Settings - ADS-B Analytics",
     "settings.title": "Settings",
@@ -709,6 +769,7 @@ const DICT = {
 
     "fullmap.pageTitle": "Track Map - ADS-B Analytics",
     "fullmap.mapAriaLabel": "Track map",
+    "fullmap.helpSummary": "How to use",
     "fullmap.description":
       "While in \"Live\" mode, every currently received aircraft is shown as a category icon " +
       "(colored by altitude band), each drawing its own historical track plus its live-extending " +
@@ -718,6 +779,7 @@ const DICT = {
 
     "globe.pageTitle": "3D Tracks - ADS-B Analytics",
     "globe.followToggle": "Auto-follow camera",
+    "globe.helpSummary": "How to use & data sources",
     "globe.description.pre": "Satellite imagery (",
     "globe.description.post":
       ", Maxar, Earthstar Geographics, GIS User Community) shown as the backdrop, with every " +

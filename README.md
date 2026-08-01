@@ -273,6 +273,14 @@ start with a clear error rather than running misconfigured.
 | `READSB_BEAST_HOST` | `READSB_AIRCRAFT_URL`'s hostname | Only needed if readsb's Beast-format output (used by `/static/rawdata.html`) is served from a different host. |
 | `READSB_BEAST_PORT` | `30005` | readsb's standard Beast-out port. |
 
+The collector continues to fetch readsb every `POLL_INTERVAL_SECONDS` (5
+seconds by default), but persists a healthy `ingestion_status` checkpoint only
+once every 30 seconds to reduce small writes on Raspberry Pi microSD storage.
+Readsb failures and the first successful recovery are recorded immediately;
+status-write errors remain visible and are retried on a later eligible poll.
+Successful HTTP poll responses and per-record exclusion details are suppressed
+from normal logs; warnings and errors remain visible.
+
 **Also read directly from the environment (not part of app `Settings`):**
 
 | Variable | Default | Used by |
@@ -678,6 +686,11 @@ docker compose logs -f adsb-api
 docker compose logs -f adsb-daily-rollup
 docker compose logs -f adsb-type-lookup
 ```
+
+`adsb-collector` keeps normal HTTP success and per-record exclusion messages at
+DEBUG level, so the default logs focus on startup, warnings, errors, and
+recovery events. This reduces continuous Docker-log writes on Raspberry Pi
+without hiding failures.
 
 **DB status** (read-only — sizes, row counts, growth, projected size, last
 ingestion result; never prints a connection string or row-level data):

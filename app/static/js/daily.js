@@ -8,7 +8,7 @@ import { api } from "./api.js";
 import { ui } from "./ui.js";
 import { createAircraftInfoTrigger } from "./aircraftinfo.js";
 import { setNationalityBlocks } from "./nationality.js";
-import { axisStyle, baseChartOption, CHART_COLORS, createChart } from "./chart.js";
+import { axisStyle, baseChartOption, CHART_COLORS, colorWithAlpha, createChart } from "./chart.js";
 import { formatDistance, formatAltitude } from "./units.js";
 import { registerServiceWorker } from "./pwa.js";
 import { downloadHighlightImage } from "./highlight-image.js";
@@ -96,7 +96,7 @@ function renderFirstSeenToday(rows) {
 function createTrendChart(containerId) {
   return createChart(containerId, "trend-chart-error", (days) => ({
     ...baseChartOption(),
-    grid: { left: 32, right: 16, top: 12, bottom: 24 },
+    grid: { left: 32, right: 16, top: 12, bottom: 24, containLabel: true },
     tooltip: { trigger: "axis" },
     xAxis: {
       type: "category",
@@ -111,7 +111,7 @@ function createTrendChart(containerId) {
         showSymbol: true,
         symbolSize: 6,
         lineStyle: { color: CHART_COLORS.seriesA },
-        areaStyle: { color: "rgba(96, 165, 250, 0.15)" },
+        areaStyle: { color: colorWithAlpha(CHART_COLORS.seriesA, 0.15) },
         itemStyle: {
           color: (params) =>
             params.dataIndex === days.length - 1 ? CHART_COLORS.seriesB : CHART_COLORS.seriesA,

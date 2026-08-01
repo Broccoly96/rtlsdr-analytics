@@ -57,10 +57,26 @@ function showMapLoadError(err) {
   console.error("failed to load map module", err);
   const errorEl = document.getElementById("map-error");
   if (errorEl) {
+    delete errorEl.dataset.errorSource;
     const detail = err && err.message ? err.message : String(err);
     errorEl.textContent = t("map.moduleLoadFailed", { detail });
     errorEl.hidden = false;
   }
+}
+
+function showLiveConnectionError(message) {
+  const errorEl = document.getElementById("map-error");
+  if (!errorEl) return;
+  errorEl.dataset.errorSource = "live-connection";
+  errorEl.textContent = message;
+  errorEl.hidden = false;
+}
+
+function clearLiveConnectionError() {
+  const errorEl = document.getElementById("map-error");
+  if (!errorEl || errorEl.dataset.errorSource !== "live-connection") return;
+  errorEl.hidden = true;
+  delete errorEl.dataset.errorSource;
 }
 
 async function loadMapModule() {
@@ -117,11 +133,13 @@ function applyLivePositions() {
 function connectBroadcast() {
   if (socket) return; // already connected
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  socket = new WebSocket(`${protocol}//${window.location.host}/ws/aircraft-positions`);
-  socket.addEventListener("open", () => {
+  const connection = new WebSocket(`${protocol}//${window.location.host}/ws/aircraft-positions`);
+  socket = connection;
+  connection.addEventListener("open", () => {
+    clearLiveConnectionError();
     if (fastModeEnabled) sendFastMode();
   });
-  socket.addEventListener("message", (event) => {
+  connection.addEventListener("message", (event) => {
     if (mode !== "live") return; // guards against a message in flight at the exact moment of switching modes
     let data;
     try {
@@ -153,7 +171,17 @@ function connectBroadcast() {
     checkNewArrivals(positions);
     checkFavoriteArrivals(positions);
   });
-  socket.addEventListener("error", () => console.error("fullmap: live connection error"));
+  connection.addEventListener("error", () => {
+    console.error("fullmap: live connection error");
+    if (socket === connection) {
+      showLiveConnectionError("ライブ航跡への接続に失敗しました。過去航跡へ切り替えて確認できます。");
+    }
+  });
+  connection.addEventListener("close", () => {
+    if (socket === connection && mode === "live") {
+      showLiveConnectionError("ライブ航跡の接続が切断されました。再読み込みするか、過去航跡へ切り替えてください。");
+    }
+  });
 }
 
 function teardownLiveView() {

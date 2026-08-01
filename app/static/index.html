@@ -12,11 +12,11 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 <link rel="stylesheet" href="/static/js/vendor/maplibre-gl/maplibre-gl.css">
 </head>
-<body>
-<div class="app">
+<body data-page="dashboard">
+<div class="app app-shell">
 
   <nav class="app-nav" data-i18n-aria-label="nav.aria">
     <a href="/" aria-current="page" data-i18n="nav.dashboard">ダッシュボード</a>
@@ -35,10 +35,15 @@
     </form>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow" data-i18n="index.eyebrow">Live observatory</span>
+      <div class="app-header__title">
       <h1>ADS-B Analytics</h1>
       <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
     <div class="app-header__status" id="ingestion-badge" role="status" aria-live="polite">
       <span class="status-dot" aria-hidden="true"></span>
@@ -54,7 +59,7 @@
     </div>
   </header>
 
-  <section class="status-cards" data-i18n-aria-label="index.currentStatus">
+  <section class="status-cards metrics-strip" data-i18n-aria-label="index.currentStatus">
     <div class="card">
       <div class="card__label" data-i18n="index.card.active">現在受信中</div>
       <div class="card__value" id="card-active">--</div>
@@ -73,7 +78,7 @@
     </div>
   </section>
 
-  <section class="main-area">
+  <section class="main-area layout--dashboard">
     <div class="panel panel--map" data-dashboard-section="map">
       <div class="panel__header" id="map-heading">
         <span data-i18n="index.trackMapHeading">航跡地図</span>
@@ -88,7 +93,7 @@
       <div id="altitude-legend" class="altitude-legend"></div>
       <div id="map-error" class="panel__error" hidden></div>
     </div>
-    <div class="panel panel--chart" data-dashboard-section="traffic">
+    <div class="panel panel--chart panel--traffic" data-dashboard-section="traffic">
       <div class="panel__header">
         <span id="chart-heading" data-i18n="index.trafficHeading">交通量</span>
         <div class="chart-controls">
@@ -106,7 +111,7 @@
     </div>
   </section>
 
-  <section class="distribution-area" data-i18n-aria-label="index.statisticalPatterns" data-dashboard-section="distribution">
+  <section class="distribution-area layout--distributions" data-i18n-aria-label="index.statisticalPatterns" data-dashboard-section="distribution">
     <div class="panel panel--chart">
       <div class="panel__header" id="hour-of-day-heading" data-i18n="index.hourOfDayHeading">時間帯別ユニーク機数(直近7日)</div>
       <div id="hour-of-day-chart" class="chart-container" role="img" aria-labelledby="hour-of-day-heading"></div>
@@ -128,6 +133,7 @@
     <div class="panel">
       <div class="panel__header" data-i18n="daily.farthest">最遠</div>
       <a href="/api/rankings.csv?hours=24" download class="csv-link" data-i18n="index.csvDownload">CSVダウンロード</a>
+      <div class="table-scroll" tabindex="0" role="region" data-i18n-aria-label="index.farthestRegionLabel">
       <table class="ranking-table" id="ranking-farthest">
         <caption class="sr-only" data-i18n="index.farthestCaption">受信局から最も遠い機体</caption>
         <thead>
@@ -141,10 +147,12 @@
         <tbody></tbody>
       </table>
       <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
+      </div>
     </div>
 
     <div class="panel">
       <div class="panel__header" data-i18n="daily.closest">最接近</div>
+      <div class="table-scroll" tabindex="0" role="region" data-i18n-aria-label="index.closestRegionLabel">
       <table class="ranking-table" id="ranking-closest">
         <caption class="sr-only" data-i18n="index.closestCaption">受信局に最も近づいた機体</caption>
         <thead>
@@ -158,10 +166,12 @@
         <tbody></tbody>
       </table>
       <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
+      </div>
     </div>
 
     <div class="panel">
       <div class="panel__header" data-i18n="index.recentAircraft">最近観測した機体</div>
+      <div class="table-scroll" tabindex="0" role="region" data-i18n-aria-label="index.recentRegionLabel">
       <table class="ranking-table" id="recent-aircraft">
         <caption class="sr-only" data-i18n="index.recentAircraftCaption">最終観測時刻が新しい機体</caption>
         <thead>
@@ -174,6 +184,7 @@
         <tbody></tbody>
       </table>
       <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
+      </div>
     </div>
   </section>
 
@@ -182,9 +193,12 @@
     <span id="footer-last-fetch"></span>
   </footer>
 
+  </main>
+
 </div>
 
 <script src="/static/js/vendor/echarts/echarts.min.js"></script>
+<script type="module" src="/static/js/shell.js"></script>
 <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

@@ -10,7 +10,11 @@ import logging
 
 import httpx
 
-from app.collector.service import BACKOFF_INITIAL_SECONDS, CollectorService
+from app.collector.service import (
+    BACKOFF_INITIAL_SECONDS,
+    INGESTION_STATUS_INTERVAL_SECONDS,
+    CollectorService,
+)
 from app.collector.store import InMemoryStore
 
 SAMPLE_PAYLOAD = {
@@ -65,6 +69,48 @@ async def test_successful_poll_stores_aircraft_and_observation():
     assert "aaaaaa" in store.aircraft
     assert len(store.observations) == 1
     assert store.ingestion_status_log[-1].success is True
+    await client.aclose()
+
+
+async def test_success_status_is_checkpointed_every_30_seconds():
+    client = _client_with_responses([httpx.Response(200, json=SAMPLE_PAYLOAD)])
+    store = InMemoryStore()
+    service = _service(client, store)
+
+    await service.poll_once()  # first successful poll is always persisted
+    assert len(store.ingestion_status_log) == 1
+
+    await service.poll_once()  # normal 5-second poll remains below checkpoint interval
+    assert len(store.ingestion_status_log) == 1
+
+    service._last_ingestion_status_at -= INGESTION_STATUS_INTERVAL_SECONDS
+    await service.poll_once()
+    assert len(store.ingestion_status_log) == 2
+    await client.aclose()
+
+
+async def test_success_status_checkpoint_timer_advances_only_after_store_success():
+    class FailFirstStatusStore(InMemoryStore):
+        status_calls = 0
+
+        async def record_ingestion_status(self, status):
+            self.status_calls += 1
+            if self.status_calls == 1:
+                raise RuntimeError("simulated status DB outage")
+            await super().record_ingestion_status(status)
+
+    client = _client_with_responses([httpx.Response(200, json=SAMPLE_PAYLOAD)])
+    store = FailFirstStatusStore()
+    service = _service(client, store)
+
+    await service.poll_once()
+    assert store.ingestion_status_log == []
+    assert service._last_ingestion_status_at is None
+
+    await service.poll_once()
+    assert len(store.ingestion_status_log) == 1
+    assert store.status_calls == 2
+    assert service._last_ingestion_status_at is not None
     await client.aclose()
 
 
@@ -141,7 +187,7 @@ async def test_excluded_records_are_logged(caplog):
     store = InMemoryStore()
     service = _service(client, store)
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         await service.poll_once()
 
     # PLAN.md E-4: the count of excluded/invalid records must be logged, not
@@ -150,6 +196,22 @@ async def test_excluded_records_are_logged(caplog):
     assert "excluded 2" in caplog.text
     assert "not_a_dict" in caplog.text
     assert "missing_hex" in caplog.text
+
+
+async def test_excluded_records_are_not_logged_at_info(caplog):
+    payload = {
+        "now": 1.0,
+        "messages": 1,
+        "aircraft": [{"hex": "aaaaaa"}, "not-a-dict"],
+    }
+    client = _client_with_responses([httpx.Response(200, json=payload)])
+    service = _service(client, InMemoryStore())
+
+    with caplog.at_level(logging.INFO):
+        await service.poll_once()
+
+    assert "poll excluded" not in caplog.text
+    await client.aclose()
 
 
 async def test_empty_aircraft_list_does_not_crash_service():

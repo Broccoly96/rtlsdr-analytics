@@ -12,10 +12,10 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 </head>
-<body>
-<div class="app">
+<body data-page="history">
+<div class="app app-shell">
 
   <nav class="app-nav" data-i18n-aria-label="nav.aria">
     <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
@@ -34,10 +34,15 @@
     </form>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1 data-i18n="nav.history">機体履歴</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow" data-i18n="history.eyebrow">Aircraft archive</span>
+      <div class="app-header__title">
+        <h1 data-i18n="nav.history">機体履歴</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
   </header>
 
@@ -65,6 +70,8 @@
         <a href="/api/aircraft/frequent.csv?days=30" download class="csv-link" data-i18n="index.csvDownload">CSVダウンロード</a>
       </div>
     </div>
+    <p class="table-scroll__hint" data-i18n="common.scrollHintHorizontal">表は横方向にもスクロールできます</p>
+    <div class="table-scroll" tabindex="0" role="region" data-i18n-aria-label="history.frequentRegionLabel">
     <table class="ranking-table" id="ranking-frequent">
       <caption class="sr-only" data-i18n="history.frequentCaption">直近N日間で最も多く観測された機体</caption>
       <thead>
@@ -78,6 +85,7 @@
       <tbody></tbody>
     </table>
     <p class="panel__empty" hidden data-i18n="common.noData">データがありません</p>
+    </div>
   </section>
 
   <section class="panel" data-i18n-aria-label="history.onThisDay.heading">
@@ -89,8 +97,11 @@
     <span>ADS-B Analytics</span>
   </footer>
 
+  </main>
+
 </div>
 
+<script type="module" src="/static/js/shell.js"></script>
 <script type="module" src="/static/js/history.js"></script>
 </body>
 </html>

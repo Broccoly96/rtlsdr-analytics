@@ -147,6 +147,27 @@
   [hidden] {
     display: none !important;
   }
+
+  /* #live-controls (fullmap.html/globe.html only) toggles the [hidden]
+     attribute when switching from live to history mode (see fullmap.js/
+     globe.js). The trailing control cluster after .app-header__intro is
+     right-aligned as a unit (intro's margin-right: auto in the components
+     layer, below), so letting #live-controls collapse out of the flex row
+     entirely shrinks that unit's total width and drags #mode-switch-group
+     -- the live/history toggle and its slider -- to the right along with
+     it. This override keeps #live-controls' layout box reserved (just
+     invisible and non-interactive) so #mode-switch-group's position never
+     changes when switching modes. Placed in this same (reset) layer,
+     not a later one: cascade layers invert priority for `!important`
+     declarations specifically, so a later layer's `!important` would
+     actually *lose* to this rule's -- keeping both `!important` overrides
+     for [hidden] in one layer means normal specificity (ID+attribute
+     beats attribute-only) decides the winner instead. */
+  #live-controls[hidden] {
+    display: flex !important;
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
 @layer base {
@@ -503,10 +524,14 @@
     gap: var(--gap-sm);
   }
 
-  .app-header__actions,
-  .app-header__period {
+  .app-header__actions {
     margin-left: auto;
   }
+
+  /* .app-header__period deliberately does NOT get its own margin-left:
+     auto -- .app-header__intro's margin-right: auto above already pushes
+     the whole trailing control cluster right as a single unit, so a
+     second auto margin here would just be redundant. */
 
   .app-header__status {
     display: inline-flex;
@@ -835,9 +860,12 @@
     scrollbar-width: thin;
   }
 
+  /* Same fixed-ceiling issue as --workspace-canvas-height above (PR#2):
+     760px caps the raw-data table well below the viewport on any normal
+     desktop monitor instead of scaling with it. */
   .table-scroll--tall {
-    max-height: min(70vh, 760px);
-    max-height: min(70dvh, 760px);
+    max-height: min(70vh, 1600px);
+    max-height: min(70dvh, 1600px);
   }
 
   .table-scroll__hint {

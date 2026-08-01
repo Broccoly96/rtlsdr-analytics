@@ -11,10 +11,10 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 </head>
-<body>
-<div class="app">
+<body data-page="history">
+<div class="app app-shell">
 
   <nav class="app-nav" aria-label="ページ">
     <a href="/">ダッシュボード</a>
@@ -27,10 +27,15 @@
     <a href="/static/settings.html">設定</a>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1>機体履歴</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow">Aircraft archive</span>
+      <div class="app-header__title">
+        <h1>機体履歴</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
   </header>
 
@@ -57,6 +62,8 @@
         </label>
       </div>
     </div>
+    <p class="table-scroll__hint">表は横方向にもスクロールできます</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="最頻観測機体一覧">
     <table class="ranking-table" id="ranking-frequent">
       <caption class="sr-only">直近N日間で最も多く観測された機体</caption>
       <thead>
@@ -70,14 +77,18 @@
       <tbody></tbody>
     </table>
     <p class="panel__empty" hidden>データがありません</p>
+    </div>
   </section>
 
   <footer class="app-footer">
     <span>ADS-B Analytics</span>
   </footer>
 
+  </main>
+
 </div>
 
+<script src="/static/js/shell.js" defer></script>
 <script type="module" src="/static/js/history.js"></script>
 </body>
 </html>

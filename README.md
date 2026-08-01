@@ -461,11 +461,23 @@ would render as a nearly flat disc otherwise; scaling the raw Z *data*
 instead has no visual effect, since `grid3D` auto-fits each axis to its own
 box dimension regardless of data range — confirmed empirically before
 relying on it, after the first attempt's own experience of `echarts-gl`'s
-docs not quite matching its real behavior. Color encodes average RSSI (red
-= strong, blue = weak); opacity encodes observation count per cell (denser
-directions render more solid, sparser ones more translucent) — computed
-per-point in JS rather than via a second `visualMap` channel, since GL
-series don't consistently document opacity as a supported channel. `GET
+docs not quite matching its real behavior. The reference frame is drawn as
+concentric distance rings + compass spokes rather than `grid3D`'s default
+rectangular box — `echarts-gl` has no native polar/cylindrical 3D
+coordinate system at all (checked the library source directly: only
+`cartesian3D`, `geo3D` and `globe` exist), so the rings/spokes are hand-drawn
+`line3D` series on the horizontal plane, with the box's own axis chrome
+hidden (altitude keeps its own ruler, since the rings only cover the
+horizontal plane). Color encodes average RSSI (red = strong, blue = weak);
+opacity encodes observation count per cell, and points blend with
+`blendMode: 'lighter'` (additive) so dense, overlapping cells glow brighter
+rather than just stacking as solid dots — closer to a real volumetric haze.
+Both values are computed per-point in JS rather than via `visualMap`
+channels, since `scatter3D` doesn't reliably support a second `visualMap`
+dimension for opacity, and (found while building this) silently fails to
+render custom image symbols at all — a soft-edged sprite meant to fake a
+"fog" look produced zero pixels with no console error, so a custom-texture
+approach was dropped in favor of built-in blending. `GET
 /api/receiver/reception-dome` backs it, binning raw `observations` the same
 way `rssi-by-distance` does (sparse, occupied-cells-only, capped at 5,000
 cells). If this doesn't earn its place either, removal is a single,

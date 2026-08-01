@@ -11,10 +11,10 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 </head>
-<body>
-<div class="app">
+<body data-page="settings">
+<div class="app app-shell">
 
   <nav class="app-nav" aria-label="ページ">
     <a href="/">ダッシュボード</a>
@@ -27,46 +27,51 @@
     <a href="/static/settings.html" aria-current="page">設定</a>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1>設定</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow">Preferences</span>
+      <div class="app-header__title">
+        <h1>設定</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
   </header>
 
-  <section class="main-area" style="grid-template-columns: 1fr;">
-    <div class="panel">
+  <section class="main-area layout--single settings-grid">
+    <div class="panel setting-group">
       <div class="panel__header">表示単位</div>
-      <p class="panel__empty" style="padding: 0 0 12px;">
+      <p class="setting-group__description">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
 
-      <div style="margin-bottom: 16px;">
-        <div style="margin-bottom: 6px; color: var(--text-muted); font-size: 0.85rem;">距離の単位</div>
-        <div class="app-header__period" role="group" aria-label="距離の単位" id="distance-unit-group">
+      <div class="setting-field">
+        <div class="field-label">距離の単位</div>
+        <div class="app-header__period segmented-control" role="group" aria-label="距離の単位" id="distance-unit-group">
           <button type="button" data-value="km" class="period-btn">キロメートル (km)</button>
           <button type="button" data-value="nm" class="period-btn">海里 (nm)</button>
         </div>
       </div>
 
-      <div>
-        <div style="margin-bottom: 6px; color: var(--text-muted); font-size: 0.85rem;">高度の単位</div>
-        <div class="app-header__period" role="group" aria-label="高度の単位" id="altitude-unit-group">
+      <div class="setting-field">
+        <div class="field-label">高度の単位</div>
+        <div class="app-header__period segmented-control" role="group" aria-label="高度の単位" id="altitude-unit-group">
           <button type="button" data-value="ft" class="period-btn">フィート (ft)</button>
           <button type="button" data-value="m" class="period-btn">メートル (m)</button>
         </div>
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel setting-group">
       <div class="panel__header">3D航跡</div>
-      <p class="panel__empty" style="padding: 0 0 12px;">
+      <p class="setting-group__description">
         この端末のブラウザにのみ保存されます(サーバーには送信されません)。
         既に開いているタブには反映されません -- 再読み込みしてください。
       </p>
-      <div>
-        <label for="track-opacity-slider" style="display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 0.85rem;">
+      <div class="setting-field">
+        <label for="track-opacity-slider" class="field-label">
           航跡ラインの透明度: <span id="track-opacity-value">50%</span>
         </label>
         <input
@@ -86,8 +91,11 @@
     <span>ADS-B Analytics</span>
   </footer>
 
+  </main>
+
 </div>
 
+<script src="/static/js/shell.js" defer></script>
 <script type="module" src="/static/js/settings.js"></script>
 </body>
 </html>

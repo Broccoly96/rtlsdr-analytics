@@ -11,10 +11,10 @@
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 </head>
-<body>
-<div class="app">
+<body data-page="daily">
+<div class="app app-shell">
 
   <nav class="app-nav" aria-label="ページ">
     <a href="/">ダッシュボード</a>
@@ -27,17 +27,22 @@
     <a href="/static/settings.html">設定</a>
   </nav>
 
+  <main class="page-content">
+
   <header class="app-header">
-    <div class="app-header__title">
-      <h1>今日の空</h1>
-      <span class="app-header__version" id="app-version"></span>
+    <div class="app-header__intro">
+      <span class="app-header__eyebrow">Daily brief</span>
+      <div class="app-header__title">
+        <h1>今日の空</h1>
+        <span class="app-header__version" id="app-version"></span>
+      </div>
     </div>
     <div class="app-header__updated">
       対象日: <time id="summary-day">--</time>
     </div>
   </header>
 
-  <section class="status-cards" aria-label="今日の状況">
+  <section class="status-cards metrics-strip" aria-label="今日の状況">
     <div class="card">
       <div class="card__label">ユニーク機数</div>
       <div class="card__value" id="card-unique">--</div>
@@ -58,7 +63,7 @@
 
   <p class="traffic-deltas" id="daily-deltas" aria-live="polite"></p>
 
-  <section class="main-area" style="grid-template-columns: 1fr;">
+  <section class="main-area layout--single">
     <div class="panel panel--chart">
       <div class="panel__header" id="aircraft-type-heading">機種別 機数 (Top10)</div>
       <div id="aircraft-type-chart" class="chart-container" role="img" aria-labelledby="aircraft-type-heading"></div>
@@ -69,7 +74,7 @@
     </div>
   </section>
 
-  <section class="bottom-area" aria-label="今日のランキング">
+  <section class="bottom-area daily-records" aria-label="今日のランキング">
     <div class="panel">
       <div class="panel__header">最遠</div>
       <div class="daily-highlight" id="highlight-farthest">--</div>
@@ -92,9 +97,10 @@
     </div>
   </section>
 
-  <section class="main-area" style="grid-template-columns: 1fr 1fr;">
+  <section class="main-area layout--split">
     <div class="panel">
       <div class="panel__header">本日初観測の機体</div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="本日初観測の機体一覧">
       <table class="ranking-table" id="first-seen-today">
         <caption class="sr-only">今日はじめて観測した機体</caption>
         <thead>
@@ -105,11 +111,12 @@
         </thead>
         <tbody></tbody>
       </table>
+      </div>
       <p class="panel__empty" id="first-seen-today-empty" hidden>今日はまだ新規機体はありません</p>
     </div>
     <div class="panel panel--chart">
       <div class="panel__header" id="trend-heading">直近7日間のユニーク機数トレンド</div>
-      <div id="trend-chart" class="chart-container" role="img" aria-labelledby="trend-heading" style="height: 180px;"></div>
+      <div id="trend-chart" class="chart-container chart-container--compact" role="img" aria-labelledby="trend-heading"></div>
       <div id="trend-chart-error" class="panel__error" hidden></div>
     </div>
   </section>
@@ -118,9 +125,12 @@
     <span>ADS-B Analytics</span>
   </footer>
 
+  </main>
+
 </div>
 
 <script src="/static/js/vendor/echarts/echarts.min.js"></script>
+<script src="/static/js/shell.js" defer></script>
 <script type="module" src="/static/js/daily.js"></script>
 </body>
 </html>

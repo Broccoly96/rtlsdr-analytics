@@ -11,8 +11,13 @@
 // color-coded, matching the same altitude legend every other track/model
 // in this app already uses.
 
+import { cssColor } from "./chart.js";
+
 const UNKNOWN_BAND_KEY = "unknown";
-const UNKNOWN_ICON_COLOR = "#8fa3bd"; // matches style.css's --text-muted
+
+function unknownIconColor() {
+  return cssColor("--text-muted", "#96a2b3");
+}
 
 // readsb's category is a 2-character string like "A3"; missing/"A0"/"B0"/
 // "C0"/unrecognized all fall back to a generic silhouette.
@@ -81,12 +86,12 @@ function loadImage(src) {
 }
 
 // Registers one image per (shape x altitude-band-color) combination, plus
-// one per shape at UNKNOWN_ICON_COLOR for aircraft with no altitude yet.
+// one per shape at the shared muted token for aircraft with no altitude yet.
 // Small combinatorial set (7 shapes x ~6 colors) -- negligible memory,
 // registered once and reused for the lifetime of the map instance.
 export async function registerAircraftIcons(map, bands) {
   const colorByBandKey = new Map((bands || []).map((b) => [b.key, b.color]));
-  colorByBandKey.set(UNKNOWN_BAND_KEY, UNKNOWN_ICON_COLOR);
+  colorByBandKey.set(UNKNOWN_BAND_KEY, unknownIconColor());
 
   const jobs = [];
   for (const shape of SHAPE_KEYS) {

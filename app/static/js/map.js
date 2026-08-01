@@ -19,6 +19,7 @@
 import * as maplibregl from "./vendor/maplibre-gl/maplibre-gl.mjs";
 
 import { api } from "./api.js";
+import { cssColor } from "./chart.js";
 import { formatDistance, formatAltitude } from "./units.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
 import { registerAircraftIcons, iconIdFor, shapeForCategory, UNKNOWN_BAND_KEY } from "./aircraft-icons.js";
@@ -28,7 +29,9 @@ import { registerAircraftIcons, iconIdFor, shapeForCategory, UNKNOWN_BAND_KEY } 
 // from the server-side band definitions used for grouping/filtering.
 let altitudeBands = [];
 let rawAltitudeBands = []; // kept alongside altitudeBands for aircraft-icons.js (needs .key, not just .max/.color)
-const UNKNOWN_ALTITUDE_COLOR = "#8fa3bd";
+function unknownAltitudeColor() {
+  return cssColor("--text-muted", "#96a2b3");
+}
 // Cool-to-warm density ramp for the heatmap layer, matching this app's
 // existing color tokens (style.css's --accent-2/--accent/--success/--warning/--danger).
 const HEATMAP_COLOR_RAMP = ["#60a5fa", "#22d3ee", "#34d399", "#fbbf24", "#fb7185"];
@@ -62,11 +65,11 @@ function formatTime(isoString) {
 }
 
 function colorForAltitude(altitudeFt) {
-  if (altitudeFt == null) return UNKNOWN_ALTITUDE_COLOR;
+  if (altitudeFt == null) return unknownAltitudeColor();
   for (const band of altitudeBands) {
     if (altitudeFt <= band.max) return band.color;
   }
-  return UNKNOWN_ALTITUDE_COLOR;
+  return unknownAltitudeColor();
 }
 
 function bandKeyForAltitude(altitudeFt) {
@@ -195,6 +198,17 @@ export function createTrackMap({ containerId, styleUrl }) {
   let selectedIcao = null;
   let iconsReadyPromise = Promise.resolve();
   let liveFeatureShiftClickHandler = null;
+  // API and WebSocket responses can arrive before the style's `load`
+  // event, especially on a local receiver or deterministic preview server.
+  // Keep the latest requested state instead of silently dropping it; the
+  // load handler replays these values after all sources and layers exist.
+  let pendingTracks = null;
+  let pendingHeatmapCells = null;
+  let pendingHeatmapVisible = null;
+  let pendingLivePositions = null;
+  let pendingLiveTrackPositions = null;
+  let hasFittedTracks = false;
+  let hasFittedLivePositions = false;
   // icao -> { historyFeatures: LineString[], liveRuns: [{color, coordinates}] }
   // -- every live-tracked aircraft accumulates here regardless of picker/
   // isolate visibility (mirrors globe.js's trackState); renderLiveTracks()
@@ -343,8 +357,8 @@ export function createTrackMap({ containerId, styleUrl }) {
         "text-ignore-placement": true,
       },
       paint: {
-        "text-color": "#e8f0fa", // matches style.css's --text
-        "text-halo-color": "#08111f", // matches style.css's --bg
+        "text-color": cssColor("--text", "#f2f5f7"),
+        "text-halo-color": cssColor("--bg", "#080b10"),
         "text-halo-width": 1.5,
       },
     });
@@ -445,12 +459,32 @@ export function createTrackMap({ containerId, styleUrl }) {
       }
       openAircraftSidebar(icao);
     });
+
+    if (pendingTracks) setTracks(pendingTracks);
+    if (pendingHeatmapCells) setHeatmap(pendingHeatmapCells);
+    if (pendingHeatmapVisible != null) setHeatmapVisible(pendingHeatmapVisible);
+    if (pendingLiveTrackPositions) updateLiveTracks(pendingLiveTrackPositions);
+    if (pendingLivePositions) void setLivePositions(pendingLivePositions);
   });
 
   function setTracks(tracksGeoJSON) {
+    pendingTracks = tracksGeoJSON;
     if (!ready) return;
     const source = map.getSource("tracks");
-    if (source) source.setData(tracksToLineFeatures(tracksGeoJSON));
+    const lineFeatures = tracksToLineFeatures(tracksGeoJSON);
+    if (source) source.setData(lineFeatures);
+    if (!hasFittedTracks && lineFeatures.features.length) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const feature of lineFeatures.features) {
+        for (const coordinate of feature.geometry.coordinates || []) {
+          bounds.extend([coordinate[0], coordinate[1]]);
+        }
+      }
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, { padding: 72, maxZoom: 8, duration: 0 });
+        hasFittedTracks = true;
+      }
+    }
   }
 
   // --- live-mode per-aircraft tracks (reuses the "tracks" source/layer
@@ -526,6 +560,7 @@ export function createTrackMap({ containerId, styleUrl }) {
   // state (does not itself trigger a render -- setLivePositions() does,
   // right after this is called each tick, so the two don't double-render).
   function updateLiveTracks(positions) {
+    pendingLiveTrackPositions = positions || [];
     if (!ready) return;
     for (const position of positions || []) {
       if (!position.icao || position.lat == null || position.lon == null) continue;
@@ -549,6 +584,7 @@ export function createTrackMap({ containerId, styleUrl }) {
   }
 
   function clearLiveTracks() {
+    pendingLiveTrackPositions = null;
     liveTrackState.clear();
     visibleLiveIcaos = new Set();
     if (ready) {
@@ -558,26 +594,28 @@ export function createTrackMap({ containerId, styleUrl }) {
   }
 
   function setHeatmap(cells) {
+    pendingHeatmapCells = cells || [];
     if (!ready) return;
     const source = map.getSource("heatmap");
     if (source) source.setData(cellsToHeatmapFeatures(cells));
   }
 
   function setHeatmapVisible(visible) {
+    pendingHeatmapVisible = Boolean(visible);
     if (!ready) return;
     map.setLayoutProperty("heatmap-layer", "visibility", visible ? "visible" : "none");
   }
 
   async function setLivePositions(positions) {
+    pendingLivePositions = positions || [];
     if (!ready) return;
     await iconsReadyPromise;
     const source = map.getSource("live-positions");
     if (!source) return;
+    const visiblePositions = (positions || []).filter((p) => p.lat != null && p.lon != null);
     source.setData({
       type: "FeatureCollection",
-      features: (positions || [])
-        .filter((p) => p.lat != null && p.lon != null)
-        .map((p) => ({
+      features: visiblePositions.map((p) => ({
           type: "Feature",
           geometry: { type: "Point", coordinates: [p.lon, p.lat] },
           properties: {
@@ -590,6 +628,14 @@ export function createTrackMap({ containerId, styleUrl }) {
           },
         })),
     });
+    if (!hasFittedLivePositions && visiblePositions.length) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const position of visiblePositions) bounds.extend([position.lon, position.lat]);
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, { padding: 88, maxZoom: 8.5, duration: 0 });
+        hasFittedLivePositions = true;
+      }
+    }
     // `positions` here is already filtered to what should be visible
     // (fullmap.js's applyLivePositions()) -- track *accumulation* happens
     // for every aircraft regardless (updateLiveTracks, called separately
@@ -600,6 +646,7 @@ export function createTrackMap({ containerId, styleUrl }) {
   }
 
   function clearLivePositions() {
+    pendingLivePositions = null;
     if (!ready) return;
     const source = map.getSource("live-positions");
     if (source) source.setData({ type: "FeatureCollection", features: [] });

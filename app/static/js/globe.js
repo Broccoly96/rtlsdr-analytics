@@ -28,6 +28,7 @@
 // is persisted.
 
 import { api } from "./api.js";
+import { cssColor } from "./chart.js";
 import { openAircraftSidebar } from "./aircraftinfo.js";
 import { formatAltitude, formatDistance } from "./units.js";
 import { getTrackOpacity } from "./track-settings.js";
@@ -36,7 +37,9 @@ import { registerServiceWorker } from "./pwa.js";
 
 const FT_TO_M = 0.3048;
 const DEFAULT_HOURS = 6;
-const UNKNOWN_ALTITUDE_COLOR = "#8fa3bd"; // matches style.css's --text-muted
+function unknownAltitudeColor() {
+  return cssColor("--text-muted", "#96a2b3");
+}
 
 const AIRCRAFT_MODEL_URI = "/static/models/aircraft.glb";
 const KT_TO_FT_PER_S = 1.68781;
@@ -137,11 +140,11 @@ function setAltitudeBands(bands) {
 }
 
 function colorForAltitude(altitudeFt) {
-  if (altitudeFt == null) return UNKNOWN_ALTITUDE_COLOR;
+  if (altitudeFt == null) return unknownAltitudeColor();
   for (const band of altitudeBands) {
     if (altitudeFt <= band.max) return band.color;
   }
-  return UNKNOWN_ALTITUDE_COLOR;
+  return unknownAltitudeColor();
 }
 
 // Cesium polylines have one `material` for the whole entity (no per-vertex
@@ -345,14 +348,14 @@ function upsertEntity(position) {
         color,
         colorBlendMode: Cesium.ColorBlendMode.MIX,
         colorBlendAmount: 0.5,
-        silhouetteColor: Cesium.Color.BLACK,
+        silhouetteColor: Cesium.Color.fromCssColorString(cssColor("--bg", "#080b10")),
         silhouetteSize: 1,
       },
       label: {
         text: callsign || icao,
         font: "12px sans-serif",
         pixelOffset: new Cesium.Cartesian2(0, -24),
-        fillColor: Cesium.Color.WHITE,
+        fillColor: Cesium.Color.fromCssColorString(cssColor("--text", "#f2f5f7")),
       },
     });
     entity.icao = icao;
@@ -538,14 +541,21 @@ function positionTooltip(screenPosition) {
   const canvasRect = viewer.scene.canvas.getBoundingClientRect();
   const parent = tooltip.offsetParent;
   const parentRect = parent ? parent.getBoundingClientRect() : canvasRect;
-  tooltip.style.left = `${canvasRect.left - parentRect.left + screenPosition.x + 12}px`;
-  tooltip.style.top = `${canvasRect.top - parentRect.top + screenPosition.y + 12}px`;
+  const canvasLeft = canvasRect.left - parentRect.left;
+  const canvasTop = canvasRect.top - parentRect.top;
+  const padding = 8;
+  const desiredLeft = canvasLeft + screenPosition.x + 12;
+  const desiredTop = canvasTop + screenPosition.y + 12;
+  const maxLeft = canvasLeft + canvasRect.width - tooltip.offsetWidth - padding;
+  const maxTop = canvasTop + canvasRect.height - tooltip.offsetHeight - padding;
+  tooltip.style.left = `${Math.max(canvasLeft + padding, Math.min(desiredLeft, maxLeft))}px`;
+  tooltip.style.top = `${Math.max(canvasTop + padding, Math.min(desiredTop, maxTop))}px`;
   return tooltip;
 }
 
 function showLiveTooltip(icao, screenPosition) {
   const position = latestPositions.get(icao);
-  const tooltip = positionTooltip(screenPosition);
+  const tooltip = document.getElementById("globe-tooltip");
   if (!tooltip || !position) return;
 
   const parts = [
@@ -555,12 +565,13 @@ function showLiveTooltip(icao, screenPosition) {
   ].filter(Boolean);
   tooltip.textContent = parts.join(" / ");
   tooltip.hidden = false;
+  positionTooltip(screenPosition);
 }
 
 // History-mode tooltip content mirrors map.js's describeFeature exactly
 // (same properties GET /api/tracks already returns).
 function showTrackTooltip(trackInfo, screenPosition) {
-  const tooltip = positionTooltip(screenPosition);
+  const tooltip = document.getElementById("globe-tooltip");
   if (!tooltip) return;
 
   const parts = [
@@ -572,6 +583,7 @@ function showTrackTooltip(trackInfo, screenPosition) {
   ].filter(Boolean);
   tooltip.textContent = parts.join(" / ");
   tooltip.hidden = false;
+  positionTooltip(screenPosition);
 }
 
 function hideTooltip() {

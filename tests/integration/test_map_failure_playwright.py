@@ -58,6 +58,7 @@ RESPONSIVE_VIEWPORTS = (
     (1024, 768),
     (1440, 900),
 )
+GLOBE_STABILITY_VIEWPORTS = ((1440, 900), (832, 750), (390, 844))
 
 
 def _free_tcp_port() -> int:
@@ -318,6 +319,260 @@ async def test_responsive_shell_contract_and_no_document_overflow(static_ui_serv
                     await page.keyboard.press("Escape")
                     await expect(toggle).to_have_attribute("aria-expanded", "false")
                     assert await toggle.evaluate("element => element === document.activeElement")
+
+            await browser.close()
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc):
+            pytest.skip(f"Chromium browser binary is not installed: {exc}")
+        raise
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
+async def test_maplibre_popup_uses_readable_theme_colors_for_every_anchor(static_ui_server):
+    """Our MapLibre override must win for both the body and every tip direction."""
+    try:
+        async with async_playwright() as p:
+            try:
+                browser = await p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"Chromium is not available in this environment: {exc}")
+
+            page = await browser.new_page()
+            await page.route("**/api/**", lambda route: route.abort("failed"))
+            await page.goto(static_ui_server, wait_until="domcontentloaded", timeout=20000)
+
+            styles = await page.evaluate(
+                """() => {
+                    const popup = document.createElement('div');
+                    popup.className = 'maplibregl-popup';
+                    popup.innerHTML = [
+                      '<div class="maplibregl-popup-tip"></div>',
+                      '<div class="maplibregl-popup-content">MAPTEST1</div>',
+                    ].join('');
+                    document.body.appendChild(popup);
+                    const content = popup.querySelector('.maplibregl-popup-content');
+                    const tip = popup.querySelector('.maplibregl-popup-tip');
+                    const directions = {
+                      top: 'borderBottomColor',
+                      'top-left': 'borderBottomColor',
+                      'top-right': 'borderBottomColor',
+                      bottom: 'borderTopColor',
+                      'bottom-left': 'borderTopColor',
+                      'bottom-right': 'borderTopColor',
+                      left: 'borderRightColor',
+                      right: 'borderLeftColor',
+                    };
+                    const tipColors = {};
+                    for (const [anchor, property] of Object.entries(directions)) {
+                      popup.className = `maplibregl-popup maplibregl-popup-anchor-${anchor}`;
+                      tipColors[anchor] = getComputedStyle(tip)[property];
+                    }
+                    const contentStyle = getComputedStyle(content);
+                    const result = {
+                      background: contentStyle.backgroundColor,
+                      text: contentStyle.color,
+                      tipColors,
+                    };
+                    popup.remove();
+                    return result;
+                }"""
+            )
+
+            assert styles["background"] == "rgb(22, 29, 38)"
+            assert styles["text"] == "rgb(242, 245, 247)"
+            assert set(styles["tipColors"].values()) == {"rgb(22, 29, 38)"}
+            assert set(styles["tipColors"]) == {
+                "top",
+                "top-left",
+                "top-right",
+                "bottom",
+                "bottom-left",
+                "bottom-right",
+                "left",
+                "right",
+            }
+
+            await browser.close()
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc):
+            pytest.skip(f"Chromium browser binary is not installed: {exc}")
+        raise
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
+async def test_dashboard_production_charts_use_the_theme_series_palette(static_ui_server):
+    """Inspect options held by the real ECharts instances after dashboard startup."""
+    try:
+        async with async_playwright() as p:
+            try:
+                browser = await p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"Chromium is not available in this environment: {exc}")
+
+            page = await browser.new_page(viewport={"width": 1440, "height": 900})
+
+            async def stub_dashboard_api(route):
+                path = route.request.url.split("?", 1)[0]
+                if path.endswith("/api/config"):
+                    body = {
+                        "map_style_url": "https://example-tiles.invalid/style.json",
+                        "display_timezone": "Asia/Tokyo",
+                        "altitude_bands": [],
+                        "version": "test",
+                        "git_revision": "test",
+                    }
+                elif path.endswith("/api/traffic"):
+                    body = {
+                        "unique_aircraft_count": 2,
+                        "buckets": [
+                            {
+                                "bucket_at": "2026-08-01T00:00:00Z",
+                                "active_aircraft_count": 2,
+                                "position_aircraft_count": 1,
+                            }
+                        ],
+                    }
+                elif path.endswith("/api/distribution/hour-of-day"):
+                    body = {"hours": [{"hour": 7, "unique_aircraft_count": 2}]}
+                elif path.endswith("/api/distribution/altitude"):
+                    body = {"buckets": [{"bucket_start": 10000, "count": 2}]}
+                elif path.endswith("/api/distribution/speed"):
+                    body = {"buckets": [{"bucket_start": 300, "count": 2}]}
+                elif path.endswith("/api/traffic/daily-summary"):
+                    body = {"day": "2026-08-01", "unique_aircraft_count": 2}
+                elif path.endswith("/api/status"):
+                    body = {}
+                elif path.endswith("/api/rankings"):
+                    body = {"farthest": [], "closest": []}
+                elif path.endswith("/api/aircraft/recent"):
+                    body = []
+                elif path.endswith("/api/tracks"):
+                    body = {"type": "FeatureCollection", "features": []}
+                else:
+                    await route.fulfill(status=404, json={"detail": "not stubbed"})
+                    return
+                await route.fulfill(json=body)
+
+            await page.route("**/api/**", stub_dashboard_api)
+            await page.route("https://**/*", lambda route: route.abort("failed"))
+            await page.goto(static_ui_server, wait_until="load", timeout=20000)
+            await page.wait_for_function(
+                """() => ['chart', 'hour-of-day-chart', 'altitude-hist-chart', 'speed-hist-chart']
+                  .every(id => {
+                    const instance = window.echarts.getInstanceByDom(document.getElementById(id));
+                    const option = instance && instance.getOption();
+                    return Boolean(option && option.series && option.series.length);
+                  })""",
+                timeout=20000,
+            )
+
+            options = await page.evaluate(
+                """() => Object.fromEntries(
+                  ['chart', 'hour-of-day-chart', 'altitude-hist-chart', 'speed-hist-chart']
+                    .map(id => [
+                      id,
+                      window.echarts.getInstanceByDom(document.getElementById(id)).getOption(),
+                    ])
+                )"""
+            )
+            for chart_id in ("hour-of-day-chart", "altitude-hist-chart", "speed-hist-chart"):
+                assert options[chart_id]["series"][0]["itemStyle"]["color"].lower() == "#7ca8b5"
+
+            traffic_series = options["chart"]["series"]
+            assert traffic_series[0]["lineStyle"]["color"].lower() == "#7ca8b5"
+            assert traffic_series[1]["lineStyle"]["color"].lower() == "#567985"
+            assert traffic_series[1]["lineStyle"]["type"] == "dashed"
+
+            await browser.close()
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc):
+            pytest.skip(f"Chromium browser binary is not installed: {exc}")
+        raise
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
+@pytest.mark.parametrize("width,height", GLOBE_STABILITY_VIEWPORTS)
+async def test_globe_height_stays_stable_after_init_resize_and_interaction(
+    static_ui_server, width, height
+):
+    """Cesium must fill a fixed grid row without feeding growth back into the page."""
+    try:
+        async with async_playwright() as p:
+            try:
+                browser = await p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"Chromium is not available in this environment: {exc}")
+
+            page = await browser.new_page(viewport={"width": width, "height": height})
+
+            async def stub_globe_api(route):
+                path = route.request.url.split("?", 1)[0]
+                if path.endswith("/api/config"):
+                    await route.fulfill(
+                        json={
+                            "display_timezone": "Asia/Tokyo",
+                            "altitude_bands": [],
+                            "version": "test",
+                            "git_revision": "test",
+                        }
+                    )
+                elif path.endswith("/api/aircraft/recent"):
+                    await route.fulfill(json=[])
+                else:
+                    await route.fulfill(status=404, json={"detail": "not stubbed"})
+
+            await page.route("**/api/**", stub_globe_api)
+            await page.route("https://**/*", lambda route: route.abort("failed"))
+            await page.goto(
+                f"{static_ui_server}/static/globe.html", wait_until="load", timeout=30000
+            )
+            canvas = page.locator("#cesium-container .cesium-widget canvas")
+            await canvas.wait_for(state="visible", timeout=30000)
+
+            async def dimensions():
+                return await page.evaluate(
+                    """() => {
+                      const workspace = document.querySelector('.workspace__canvas');
+                      const container = document.querySelector('#cesium-container');
+                      const canvas = container.querySelector('.cesium-widget canvas');
+                      return {
+                        workspace: workspace.getBoundingClientRect().height,
+                        container: container.getBoundingClientRect().height,
+                        canvas: canvas.getBoundingClientRect().height,
+                        document: document.documentElement.scrollHeight,
+                      };
+                    }"""
+                )
+
+            before = []
+            for _ in range(5):
+                before.append(await dimensions())
+                await page.wait_for_timeout(100)
+
+            box = await canvas.bounding_box()
+            center_x = box["x"] + box["width"] / 2
+            center_y = box["y"] + box["height"] / 2
+            await page.mouse.move(center_x, center_y)
+            await page.mouse.down()
+            await page.mouse.move(center_x + 12, center_y + 8, steps=3)
+            await page.mouse.up()
+            await page.mouse.wheel(0, -40)
+            await page.set_viewport_size({"width": width, "height": height + 1})
+            await page.set_viewport_size({"width": width, "height": height})
+            await page.wait_for_timeout(250)
+
+            after = []
+            for _ in range(5):
+                after.append(await dimensions())
+                await page.wait_for_timeout(100)
+
+            for key in ("workspace", "container", "canvas", "document"):
+                values = [sample[key] for sample in before + after]
+                assert max(values) - min(values) <= 2, (
+                    f"{key} height drifted at {width}x{height}: {values}"
+                )
+            assert after[-1]["container"] >= after[-1]["workspace"] - 4
+            assert after[-1]["canvas"] >= after[-1]["container"] - 4
 
             await browser.close()
     except Exception as exc:

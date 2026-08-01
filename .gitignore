@@ -22,3 +22,7 @@ backups/*.dump
 
 # Docker
 *.log
+
+# AI documents
+CLAUDE.md
+PLAN.md

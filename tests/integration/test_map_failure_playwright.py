@@ -58,7 +58,7 @@ RESPONSIVE_VIEWPORTS = (
     (1024, 768),
     (1440, 900),
 )
-GLOBE_STABILITY_VIEWPORTS = ((1440, 900), (832, 750), (390, 844))
+GLOBE_STABILITY_VIEWPORTS = ((1440, 900), (832, 750), (390, 844), (1440, 1600))
 
 
 def _free_tcp_port() -> int:
@@ -573,6 +573,169 @@ async def test_globe_height_stays_stable_after_init_resize_and_interaction(
                 )
             assert after[-1]["container"] >= after[-1]["workspace"] - 4
             assert after[-1]["canvas"] >= after[-1]["container"] - 4
+            if height == 1600:
+                tall_layout = await page.evaluate(
+                    """() => {
+                      const app = document.querySelector('.app');
+                      const workspace = document.querySelector('.workspace');
+                      const canvas = document.querySelector('.workspace__canvas');
+                      const footer = document.querySelector('.app-footer');
+                      const appStyle = getComputedStyle(app);
+                      const workspaceStyle = getComputedStyle(workspace);
+                      const trailingHeight = footer
+                        ? footer.getBoundingClientRect().height
+                          + parseFloat(workspaceStyle.rowGap || '0')
+                        : 0;
+                      const expectedBottom = window.innerHeight
+                        - parseFloat(appStyle.paddingBottom)
+                        - trailingHeight;
+                      return {
+                        unused: expectedBottom - canvas.getBoundingClientRect().bottom,
+                        document: document.documentElement.scrollHeight,
+                      };
+                    }"""
+                )
+                assert abs(tall_layout["unused"]) <= 8, (
+                    f"globe leaves unused tall-viewport space: {tall_layout}"
+                )
+                assert tall_layout["document"] <= height + 2
+
+            if (width, height) == (832, 750):
+                constrained_layout = await page.evaluate(
+                    """() => {
+                      const app = document.querySelector('.app');
+                      const banner = document.querySelector('#emergency-squawk-banner');
+                      const help = document.querySelector('.workspace__help');
+                      banner.hidden = false;
+                      banner.textContent = '緊急スコークを受信しました';
+                      help.open = true;
+                      return new Promise((resolve) => requestAnimationFrame(() => {
+                        app.scrollTop = app.scrollHeight;
+                        requestAnimationFrame(() => {
+                          const canvas = document.querySelector('.workspace__canvas');
+                          const footer = document.querySelector('.app-footer');
+                          resolve({
+                            canvas: canvas.getBoundingClientRect().height,
+                            client: app.clientHeight,
+                            scroll: app.scrollHeight,
+                            horizontalOverflow: app.scrollWidth - app.clientWidth,
+                            footerBottom: footer.getBoundingClientRect().bottom,
+                            viewport: window.innerHeight,
+                          });
+                        });
+                      }));
+                    }"""
+                )
+                assert constrained_layout["canvas"] >= 360
+                assert constrained_layout["scroll"] > constrained_layout["client"]
+                assert constrained_layout["horizontalOverflow"] <= 2
+                assert constrained_layout["footerBottom"] <= constrained_layout["viewport"] + 2
+
+            await browser.close()
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc):
+            pytest.skip(f"Chromium browser binary is not installed: {exc}")
+        raise
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
+async def test_fullmap_fills_tall_viewport_without_height_drift(static_ui_server):
+    """The 2D workspace must use tall screens without reintroducing resize growth."""
+    try:
+        async with async_playwright() as p:
+            try:
+                browser = await p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"Chromium is not available in this environment: {exc}")
+
+            width, height = 1440, 1600
+            page = await browser.new_page(viewport={"width": width, "height": height})
+
+            async def stub_fullmap_api(route):
+                path = route.request.url.split("?", 1)[0]
+                if path.endswith("/api/config"):
+                    await route.fulfill(
+                        json={
+                            "map_style_url": "https://example-tiles.invalid/style.json",
+                            "display_timezone": "Asia/Tokyo",
+                            "altitude_bands": [],
+                            "version": "test",
+                            "git_revision": "test",
+                        }
+                    )
+                elif path.endswith("/api/aircraft/recent"):
+                    await route.fulfill(json=[])
+                elif path.endswith("/api/tracks"):
+                    await route.fulfill(json={"type": "FeatureCollection", "features": []})
+                else:
+                    await route.fulfill(status=404, json={"detail": "not stubbed"})
+
+            await page.route("**/api/**", stub_fullmap_api)
+            await page.route(
+                "https://example-tiles.invalid/style.json",
+                lambda route: route.fulfill(
+                    json={"version": 8, "name": "test", "sources": {}, "layers": []}
+                ),
+            )
+            await page.route("https://**/*", lambda route: route.abort("failed"))
+            await page.goto(
+                f"{static_ui_server}/static/fullmap.html", wait_until="load", timeout=30000
+            )
+            canvas = page.locator("#map .maplibregl-canvas")
+            await canvas.wait_for(state="visible", timeout=30000)
+
+            async def dimensions():
+                return await page.evaluate(
+                    """() => {
+                      const app = document.querySelector('.app');
+                      const workspace = document.querySelector('.workspace__canvas');
+                      const container = document.querySelector('#map');
+                      const canvas = container.querySelector('.maplibregl-canvas');
+                      const expectedBottom = window.innerHeight
+                        - parseFloat(getComputedStyle(app).paddingBottom);
+                      return {
+                        workspace: workspace.getBoundingClientRect().height,
+                        container: container.getBoundingClientRect().height,
+                        canvas: canvas.getBoundingClientRect().height,
+                        document: document.documentElement.scrollHeight,
+                        unused: expectedBottom - workspace.getBoundingClientRect().bottom,
+                      };
+                    }"""
+                )
+
+            before = []
+            for _ in range(5):
+                before.append(await dimensions())
+                await page.wait_for_timeout(100)
+
+            box = await canvas.bounding_box()
+            center_x = box["x"] + box["width"] / 2
+            center_y = box["y"] + box["height"] / 2
+            await page.mouse.move(center_x, center_y)
+            await page.mouse.down()
+            await page.mouse.move(center_x + 12, center_y + 8, steps=3)
+            await page.mouse.up()
+            await page.mouse.wheel(0, -40)
+            await page.set_viewport_size({"width": width, "height": height + 1})
+            await page.set_viewport_size({"width": width, "height": height})
+            await page.wait_for_timeout(250)
+
+            after = []
+            for _ in range(5):
+                after.append(await dimensions())
+                await page.wait_for_timeout(100)
+
+            for key in ("workspace", "container", "canvas", "document", "unused"):
+                values = [sample[key] for sample in before + after]
+                assert max(values) - min(values) <= 2, (
+                    f"{key} drifted in tall 2D workspace: {values}"
+                )
+            assert after[-1]["container"] >= after[-1]["workspace"] - 4
+            assert after[-1]["canvas"] >= after[-1]["container"] - 4
+            assert abs(after[-1]["unused"]) <= 8, (
+                f"2D map leaves unused tall-viewport space: {after[-1]}"
+            )
+            assert after[-1]["document"] <= height + 2
 
             await browser.close()
     except Exception as exc:

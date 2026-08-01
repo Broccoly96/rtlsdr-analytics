@@ -1524,6 +1524,35 @@
 }
 
 @layer responsive {
+  /* Give observation workspaces a definite viewport-sized flex container.
+     The map/globe row can then consume the true remaining height without
+     relying on an intrinsic percentage chain (which made Cesium grow) or a
+     fixed max-height (which left tall screens partially unused). */
+  @media (min-width: 600px) {
+    .app-shell--workspace {
+      height: 100vh;
+      height: 100dvh;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .app-shell--workspace > .workspace {
+      display: flex;
+      min-height: 0;
+      flex: 1 1 0;
+      flex-direction: column;
+    }
+
+    .app-shell--workspace > .workspace > :not(.workspace__canvas) {
+      flex: 0 0 auto;
+    }
+
+    .app-shell--workspace > .workspace > .workspace__canvas {
+      min-height: 360px;
+      flex: 1 1 360px;
+    }
+  }
+
   /* Expanded navigation rail */
   @media (min-width: 1024px) {
     .app.app-shell,
@@ -1599,9 +1628,6 @@
     .app-header__meta { margin-left: auto; }
     .app-header__actions { width: 100%; justify-content: flex-end; }
 
-    .workspace {
-      --workspace-canvas-height: clamp(360px, 66dvh, 620px);
-    }
   }
 
   /* Mobile bottom navigation and modal sheet. */
@@ -1827,10 +1853,6 @@
     .chart-container--compact,
     .distribution-area .chart-container {
       height: 240px;
-    }
-
-    .workspace {
-      --workspace-canvas-height: clamp(420px, calc(100dvh - 235px), 680px);
     }
 
     .aircraft-sidebar {

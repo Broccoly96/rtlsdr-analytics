@@ -145,7 +145,7 @@ function createHistogramChart(containerId, errorElId, unitLabel) {
       {
         type: "bar",
         data: data.buckets.map((b) => b.count),
-        itemStyle: { color: CHART_COLORS.seriesB },
+        itemStyle: { color: CHART_COLORS.seriesA },
       },
     ],
   }));

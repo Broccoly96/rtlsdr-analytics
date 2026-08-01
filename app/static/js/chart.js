@@ -53,6 +53,9 @@ export const CHART_COLORS = Object.freeze({
   get seriesB() {
     return cssColor("--chart-series-b", "#65d8e8");
   },
+  get seriesMuted() {
+    return cssColor("--chart-series-muted", "#567985");
+  },
 });
 
 export function colorWithAlpha(color, alpha) {
@@ -221,7 +224,7 @@ export function trafficChartOption(traffic) {
         type: "line",
         data: position,
         showSymbol: false,
-        lineStyle: { color: CHART_COLORS.seriesB },
+        lineStyle: { color: CHART_COLORS.seriesMuted, type: "dashed" },
       },
     ],
   };

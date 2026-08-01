@@ -225,6 +225,8 @@
   .page-content {
     display: flex;
     min-width: 0;
+    min-height: 0;
+    flex: 1;
     flex-direction: column;
     gap: var(--gap);
   }
@@ -289,22 +291,30 @@
   .workspace {
     /* PR#3 ("Fix map and chart UI regressions") replaced the original
        minmax(360px, 1fr) row track -- which collapsed to near-zero height
-       in some browsers because 1fr has no definite space to distribute
-       inside a grid container with only an intrinsic (not viewport-tied)
-       height -- with this explicit, viewport-relative height. That fixed
-       the collapse, but its 680px ceiling then capped the map/globe well
-       below the available viewport on any normal desktop monitor. The
-       ceiling here is deliberately generous (in practice never binding on
-       real hardware) so the *dvh-based preferred value does the actual
-       sizing work, same intent as the original design of "fill nearly the
-       whole viewport minus header/toolbar chrome". */
-    --workspace-canvas-height: clamp(360px, 70dvh, 1600px);
-
+       in some browsers -- with an explicit *dvh-based height. That fixed
+       the collapse, but a *dvh guess can never exactly match "whatever
+       space header/toolbar/footer don't use" (it's a fixed percentage of
+       the viewport, not a function of this page's actual chrome height),
+       so it either capped the canvas short (a fixed pixel ceiling, fixed
+       in a later commit) or left a leftover gap below the footer once the
+       ceiling was raised (the *dvh estimate no longer matched the real
+       remaining space).
+       The actual reason 1fr collapsed originally: .page-content (this
+       element's parent-ish flex box via .app's flex-direction: column)
+       had no definite height of its own for 1fr to distribute out of --
+       .app only had min-height: 100dvh (via .app-shell) with no flex-grow
+       passed down to .page-content, so .page-content's box was just its
+       content's natural height, and .workspace inherited that same
+       problem. Giving .page-content `flex: 1` (above) gives it a real,
+       viewport-derived height to fill, which makes 1fr here resolve
+       correctly instead of collapsing -- restoring the original, simpler
+       "fill whatever's left" design without needing to guess a dvh
+       percentage or ceiling at all. */
     display: grid;
     min-width: 0;
     min-height: 0;
     gap: var(--gap-sm);
-    grid-template-rows: auto auto var(--workspace-canvas-height) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
   }
 
   .workspace__canvas {
@@ -860,9 +870,12 @@
     scrollbar-width: thin;
   }
 
-  /* Same fixed-ceiling issue as --workspace-canvas-height above (PR#2):
-     760px caps the raw-data table well below the viewport on any normal
-     desktop monitor instead of scaling with it. */
+  /* Same class of bug as .workspace's original canvas-height ceiling
+     (PR#2): 760px caps the raw-data table well below the viewport on any
+     normal desktop monitor instead of scaling with it. This one stays a
+     *dvh-based max-height (rawdata.html's <main> isn't a .workspace grid,
+     just a plain scrolling page), so raising the ceiling is the right fix
+     here, unlike .workspace's row track above. */
   .table-scroll--tall {
     max-height: min(70vh, 1600px);
     max-height: min(70dvh, 1600px);
@@ -1637,10 +1650,6 @@
     .app-header__intro { flex: 1 1 45%; }
     .app-header__meta { margin-left: auto; }
     .app-header__actions { width: 100%; justify-content: flex-end; }
-
-    .workspace {
-      --workspace-canvas-height: clamp(360px, 66dvh, 1600px);
-    }
   }
 
   /* Mobile bottom navigation and modal sheet. */
@@ -1866,10 +1875,6 @@
     .chart-container--compact,
     .distribution-area .chart-container {
       height: 240px;
-    }
-
-    .workspace {
-      --workspace-canvas-height: clamp(420px, calc(100dvh - 235px), 1600px);
     }
 
     .aircraft-sidebar {

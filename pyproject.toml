@@ -1,6 +1,6 @@
 [project]
 name = "adsb-analytics"
-version = "0.13.2"
+version = "0.14.0"
 description = "Personal ADS-B history and analytics dashboard built on top of readsb."
 requires-python = ">=3.12"
 dependencies = [
@@ -10,6 +10,7 @@ dependencies = [
     "httpx==0.28.1",
     "pydantic==2.13.4",
     "pydantic-settings==2.14.2",
+    "pillow==12.3.0",
 ]
 
 [project.optional-dependencies]
@@ -22,7 +23,6 @@ dev = [
     "pytest-asyncio==1.4.0",
     "ruff==0.8.3",
     "playwright==1.61.0",
-    "pillow==12.3.0",
     "adsb-analytics[migrate]",
 ]
 

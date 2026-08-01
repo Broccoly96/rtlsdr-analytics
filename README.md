@@ -493,15 +493,45 @@ CSP loosening at all — better than either `echarts-gl` (needed
 
 `GET /api/receiver/reception-dome` backs it (unchanged since the first
 design), binning raw `observations` the same way `rssi-by-distance` does
-(sparse, occupied-cells-only, capped at 5,000 cells). If this doesn't earn
-its place either, removal is a single, contained diff: `reception_dome()`/
-`ReceptionDomeCell` in `app/db/queries/receiver.py`, the route + two
-response models, `app/static/js/reception-dome.js`, four integration lines
-in `receiver.js`, the new `<section>` in `receiver.html` (this version needs
-no CSP change to revert), `app/static/js/vendor/three/`, five `i18n.js`
-keys, and this page's Playwright smoke test
-(`tests/integration/test_reception_dome_playwright.py`) — nothing else
-needs touching.
+(sparse, occupied-cells-only, capped at 5,000 cells).
+
+The ground the dome sits on adds three more reference elements: a compass
+ring (N/E/S/W plus a spoke every 30°, fixed regardless of the query — its
+radius is a constant, not derived from data), a vertical altitude-tick
+scale at the back-left corner (rebuilt per query, since its spacing
+depends on that query's own tallest bucket), and an actual basemap image
+centered on the receiver. The basemap is the one part of this feature
+that touches a real architectural question: this app has a standing rule
+that the receiver's exact coordinates never reach the browser (no
+endpoint anywhere else does this either — see the top-level "What this
+project is" section). Rather than become the first exception, `GET
+/api/receiver/basemap.png` (`app/domain/basemap.py`) keeps
+`RECEIVER_LAT`/`RECEIVER_LON` server-side, composites real
+[OpenStreetMap](https://www.openstreetmap.org/copyright) raster tiles
+into a single PNG centered on the receiver there, and sends only the
+resulting pixels across — the browser only ever asks for a radius (a
+distance, not a location) and gets an opaque image back. Tile fetches are
+cached in-memory per coarse 25km radius bucket (the receiver's location
+is fixed for the process lifetime, so this ends up being a handful of
+tiles fetched once, not a per-request cost), and requests to OSM's tile
+servers carry this app's own descriptive `User-Agent`
+(`app/version.py`'s `get_user_agent()`, the same one already used for
+`api.adsbdb.com`/`api.planespotters.net`), per OSM's tile usage policy.
+This is also why Pillow — previously a dev-only dependency (used only for
+Playwright screenshot comparisons in tests) — is now a runtime dependency:
+it does the actual tile compositing.
+
+If this doesn't earn its place either, removal is a single, contained
+diff: `reception_dome()`/`ReceptionDomeCell` in
+`app/db/queries/receiver.py`, the reception-dome route + two response
+models plus the `basemap.png` route in `app/api/routers/receiver.py`,
+`app/domain/basemap.py`, `app/static/js/reception-dome.js`, four
+integration lines in `receiver.js`, the new `<section>` in `receiver.html`
+(this version needs no CSP change to revert), `app/static/js/vendor/three/`,
+the `i18n.js` keys under `receiver.receptionDome*`/`receiver.rssiStrength*`,
+Pillow (back to dev-only), and this page's Playwright smoke test
+(`tests/integration/test_reception_dome_playwright.py`) plus
+`tests/unit/test_basemap.py` — nothing else needs touching.
 
 Also on this page: a day/night max-range comparison (a simple local-hour
 split — `[6, 18)` counts as "day" — not a sunrise/sunset-precise one) and
@@ -524,8 +554,10 @@ once a day (after the previous day's rollup completes, around 00:10 in
 
 A "画像として保存" (save as image) button renders the day's key stats to
 a `<canvas>` client-side and downloads a PNG — no server-side image
-generation (Pillow stays a dev-only dependency, not promoted into the
-Docker image for this). A monthly/yearly summary section below reads
+generation involved. (Pillow *is* a runtime dependency now, but only for
+the receiver page's reception-dome basemap — see that section above; this
+button predates that and still does everything client-side.) A
+monthly/yearly summary section below reads
 `GET /api/traffic/monthly` / `/api/traffic/yearly`, aggregated the same
 "from `traffic_day`/`aircraft_day`, never raw `observations`" way as the
 receiver page's weekly trend above — summing a whole month/year of raw
@@ -934,6 +966,14 @@ you), since the container itself has neither a `.git` directory nor a
   calculations and are never returned at full precision by the API; the
   optional map marker is rounded (`MAP_RECEIVER_MARKER_PRECISION`) and off
   by default (`MAP_SHOW_RECEIVER_MARKER=false`).
+- The reception dome's basemap (`GET /api/receiver/basemap.png`) fetches
+  real map tiles from `tile.openstreetmap.org`, server-side, to build the
+  image the dome's ground plane displays — but never sends your
+  coordinates to the browser to do it: the client only ever sends a
+  radius and receives back a finished, opaque PNG. See the [receiver
+  performance](#receiver-performance-staticreceiverhtml) section above
+  for why this, rather than sending rounded coordinates to the browser
+  for a client-side map layer, was the deliberate choice here.
 - Clicking an aircraft's "機体情報を見る" (aircraft info) link fetches
   registration/type from `api.adsbdb.com` **directly from your browser**
   — the server is never involved and never sees which aircraft you

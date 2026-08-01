@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.api.dependencies import get_pool, get_settings
 from app.api.schemas import (
@@ -41,6 +41,7 @@ from app.db.queries.receiver import (
     rssi_by_distance,
     weekly_trend,
 )
+from app.domain.basemap import MAX_RADIUS_KM, MIN_RADIUS_KM, get_basemap_png
 
 router = APIRouter(prefix="/api/receiver", tags=["receiver"])
 
@@ -132,6 +133,24 @@ async def get_reception_dome(
         altitude_bucket_ft=DEFAULT_DOME_ALTITUDE_BUCKET_FT,
         sector_width_deg=SECTOR_WIDTH_DEG,
         cells=[ReceptionDomeCellResponse(**asdict(cell)) for cell in cells],
+    )
+
+
+@router.get("/basemap.png", include_in_schema=False)
+async def get_receiver_basemap(
+    radius_km: float = Query(..., ge=MIN_RADIUS_KM, le=MAX_RADIUS_KM),
+    settings=Depends(get_settings),
+) -> Response:
+    png_bytes, actual_radius_km = await get_basemap_png(
+        settings.receiver_lat, settings.receiver_lon, radius_km
+    )
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Basemap-Radius-Km": str(actual_radius_km),
+        },
     )
 
 

@@ -278,10 +278,12 @@ const DICT = {
     "receiver.receptionDomeCaption":
       "方位・距離・高度(見やすさのため誇張表示)ごとの観測密度を、雲状の半透明な塊" +
       "(等密度面)として表示しています。色は平均受信強度(赤=強、青=弱)、塊の大きさ・" +
-      "不透明度は観測密度を表します。個々の観測点も併せて表示しています。ドラッグで回転・" +
-      "スクロールでズームできます。",
+      "不透明度は観測密度を表します。個々の観測点も併せて表示しています。地面には方位計" +
+      "(N/E/S/Wと30度ごとの方位線)、左奥には高度目盛りを表示し、地面には受信局を中心と" +
+      "した実際の地図も重ねて表示しています。ドラッグで回転・スクロールでズームできます。",
     "receiver.rssiStrengthWeak": "弱",
     "receiver.rssiStrengthStrong": "強",
+    "receiver.receptionDomeBasemapAttributionPrefix": "地図データ:",
     "receiver.messageCount": "メッセージ数",
     "receiver.positionRate": "位置取得率(%)",
     "receiver.dayNightHeading": "昼夜別受信距離",
@@ -740,10 +742,13 @@ const DICT = {
       "Observation density by bearing, distance, and altitude (exaggerated for " +
       "readability) is shown as a soft, cloud-like blob (an isodensity surface). Color " +
       "shows average signal strength (red = strong, blue = weak); the blob's size/opacity " +
-      "shows observation density. Individual observations are also shown as points. Drag " +
-      "to rotate, scroll to zoom.",
+      "shows observation density. Individual observations are also shown as points. The " +
+      "ground shows a compass (N/E/S/W and spokes every 30 degrees) and an altitude scale " +
+      "at the back-left, plus a real map centered on the receiver overlaid on the ground. " +
+      "Drag to rotate, scroll to zoom.",
     "receiver.rssiStrengthWeak": "Weak",
     "receiver.rssiStrengthStrong": "Strong",
+    "receiver.receptionDomeBasemapAttributionPrefix": "Map data:",
     "receiver.messageCount": "Messages",
     "receiver.positionRate": "Position rate (%)",
     "receiver.dayNightHeading": "Day/Night Reception Range",

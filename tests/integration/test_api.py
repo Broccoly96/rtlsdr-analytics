@@ -13,6 +13,7 @@ import asyncpg
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import app.api.routers.receiver as receiver_router
 from app.api.main import create_app
 from app.collector.aggregator import TrafficMinute
 from app.collector.store import IngestionStatus
@@ -741,6 +742,33 @@ async def test_receiver_reception_dome_empty(client: AsyncClient) -> None:
     assert body["distance_bucket_km"] > 0
     assert body["altitude_bucket_ft"] > 0
     assert body["sector_width_deg"] == 22.5
+
+
+async def test_receiver_basemap_returns_png_and_bucketed_radius_header(
+    client: AsyncClient, monkeypatch
+) -> None:
+    # The real tile-fetch/composite path is covered by tests/unit/test_basemap.py
+    # (with the upstream OSM call mocked); this only checks the route wires
+    # get_basemap_png's result into the response correctly, without making a
+    # real network call to a tile server from a test run.
+    async def _fake_get_basemap_png(receiver_lat, receiver_lon, radius_km, *, client=None):
+        assert radius_km == 24.0
+        return b"fake-png-bytes", 25.0
+
+    monkeypatch.setattr(receiver_router, "get_basemap_png", _fake_get_basemap_png)
+
+    response = await client.get("/api/receiver/basemap.png", params={"radius_km": 24.0})
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["x-basemap-radius-km"] == "25.0"
+    assert response.content == b"fake-png-bytes"
+
+
+async def test_receiver_basemap_rejects_out_of_bounds_radius(client: AsyncClient) -> None:
+    too_small = await client.get("/api/receiver/basemap.png", params={"radius_km": 0})
+    too_large = await client.get("/api/receiver/basemap.png", params={"radius_km": 5000})
+    assert too_small.status_code == 422
+    assert too_large.status_code == 422
 
 
 async def test_receiver_bounds_rejected(client: AsyncClient) -> None:

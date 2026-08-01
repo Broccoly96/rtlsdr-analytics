@@ -89,14 +89,20 @@
       <p class="panel__empty" data-i18n="receiver.receptionDomeCaption">
         方位・距離・高度(見やすさのため誇張表示)ごとの観測密度を、雲状の半透明な塊
         (等密度面)として表示しています。色は平均受信強度(赤=強、青=弱)、塊の大きさ・
-        不透明度は観測密度を表します。個々の観測点も併せて表示しています。ドラッグで回転・
-        スクロールでズームできます。
+        不透明度は観測密度を表します。個々の観測点も併せて表示しています。地面には
+        方位計(N/E/S/Wと30度ごとの方位線)、左奥には高度目盛りを表示し、地面には
+        受信局を中心とした実際の地図も重ねて表示しています。ドラッグで回転・スクロール
+        でズームできます。
       </p>
       <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
         <span class="panel__empty" style="padding: 0;" data-i18n="receiver.rssiStrengthWeak">弱</span>
         <span style="flex: 1; max-width: 200px; height: 8px; border-radius: 4px; background: linear-gradient(to right, hsl(216, 80%, 55%), hsl(170, 80%, 55%), hsl(90, 80%, 55%), hsl(0, 80%, 55%));"></span>
         <span class="panel__empty" style="padding: 0;" data-i18n="receiver.rssiStrengthStrong">強</span>
       </div>
+      <p class="panel__empty" style="margin-top: 2px;">
+        <span data-i18n="receiver.receptionDomeBasemapAttributionPrefix">地図データ:</span>
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
+      </p>
     </div>
   </section>
 

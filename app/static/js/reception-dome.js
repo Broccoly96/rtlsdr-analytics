@@ -25,6 +25,18 @@
 // the top of each file) specifically so this chart needs zero CSP
 // loosening -- unlike echarts-gl (which needed 'unsafe-eval') or globe.html's
 // CesiumJS (which needs 'unsafe-eval' and blob:).
+//
+// Also renders, on the ground plane the dome sits on: a compass ring
+// (N/E/S/W + 30-degree spokes, fixed, query-independent) and a vertical
+// altitude scale (tick labels, rebuilt per query since its spacing depends
+// on the query's own tallest cell) -- plus an actual basemap image
+// (app/domain/basemap.py's GET /api/receiver/basemap.png), fetched and
+// texture-mapped onto a third ground plane. The basemap is composited
+// server-side from real OSM tiles and sent as opaque pixels -- see
+// basemap.py's module docstring for why this, and not sending the
+// receiver's lat/lon to the browser for a client-side MapLibre layer, was
+// the deliberate choice (this app has never sent receiver coordinates to
+// the browser anywhere, and this feature doesn't become the exception).
 
 import * as THREE from "./vendor/three/three.module.min.js";
 import { MarchingCubes } from "./vendor/three/jsm/objects/MarchingCubes.js";
@@ -91,6 +103,69 @@ function cellToKm(cell, distanceBucketKm) {
     zKm: distKm * Math.cos(bearingRad), // north (bearing 0 deg = north, clockwise; three.js -Z is "forward/north")
     yKm: cell.altitude_bucket_ft * FT_TO_KM * ALTITUDE_EXAGGERATION,
   };
+}
+
+// World-space radius of the ground ring/basemap at the data's own horizontal
+// edge (ballCoord = 0.5 + MARGIN -> ballToWorld gives 2*MARGIN) -- shared by
+// the compass ring (fixed, built once) and the basemap plane (rescaled per
+// query, since it must line up with whatever maxHorizKm the current query
+// actually has).
+const GROUND_WORLD_RADIUS = 2 * MARGIN;
+// Slightly below y=0 (which is where the lowest possible altitude bucket
+// sits, see Y_WORLD_OFFSET above) so the compass ring/basemap read as a
+// "floor" the dome sits on rather than fighting the lowest data layer for
+// the same z-depth.
+const GROUND_Y = -0.02;
+const BASEMAP_Y = GROUND_Y - 0.004;
+
+const ALTITUDE_TICK_STEP_CANDIDATES_FT = [1000, 2000, 5000, 10000, 20000, 50000];
+const MAX_ALTITUDE_TICKS = 6;
+
+function niceAltitudeStepFt(maxAltitudeFt) {
+  for (const step of ALTITUDE_TICK_STEP_CANDIDATES_FT) {
+    if (maxAltitudeFt / step <= MAX_ALTITUDE_TICKS) return step;
+  }
+  return ALTITUDE_TICK_STEP_CANDIDATES_FT[ALTITUDE_TICK_STEP_CANDIDATES_FT.length - 1];
+}
+
+// Renders `text` onto an offscreen canvas and wraps it as a THREE.Sprite,
+// the standard lightweight way to put text labels into a three.js scene
+// without pulling in a font/text-geometry library.
+function makeTextSprite(text, { fontSizePx = 48, color = "#c9d6e3", worldHeight = 0.075 } = {}) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const padding = fontSizePx * 0.35;
+  ctx.font = `bold ${fontSizePx}px sans-serif`;
+  const textWidth = ctx.measureText(text).width;
+  canvas.width = Math.ceil(textWidth + padding * 2);
+  canvas.height = Math.ceil(fontSizePx * 1.5);
+  // Re-set font: sizing the canvas resets its 2D context state.
+  ctx.font = `bold ${fontSizePx}px sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  const aspect = canvas.width / canvas.height;
+  sprite.scale.set(worldHeight * aspect, worldHeight, 1);
+  return sprite;
+}
+
+function disposeGroupChildren(group) {
+  while (group.children.length) {
+    const child = group.children.pop();
+    child.geometry?.dispose();
+    if (child.material?.map) child.material.map.dispose();
+    child.material?.dispose();
+  }
 }
 
 class ReceptionDomeChart {
@@ -166,6 +241,19 @@ class ReceptionDomeChart {
       this.pointsGroup = new THREE.Group();
       this.scene.add(this.pointsGroup);
 
+      // Static (query-independent): built once here, never rebuilt in
+      // setData(), since GROUND_WORLD_RADIUS doesn't depend on the data.
+      this.scene.add(this._buildCompass());
+
+      // Data-dependent (altitude scale changes with each query's own
+      // maxYKm) and rebuilt every setData() call, same as pointsGroup/mc.
+      this.altitudeAxisGroup = new THREE.Group();
+      this.scene.add(this.altitudeAxisGroup);
+
+      this.basemapGroup = new THREE.Group();
+      this.scene.add(this.basemapGroup);
+      this._basemapRadiusKm = null;
+
       let resizeQueued = false;
       this._resizeObserver = new ResizeObserver(() => {
         if (resizeQueued) return;
@@ -201,6 +289,193 @@ class ReceptionDomeChart {
     this._render();
   }
 
+  // Compass ring (distance ring + 30-degree spokes + N/E/S/W labels) lying
+  // flat on the ground plane. Built once (see _init()): its radius is
+  // GROUND_WORLD_RADIUS, a fixed constant, not derived from any query's
+  // data, so it never needs rebuilding.
+  _buildCompass() {
+    const group = new THREE.Group();
+
+    const ringPoints = [];
+    const RING_SEGMENTS = 128;
+    for (let i = 0; i <= RING_SEGMENTS; i++) {
+      const angle = (i / RING_SEGMENTS) * Math.PI * 2;
+      ringPoints.push(
+        new THREE.Vector3(
+          Math.sin(angle) * GROUND_WORLD_RADIUS,
+          GROUND_Y,
+          Math.cos(angle) * GROUND_WORLD_RADIUS
+        )
+      );
+    }
+    const ringGeometry = new THREE.BufferGeometry().setFromPoints(ringPoints);
+    const ringMaterial = new THREE.LineBasicMaterial({
+      color: 0x4fd1c5,
+      transparent: true,
+      opacity: 0.45,
+    });
+    group.add(new THREE.LineLoop(ringGeometry, ringMaterial));
+
+    const spokePoints = [];
+    for (let deg = 0; deg < 360; deg += 30) {
+      const angle = (deg * Math.PI) / 180;
+      spokePoints.push(new THREE.Vector3(0, GROUND_Y, 0));
+      spokePoints.push(
+        new THREE.Vector3(
+          Math.sin(angle) * GROUND_WORLD_RADIUS,
+          GROUND_Y,
+          Math.cos(angle) * GROUND_WORLD_RADIUS
+        )
+      );
+    }
+    const spokeGeometry = new THREE.BufferGeometry().setFromPoints(spokePoints);
+    const spokeMaterial = new THREE.LineBasicMaterial({
+      color: 0x4fd1c5,
+      transparent: true,
+      opacity: 0.15,
+    });
+    group.add(new THREE.LineSegments(spokeGeometry, spokeMaterial));
+
+    // Cardinal directions only (not translated -- N/E/S/W compass
+    // abbreviations, universally understood the same way this app's
+    // existing bearing-range polar chart already labels degrees).
+    const labelRadius = GROUND_WORLD_RADIUS * 1.12;
+    for (const { deg, text } of [
+      { deg: 0, text: "N" },
+      { deg: 90, text: "E" },
+      { deg: 180, text: "S" },
+      { deg: 270, text: "W" },
+    ]) {
+      const angle = (deg * Math.PI) / 180;
+      const sprite = makeTextSprite(text, {
+        fontSizePx: 56,
+        color: "#8fe3d8",
+        worldHeight: 0.09,
+      });
+      sprite.position.set(
+        Math.sin(angle) * labelRadius,
+        GROUND_Y,
+        Math.cos(angle) * labelRadius
+      );
+      group.add(sprite);
+    }
+    return group;
+  }
+
+  // Vertical altitude scale (tick marks + "N,NNN ft" labels), rebuilt each
+  // setData() call because its tick spacing/positions depend on the
+  // current query's own maxYKm (see setData()'s by = Y_BASE + (yKm /
+  // maxYKm) * Y_RANGE mapping) -- a fixed altitude value sits at a
+  // different world height depending on what the tallest cell in the
+  // current query actually is.
+  _buildAltitudeAxis(maxYKm) {
+    const group = new THREE.Group();
+    const maxAltitudeFt = maxYKm / (FT_TO_KM * ALTITUDE_EXAGGERATION);
+    const stepFt = niceAltitudeStepFt(maxAltitudeFt);
+
+    const cornerX = -GROUND_WORLD_RADIUS * 1.15;
+    const cornerZ = -GROUND_WORLD_RADIUS * 1.15;
+
+    const altitudeToWorldY = (altitudeFt) => {
+      const yKm = altitudeFt * FT_TO_KM * ALTITUDE_EXAGGERATION;
+      const by = Y_BASE + (yKm / maxYKm) * Y_RANGE;
+      return ballToWorld(by) + Y_WORLD_OFFSET;
+    };
+
+    const topWorldY = altitudeToWorldY(Math.ceil(maxAltitudeFt / stepFt) * stepFt);
+    const axisPoints = [
+      new THREE.Vector3(cornerX, altitudeToWorldY(0), cornerZ),
+      new THREE.Vector3(cornerX, topWorldY, cornerZ),
+    ];
+    const axisGeometry = new THREE.BufferGeometry().setFromPoints(axisPoints);
+    const axisMaterial = new THREE.LineBasicMaterial({
+      color: 0x9aa7b5,
+      transparent: true,
+      opacity: 0.5,
+    });
+    group.add(new THREE.Line(axisGeometry, axisMaterial));
+
+    const TICK_HALF_LENGTH = 0.02;
+    for (let altitudeFt = 0; altitudeFt <= maxAltitudeFt + stepFt / 2; altitudeFt += stepFt) {
+      const worldY = altitudeToWorldY(altitudeFt);
+      const tickPoints = [
+        new THREE.Vector3(cornerX - TICK_HALF_LENGTH, worldY, cornerZ),
+        new THREE.Vector3(cornerX + TICK_HALF_LENGTH, worldY, cornerZ),
+      ];
+      const tickGeometry = new THREE.BufferGeometry().setFromPoints(tickPoints);
+      group.add(new THREE.Line(tickGeometry, axisMaterial));
+
+      const label = makeTextSprite(`${Math.round(altitudeFt).toLocaleString()} ft`, {
+        fontSizePx: 40,
+        color: "#9aa7b5",
+        worldHeight: 0.055,
+      });
+      label.position.set(cornerX - TICK_HALF_LENGTH * 5, worldY, cornerZ);
+      group.add(label);
+    }
+    return group;
+  }
+
+  // Fetches (once per rounded-radius bucket -- the server buckets too, see
+  // app/domain/basemap.py) a real basemap image centered on the receiver
+  // and texture-maps it onto a flat ground plane sized to the *current*
+  // query's own km-to-world-unit scale, so the map's real-world scale
+  // lines up with the data points regardless of which bucket the server
+  // actually rendered. Coordinates never appear anywhere in this
+  // request -- only a radius (a distance) goes out, only pixels come
+  // back; see basemap.py's module docstring for why.
+  async _ensureBasemap(maxHorizKm) {
+    const requestRadiusKm = Math.max(1, Math.ceil(maxHorizKm));
+    if (this._basemapRadiusKm === requestRadiusKm) return;
+    this._basemapRadiusKm = requestRadiusKm;
+
+    try {
+      const response = await fetch(`/api/receiver/basemap.png?radius_km=${requestRadiusKm}`);
+      if (!response.ok) return;
+      const actualRadiusKm = parseFloat(
+        response.headers.get("X-Basemap-Radius-Km") || String(requestRadiusKm)
+      );
+      const blob = await response.blob();
+      const bitmap = await createImageBitmap(blob);
+
+      // Stale by the time the fetch resolves (a newer query already
+      // requested a different radius) -- drop this response rather than
+      // showing a mismatched-scale basemap.
+      if (this._basemapRadiusKm !== requestRadiusKm) return;
+
+      disposeGroupChildren(this.basemapGroup);
+      const texture = new THREE.Texture(bitmap);
+      texture.needsUpdate = true;
+      texture.colorSpace = THREE.SRGBColorSpace;
+
+      const worldRadius = actualRadiusKm * (GROUND_WORLD_RADIUS / maxHorizKm);
+      const geometry = new THREE.PlaneGeometry(worldRadius * 2, worldRadius * 2);
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.85,
+        // The rotated plane's front-face normal ends up facing down (-Y),
+        // away from the camera's usual above-the-dome vantage point --
+        // DoubleSide avoids depending on getting that rotation direction
+        // exactly right for visibility.
+        side: THREE.DoubleSide,
+      });
+      const plane = new THREE.Mesh(geometry, material);
+      // PlaneGeometry starts in the XY plane facing +Z; rotating +90 deg
+      // around X lays it flat with local +Y (source image row 0, i.e.
+      // north, since flipY defaults to true) mapped to world +Z (north)
+      // -- verified by working through the rotation matrix by hand, since
+      // getting this backwards would silently render the map upside down
+      // (mirrored across the receiver) with no error of any kind.
+      plane.rotation.x = Math.PI / 2;
+      plane.position.set(0, BASEMAP_Y, 0);
+      this.basemapGroup.add(plane);
+      this._render();
+    } catch (err) {
+      console.error("reception-dome basemap load failed", err);
+    }
+  }
+
   setData(data) {
     if (!this.ready) return;
     try {
@@ -213,6 +488,7 @@ class ReceptionDomeChart {
 
       if (!data.cells.length) {
         this.mc.reset();
+        disposeGroupChildren(this.altitudeAxisGroup);
         this._render();
         return;
       }
@@ -235,6 +511,13 @@ class ReceptionDomeChart {
       // not being directly color-comparable across different time ranges.
       const minRssi = Math.min(...rssiValues);
       const maxRssi = Math.max(...rssiValues);
+
+      disposeGroupChildren(this.altitudeAxisGroup);
+      this.altitudeAxisGroup.add(this._buildAltitudeAxis(maxYKm));
+      // Fire-and-forget: the fetch resolves later and rebuilds
+      // basemapGroup + re-renders on its own; setData() doesn't block on
+      // it, and it no-ops if the radius bucket hasn't actually changed.
+      this._ensureBasemap(maxHorizKm);
 
       // Ball-space [0,1] coordinates, computed once per cell and shared by
       // both the isosurface (below, top-N densest cells only) and the

@@ -44,7 +44,6 @@ import { OrbitControls } from "./vendor/three/jsm/controls/OrbitControls.js";
 import { t } from "./i18n.js";
 
 const FT_TO_KM = 0.0003048;
-const ALTITUDE_EXAGGERATION = 6;
 const MC_RESOLUTION = 44;
 // addBall's (strength, subtract) pair controls each metaball's effective
 // radius and how sharply it falls off -- see MarchingCubes.addBall's own
@@ -81,7 +80,14 @@ function ballToWorld(ballCoord) {
 // edges would sit outside any possible surface.
 const MARGIN = 0.42;
 const Y_BASE = 0.1;
-const Y_RANGE = 0.55;
+// The actual control on how "tall" the dome looks relative to its
+// horizontal spread: ballToWorld() scales every axis identically, so the
+// true vertical/horizontal exaggeration ratio in world units is just
+// Y_RANGE vs MARGIN, not any per-cell altitude constant (see cellToKm's
+// comment). Halved from an original 0.55 at the user's request ("altitude
+// looks over-exaggerated") after discovering the old ALTITUDE_EXAGGERATION
+// constant wasn't actually doing anything.
+const Y_RANGE = 0.275;
 // Shifts the lowest possible altitude ball (Y_BASE) to world y = 0, so the
 // dome sits on the "ground" rather than straddling it -- ballToWorld() maps
 // [0,1] symmetrically to [-1,1], so without this offset half the dome would
@@ -101,7 +107,16 @@ function cellToKm(cell, distanceBucketKm) {
   return {
     xKm: distKm * Math.sin(bearingRad), // east
     zKm: distKm * Math.cos(bearingRad), // north (bearing 0 deg = north, clockwise; three.js -Z is "forward/north")
-    yKm: cell.altitude_bucket_ft * FT_TO_KM * ALTITUDE_EXAGGERATION,
+    // No altitude-exaggeration multiplier here on purpose: setData() below
+    // divides every yKm by maxYKm (the tallest cell's own yKm) to get a
+    // [0,1]-ish ball coordinate, so any constant multiplier applied to
+    // yKm here would cancel out exactly against the same multiplier in
+    // maxYKm -- a former ALTITUDE_EXAGGERATION constant here was
+    // discovered to be a complete no-op for that reason (changing it had
+    // zero visual effect), the same category of bug as this feature's
+    // earlier echarts-gl "scaling data doesn't change the box" issue.
+    // Y_RANGE below is the actual, real lever on vertical exaggeration.
+    yKm: cell.altitude_bucket_ft * FT_TO_KM,
   };
 }
 
@@ -120,6 +135,10 @@ const BASEMAP_Y = GROUND_Y - 0.004;
 
 const ALTITUDE_TICK_STEP_CANDIDATES_FT = [1000, 2000, 5000, 10000, 20000, 50000];
 const MAX_ALTITUDE_TICKS = 6;
+
+const NM_TO_KM = 1.852;
+const DISTANCE_RING_STEP_NM = 50;
+const DISTANCE_RING_STEP_KM = DISTANCE_RING_STEP_NM * NM_TO_KM;
 
 function niceAltitudeStepFt(maxAltitudeFt) {
   for (const step of ALTITUDE_TICK_STEP_CANDIDATES_FT) {
@@ -250,6 +269,12 @@ class ReceptionDomeChart {
       this.altitudeAxisGroup = new THREE.Group();
       this.scene.add(this.altitudeAxisGroup);
 
+      // Distance rings' world radii depend on maxHorizKm (the current
+      // query's own scale), so this is rebuilt in setData() too, same as
+      // the altitude axis.
+      this.distanceRingsGroup = new THREE.Group();
+      this.scene.add(this.distanceRingsGroup);
+
       this.basemapGroup = new THREE.Group();
       this.scene.add(this.basemapGroup);
       this._basemapRadiusKm = null;
@@ -310,9 +335,11 @@ class ReceptionDomeChart {
     }
     const ringGeometry = new THREE.BufferGeometry().setFromPoints(ringPoints);
     const ringMaterial = new THREE.LineBasicMaterial({
-      color: 0x4fd1c5,
+      // Dark, not the earlier teal -- needs to read clearly against the
+      // basemap's light OSM tile colors, at the user's request.
+      color: 0x1c1c1c,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.55,
     });
     group.add(new THREE.LineLoop(ringGeometry, ringMaterial));
 
@@ -330,9 +357,9 @@ class ReceptionDomeChart {
     }
     const spokeGeometry = new THREE.BufferGeometry().setFromPoints(spokePoints);
     const spokeMaterial = new THREE.LineBasicMaterial({
-      color: 0x4fd1c5,
+      color: 0x1c1c1c,
       transparent: true,
-      opacity: 0.15,
+      opacity: 0.2,
     });
     group.add(new THREE.LineSegments(spokeGeometry, spokeMaterial));
 
@@ -349,7 +376,7 @@ class ReceptionDomeChart {
       const angle = (deg * Math.PI) / 180;
       const sprite = makeTextSprite(text, {
         fontSizePx: 56,
-        color: "#8fe3d8",
+        color: "#1c1c1c",
         worldHeight: 0.09,
       });
       sprite.position.set(
@@ -370,14 +397,14 @@ class ReceptionDomeChart {
   // current query actually is.
   _buildAltitudeAxis(maxYKm) {
     const group = new THREE.Group();
-    const maxAltitudeFt = maxYKm / (FT_TO_KM * ALTITUDE_EXAGGERATION);
+    const maxAltitudeFt = maxYKm / FT_TO_KM;
     const stepFt = niceAltitudeStepFt(maxAltitudeFt);
 
     const cornerX = -GROUND_WORLD_RADIUS * 1.15;
     const cornerZ = -GROUND_WORLD_RADIUS * 1.15;
 
     const altitudeToWorldY = (altitudeFt) => {
-      const yKm = altitudeFt * FT_TO_KM * ALTITUDE_EXAGGERATION;
+      const yKm = altitudeFt * FT_TO_KM;
       const by = Y_BASE + (yKm / maxYKm) * Y_RANGE;
       return ballToWorld(by) + Y_WORLD_OFFSET;
     };
@@ -416,6 +443,57 @@ class ReceptionDomeChart {
     return group;
   }
 
+  // Concentric distance rings every 50nm on the ground plane, out to the
+  // current query's own maxHorizKm -- rebuilt per query (like the altitude
+  // axis) since the world-per-km scale depends on maxHorizKm. Uses the
+  // same GROUND_WORLD_RADIUS/maxHorizKm conversion as the compass ring and
+  // the data points themselves, not the basemap image's own (separately
+  // bucketed) radius, so a ring genuinely marks 50/100/150... real
+  // nautical miles from the receiver regardless of which basemap image
+  // bucket happened to be fetched.
+  _buildDistanceRings(maxHorizKm) {
+    const group = new THREE.Group();
+    const worldPerKm = GROUND_WORLD_RADIUS / maxHorizKm;
+    const ringMaterial = new THREE.LineBasicMaterial({
+      color: 0x1c1c1c,
+      transparent: true,
+      opacity: 0.4,
+    });
+    const RING_SEGMENTS = 96;
+    const labelAngleRad = Math.PI / 4; // northeast, clear of the N/E labels
+
+    for (
+      let distKm = DISTANCE_RING_STEP_KM;
+      distKm <= maxHorizKm + DISTANCE_RING_STEP_KM / 2;
+      distKm += DISTANCE_RING_STEP_KM
+    ) {
+      const worldRadius = distKm * worldPerKm;
+      const points = [];
+      for (let i = 0; i <= RING_SEGMENTS; i++) {
+        const angle = (i / RING_SEGMENTS) * Math.PI * 2;
+        points.push(
+          new THREE.Vector3(Math.sin(angle) * worldRadius, GROUND_Y + 0.001, Math.cos(angle) * worldRadius)
+        );
+      }
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      group.add(new THREE.LineLoop(geometry, ringMaterial));
+
+      const nm = Math.round(distKm / NM_TO_KM);
+      const label = makeTextSprite(`${nm}nm`, {
+        fontSizePx: 34,
+        color: "#1c1c1c",
+        worldHeight: 0.045,
+      });
+      label.position.set(
+        Math.sin(labelAngleRad) * worldRadius,
+        GROUND_Y + 0.001,
+        Math.cos(labelAngleRad) * worldRadius
+      );
+      group.add(label);
+    }
+    return group;
+  }
+
   // Fetches (once per rounded-radius bucket -- the server buckets too, see
   // app/domain/basemap.py) a real basemap image centered on the receiver
   // and texture-maps it onto a flat ground plane sized to the *current*
@@ -436,38 +514,79 @@ class ReceptionDomeChart {
         response.headers.get("X-Basemap-Radius-Km") || String(requestRadiusKm)
       );
       const blob = await response.blob();
-      const bitmap = await createImageBitmap(blob);
+      // Deliberately NOT createImageBitmap() here: verified empirically
+      // (a synthetic quadrant-colored test texture, checked corner-by-
+      // corner via gl.readPixels rather than by eye) that
+      // createImageBitmap()+THREE.Texture renders this image mirrored
+      // left-right on this vendored Three.js build, while loading through
+      // a plain <img> element does not. This is what caused the very
+      // real "N and S look swapped compared to the map" bug -- an actual
+      // east-west mirror reads as a north-south swap once combined with
+      // the compass ring's own bearing convention.
+      const objectUrl = URL.createObjectURL(blob);
+      const image = new Image();
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = objectUrl;
+      });
 
       // Stale by the time the fetch resolves (a newer query already
       // requested a different radius) -- drop this response rather than
       // showing a mismatched-scale basemap.
-      if (this._basemapRadiusKm !== requestRadiusKm) return;
+      if (this._basemapRadiusKm !== requestRadiusKm) {
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
 
       disposeGroupChildren(this.basemapGroup);
-      const texture = new THREE.Texture(bitmap);
+      const texture = new THREE.Texture(image);
       texture.needsUpdate = true;
       texture.colorSpace = THREE.SRGBColorSpace;
+      URL.revokeObjectURL(objectUrl);
 
       const worldRadius = actualRadiusKm * (GROUND_WORLD_RADIUS / maxHorizKm);
-      const geometry = new THREE.PlaneGeometry(worldRadius * 2, worldRadius * 2);
       const material = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
         opacity: 0.85,
-        // The rotated plane's front-face normal ends up facing down (-Y),
-        // away from the camera's usual above-the-dome vantage point --
-        // DoubleSide avoids depending on getting that rotation direction
-        // exactly right for visibility.
         side: THREE.DoubleSide,
       });
+      // Custom geometry (four explicit corner vertices/UVs) instead of
+      // PlaneGeometry+rotation.x: verified corner-by-corner (same
+      // gl.readPixels technique as the mirroring check above) that this
+      // exact position/UV pairing puts each world compass corner's own
+      // matching source-image corner there -- north=+Z, east=+X, matching
+      // cellToKm()'s convention -- with nothing left to a rotation-matrix
+      // derivation that has proven easy to get backwards without an
+      // error of any kind.
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          new Float32Array([
+            -worldRadius, 0, worldRadius, // NW
+            worldRadius, 0, worldRadius, // NE
+            -worldRadius, 0, -worldRadius, // SW
+            worldRadius, 0, -worldRadius, // SE
+          ]),
+          3
+        )
+      );
+      geometry.setAttribute(
+        "uv",
+        new THREE.BufferAttribute(
+          new Float32Array([
+            0, 1, // NW
+            1, 1, // NE
+            0, 0, // SW
+            1, 0, // SE
+          ]),
+          2
+        )
+      );
+      geometry.setIndex([0, 2, 1, 2, 3, 1]);
       const plane = new THREE.Mesh(geometry, material);
-      // PlaneGeometry starts in the XY plane facing +Z; rotating +90 deg
-      // around X lays it flat with local +Y (source image row 0, i.e.
-      // north, since flipY defaults to true) mapped to world +Z (north)
-      // -- verified by working through the rotation matrix by hand, since
-      // getting this backwards would silently render the map upside down
-      // (mirrored across the receiver) with no error of any kind.
-      plane.rotation.x = Math.PI / 2;
       plane.position.set(0, BASEMAP_Y, 0);
       this.basemapGroup.add(plane);
       this._render();
@@ -489,6 +608,7 @@ class ReceptionDomeChart {
       if (!data.cells.length) {
         this.mc.reset();
         disposeGroupChildren(this.altitudeAxisGroup);
+        disposeGroupChildren(this.distanceRingsGroup);
         this._render();
         return;
       }
@@ -514,6 +634,8 @@ class ReceptionDomeChart {
 
       disposeGroupChildren(this.altitudeAxisGroup);
       this.altitudeAxisGroup.add(this._buildAltitudeAxis(maxYKm));
+      disposeGroupChildren(this.distanceRingsGroup);
+      this.distanceRingsGroup.add(this._buildDistanceRings(maxHorizKm));
       // Fire-and-forget: the fetch resolves later and rebuilds
       // basemapGroup + re-renders on its own; setData() doesn't block on
       // it, and it no-ops if the radius bucket hasn't actually changed.

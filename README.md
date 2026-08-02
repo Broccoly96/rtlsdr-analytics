@@ -521,13 +521,41 @@ This is also why Pillow — previously a dev-only dependency (used only for
 Playwright screenshot comparisons in tests) — is now a runtime dependency:
 it does the actual tile compositing.
 
+Also on the ground plane: distance rings every 50nm out to the query's own
+`maxHorizKm`, using the same km-to-world-unit scale as the compass ring and
+data points (not the basemap image's own, separately-bucketed radius, so a
+ring genuinely means 50/100/150nm regardless of which basemap bucket the
+server happened to fetch). The compass ring, spokes, and distance rings
+are all a dark near-black — deliberately not the lighter color used in
+earlier iterations, since it needs to read against the basemap's light OSM
+tile colors. Two real bugs surfaced once the basemap was actually compared
+against the compass ring on real data (rather than the synthetic grid
+texture used earlier, which is symmetric enough to hide both): the
+basemap image was rendering mirrored east-west — traced to
+`createImageBitmap()` + `THREE.Texture`, confirmed empirically (a
+synthetic quadrant-colored test texture checked corner-by-corner via
+`gl.readPixels`, not by eye, since a mirror this subtle is easy to
+misjudge visually and this investigation itself first went down a wrong
+path by trusting an eyeballed reading of a test glyph) to render mirrored
+on this vendored Three.js version, while loading the same PNG through a
+plain `<img>` element does not — fixed by switching to `<img>`-based
+loading (which needed `blob:` added to this page's `img-src`, since
+`createImageBitmap()` doesn't go through `img-src` at all but `<img
+src="blob:...">` does) and a custom `BufferGeometry` with explicit
+corner UVs instead of `PlaneGeometry` + a `rotation.x` guess. Separately,
+the vertical (altitude) axis was over-exaggerated because a former
+`ALTITUDE_EXAGGERATION` constant multiplied every cell's Z position *and*
+the normalizing `maxYKm` it's divided by, canceling out to a complete
+no-op — the real, working lever turned out to be `Y_RANGE` (the
+ball-space vertical range itself), halved at the user's request.
+
 If this doesn't earn its place either, removal is a single, contained
 diff: `reception_dome()`/`ReceptionDomeCell` in
 `app/db/queries/receiver.py`, the reception-dome route + two response
 models plus the `basemap.png` route in `app/api/routers/receiver.py`,
 `app/domain/basemap.py`, `app/static/js/reception-dome.js`, four
 integration lines in `receiver.js`, the new `<section>` in `receiver.html`
-(this version needs no CSP change to revert), `app/static/js/vendor/three/`,
+(revert `img-src` to drop `blob:` too), `app/static/js/vendor/three/`,
 the `i18n.js` keys under `receiver.receptionDome*`/`receiver.rssiStrength*`,
 Pillow (back to dev-only), and this page's Playwright smoke test
 (`tests/integration/test_reception_dome_playwright.py`) plus

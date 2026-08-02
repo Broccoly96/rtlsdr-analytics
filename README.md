@@ -544,19 +544,27 @@ loading (which needed `blob:` added to this page's `img-src`, since
 src="blob:...">` does) and a custom `BufferGeometry` with explicit
 corner UVs instead of `PlaneGeometry` + a `rotation.x` guess.
 
-That fixed one mirroring bug but not a second, independent one: a flat
-`DoubleSide` plane with a single texture necessarily shows a mirror image
-on its opposite face — the same reason handwriting reads backwards through
-the back of a translucent page — and the `BufferGeometry`'s UV assignment
-above, while verified correct via `gl.readPixels`, turned out to be
-correct only for a viewer *below* the ground plane looking up, not for the
-actual camera above looking down. Caught by the user directly comparing
-the rendered map against known real-world geography from directly
-overhead — not something any isolated synthetic test could have
-substituted for, since a plane's front/back distinction depends on which
-side the camera is actually on. Fixed by mirroring the UV assignment's `u`
-(east-west) axis; `v` (north-south) was left untouched, since that had
-already been independently confirmed correct and this bug didn't affect it.
+The user then reported the map still looked "flipped front-to-back"
+looking straight down from above. The real cause: a flat `DoubleSide`
+plane with a single texture necessarily shows a mirror image on its
+opposite face — the same reason handwriting reads backwards through the
+back of a translucent page — and `OrbitControls` had no limit on how far
+the camera could orbit, so dragging far enough down (easy to do while
+specifically trying to get a clean top-down view, which is exactly what
+triggered this) could rotate the camera underneath the ground plane,
+showing its mirrored underside. The first attempt at a fix mirrored the
+`u` (east-west) UV axis instead — which seemed to match the symptom, but
+was wrong: verified afterwards by reading actual rendered place-name text
+(本州, 福島市, 宇都宮市, 名古屋市, ...) character-by-character, which
+came out backwards-ordered ("市" before the place name, e.g. "市福井"
+instead of the correct "福井市") only *after* that `u`-flip — the
+original `u` mapping had been correct all along, and the flip introduced
+a new mirror rather than fixing one. The actual fix: revert the `u` flip,
+and instead cap `OrbitControls.maxPolarAngle` so the camera can never
+orbit far enough to end up below the ground plane looking up at its
+underside in the first place — no UV mapping can make a single texture
+look correct from both sides of a plane simultaneously, so preventing
+that viewing angle is the only real fix.
 
 Separately, the vertical (altitude) axis was over-exaggerated because a former
 `ALTITUDE_EXAGGERATION` constant multiplied every cell's Z position *and*

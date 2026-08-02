@@ -245,6 +245,14 @@ class ReceptionDomeChart {
       this.controls.target.set(0, Y_WORLD_OFFSET * 0.4, 0);
       this.controls.enableDamping = true;
       this.controls.dampingFactor = 0.08;
+      // Caps how far the camera can orbit downward so it can never end up
+      // below the ground plane looking up at its underside. This isn't
+      // just a nicer default angle: a single flat texture on a
+      // double-sided plane is fundamentally unable to look correct from
+      // both sides at once (the same reason handwriting reads backwards
+      // through the back of a translucent page) -- no choice of UV
+      // mapping fixes that, only preventing that viewing angle does.
+      this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
       this.controls.addEventListener("change", () => this._render());
 
       this.scene.add(new THREE.AmbientLight(0xffffff, 1.1));
@@ -598,10 +606,10 @@ class ReceptionDomeChart {
         "uv",
         new THREE.BufferAttribute(
           new Float32Array([
-            1, 1, // NW
-            0, 1, // NE
-            1, 0, // SW
-            0, 0, // SE
+            0, 1, // NW
+            1, 1, // NE
+            0, 0, // SW
+            1, 0, // SE
           ]),
           2
         )

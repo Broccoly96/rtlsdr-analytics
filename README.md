@@ -566,6 +566,37 @@ underside in the first place — no UV mapping can make a single texture
 look correct from both sides of a plane simultaneously, so preventing
 that viewing angle is the only real fix.
 
+None of that turned out to be the whole story either: the user checked
+again against real geography and confirmed the map (and the dome/point
+cloud with it) genuinely needed an east-west flip, independent of the
+front/back-face issue above. `cellToKm()`'s `xKm` is now negated (bearing
+0/east placement mirrors relative to before), the compass ring's N/E/S/W
+label *text* is swapped at each existing position (the ring and its
+30-degree spokes are geometrically symmetric under an east-west mirror,
+so only the labels needed touching, not the ring itself), and the
+basemap's UV `u` axis is mirrored again to match — this time paired with
+the data/compass change instead of applied to the map in isolation,
+which is what made the earlier, wrong `u`-flip attempt read backwards.
+
+Separately, the user found the basemap's own real-world scale didn't
+match the dome's distance rings. Root cause: `_choose_zoom()`
+(`app/domain/basemap.py`) only ever returns an *integer* Web Mercator
+zoom level, and each zoom level differs from its neighbor by exactly 2x
+in scale — cropping a fixed `output_px`-wide window at that rounded
+zoom, with no further correction, could leave the actual rendered scale
+off from the requested radius by up to ~41% (`2**0.5`) in the worst
+case, silently, while the distance rings (computed directly from
+`maxHorizKm`, no zoom quantization involved) stayed exact. Fixed by
+cropping the *exact* pixel window implied by the chosen zoom's true
+meters-per-pixel, then resizing that crop (rarely exactly `output_px`
+wide) to `output_px` — the final image, at `output_px` resolution,
+now always represents exactly `2 * radius_km` kilometers, regardless of
+which integer zoom got picked for tile-fetching. A regression test
+(`tests/unit/test_basemap.py`) confirms the rounding gap is large enough
+to matter (so the fix has something real to correct) and that the
+output size comes out exact across a range of radii spanning multiple
+zoom-rounding boundaries.
+
 Separately, the vertical (altitude) axis was over-exaggerated because a former
 `ALTITUDE_EXAGGERATION` constant multiplied every cell's Z position *and*
 the normalizing `maxYKm` it's divided by, canceling out to a complete

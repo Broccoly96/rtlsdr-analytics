@@ -121,14 +121,37 @@ async def _render_basemap_png(
     client: httpx.AsyncClient | None = None,
 ) -> bytes:
     """Composites OSM raster tiles into a single square PNG, `output_px`
-    wide, centered on (receiver_lat, receiver_lon), spanning
+    wide, centered on (receiver_lat, receiver_lon), spanning *exactly*
     `2 * radius_km` kilometers. Split out from the cached route handler
     so tests can inject a mocked client (same pattern as
-    app/api/routers/aircraft_history.py's _fetch_photo)."""
+    app/api/routers/aircraft_history.py's _fetch_photo).
+
+    `_choose_zoom` only ever returns an *integer* zoom level, but each
+    zoom level differs from its neighbor by exactly 2x in scale -- so
+    rounding to the nearest integer zoom, then cropping a fixed
+    `output_px`-wide window at that zoom with no further correction
+    (this function's original approach), leaves the actual rendered
+    scale off from the requested radius_km by up to ~41% (2**0.5) in
+    the worst case, silently. This surfaced as a real, visible mismatch
+    between the basemap's true scale and the reception dome's distance
+    rings (computed exactly from maxHorizKm, with no such rounding).
+    Fixed by cropping the *exact* pixel window this zoom level's true
+    meters-per-pixel implies for `2*radius_km`, then resizing that crop
+    (which will rarely be exactly `output_px` wide) down/up to
+    `output_px` -- the final image, at `output_px` resolution, always
+    represents exactly `2*radius_km` km, regardless of which integer
+    zoom `_choose_zoom` picked for tile-fetching purposes.
+    """
     zoom = _choose_zoom(receiver_lat, radius_km, output_px)
     center_px_x, center_px_y = _lat_lon_to_pixel(receiver_lat, receiver_lon, zoom)
 
-    half = output_px / 2.0
+    # Exact crop size (in this zoom's true pixels) needed to cover
+    # 2*radius_km at this zoom's actual (not target) meters-per-pixel.
+    lat_rad = math.radians(receiver_lat)
+    actual_meters_per_px = 156543.03392 * math.cos(lat_rad) / (2**zoom)
+    crop_px = (radius_km * 2.0 * 1000.0) / actual_meters_per_px
+
+    half = crop_px / 2.0
     px_min, px_max = center_px_x - half, center_px_x + half
     py_min, py_max = center_px_y - half, center_px_y + half
 
@@ -156,9 +179,12 @@ async def _render_basemap_png(
 
     crop_left = int(round(px_min - tile_x_min * TILE_SIZE_PX))
     crop_top = int(round(py_min - tile_y_min * TILE_SIZE_PX))
+    crop_px_int = int(round(crop_px))
     cropped = composite.crop(
-        (crop_left, crop_top, crop_left + output_px, crop_top + output_px)
+        (crop_left, crop_top, crop_left + crop_px_int, crop_top + crop_px_int)
     )
+    if cropped.size != (output_px, output_px):
+        cropped = cropped.resize((output_px, output_px), Image.LANCZOS)
 
     buffer = io.BytesIO()
     cropped.save(buffer, format="PNG")

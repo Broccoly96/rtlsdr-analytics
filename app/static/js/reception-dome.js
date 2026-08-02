@@ -118,7 +118,14 @@ function cellToKm(cell, distanceBucketKm) {
   const bearingRad = (cell.sector_center_deg * Math.PI) / 180;
   const distKm = cell.distance_bucket_km + distanceBucketKm / 2;
   return {
-    xKm: distKm * Math.sin(bearingRad), // east
+    // Negated at the user's explicit request after their own direct
+    // comparison against real geography: the dome/point cloud (and the
+    // basemap's UV assignment, kept paired with this) needed an
+    // east-west flip specifically, with north-south left untouched. The
+    // compass ring/spokes are unaffected (a circle and 30-degree spokes
+    // are symmetric under this), only the N/E/S/W label *text* at each
+    // position needed swapping to match -- see _buildCompass().
+    xKm: -distKm * Math.sin(bearingRad), // east
     zKm: distKm * Math.cos(bearingRad), // north (bearing 0 deg = north, clockwise; three.js -Z is "forward/north")
     // No altitude-exaggeration multiplier here on purpose: setData() below
     // divides every yKm by maxYKm (the tallest cell's own yKm) to get a
@@ -387,12 +394,18 @@ class ReceptionDomeChart {
     // Cardinal directions only (not translated -- N/E/S/W compass
     // abbreviations, universally understood the same way this app's
     // existing bearing-range polar chart already labels degrees).
+    // E/W text is swapped relative to the position formula's own
+    // sin(deg) sign (rather than negating the position formula itself,
+    // which would be a no-op here anyway: a full ring/spokes are
+    // symmetric under X negation) -- this keeps the labels aligned with
+    // cellToKm()'s now-negated xKm, since a full circle can't otherwise
+    // reveal which side is which.
     const labelRadius = GROUND_WORLD_RADIUS * 1.12;
     for (const { deg, text } of [
       { deg: 0, text: "N" },
-      { deg: 90, text: "E" },
+      { deg: 90, text: "W" },
       { deg: 180, text: "S" },
-      { deg: 270, text: "W" },
+      { deg: 270, text: "E" },
     ]) {
       const angle = (deg * Math.PI) / 180;
       const sprite = makeTextSprite(text, {
@@ -574,21 +587,14 @@ class ReceptionDomeChart {
         side: THREE.DoubleSide,
       });
       // Custom geometry (four explicit corner vertices/UVs) instead of
-      // PlaneGeometry+rotation.x: verified corner-by-corner (same
-      // gl.readPixels technique as the mirroring check above) that this
-      // position/UV pairing puts each world compass corner's own matching
-      // source-image corner there -- BUT only for a viewer below the
-      // ground plane looking up: a flat double-sided texture necessarily
-      // shows its mirror image on the opposite face (the same reason
-      // handwriting reads backwards through the back of a translucent
-      // page), and that earlier verification's camera happened to be on
-      // the wrong side of this fact relative to how the real app is
-      // actually viewed (from above). Confirmed by the user directly,
-      // comparing against known real-world geography from directly
-      // overhead -- the one ground truth no isolated synthetic test can
-      // substitute for. U (east-west) is mirrored here relative to the
-      // previous version to correct it; V (north-south) is untouched, since
-      // that was already independently confirmed correct.
+      // PlaneGeometry+rotation.x: an OrbitControls polar-angle cap (see
+      // _init()) keeps the camera from ever seeing this plane's opposite,
+      // inherently-mirrored face, so the one remaining question is purely
+      // which world corner should get which source-image corner -- and
+      // per the user's own direct verification against real geography,
+      // this needs an east-west flip to match cellToKm()'s now-negated
+      // xKm, so that the map and the data/compass agree on which side is
+      // east. V (north-south) is untouched.
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute(
         "position",
@@ -606,10 +612,10 @@ class ReceptionDomeChart {
         "uv",
         new THREE.BufferAttribute(
           new Float32Array([
-            0, 1, // NW
-            1, 1, // NE
-            0, 0, // SW
-            1, 0, // SE
+            1, 1, // NW
+            0, 1, // NE
+            1, 0, // SW
+            0, 0, // SE
           ]),
           2
         )

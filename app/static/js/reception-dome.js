@@ -47,14 +47,27 @@ const FT_TO_KM = 0.0003048;
 const MC_RESOLUTION = 44;
 // addBall's (strength, subtract) pair controls each metaball's effective
 // radius and how sharply it falls off -- see MarchingCubes.addBall's own
-// comment ("radius = sqrt(strength / subtract)"). BASE_STRENGTH is scaled
-// per-cell by observation count (denser cells contribute a bigger, more
-// dominant blob) up to MAX_STRENGTH so one very dense cell can't swallow
-// the whole grid.
+// comment ("radius = size * sqrt(strength / subtract)", where size ==
+// MC_RESOLUTION, in VOXEL units, not ball-space [0,1] units). BASE_STRENGTH
+// is scaled per-cell by observation count (denser cells contribute a
+// bigger, more dominant blob) up to MAX_STRENGTH so one very dense cell
+// can't swallow the whole grid.
+//
+// SUBTRACT=10/ISOLATION=55 (this feature's original values) worked out to
+// a per-ball radius of ~10-21 voxels out of 44 total -- confirmed by
+// plugging BASE_STRENGTH/MAX_STRENGTH into addBall's own formula -- close
+// to half the grid's width for a single dense cell's ball alone. Combined
+// with overlapping balls' fields adding together, that made the isosurface
+// visibly balloon out well past the actual measured points (reported by
+// the user after comparing against the point cloud). SUBTRACT=40/
+// ISOLATION=75 below roughly halves each ball's radius (radius scales with
+// 1/sqrt(subtract)) and raises the threshold needed to stay "inside" the
+// surface, pulling it in to hug the points more closely while still
+// merging nearby dense clusters into one blob.
 const BASE_STRENGTH = 0.5;
 const MAX_STRENGTH = 2.2;
-const SUBTRACT = 10;
-const ISOLATION = 55;
+const SUBTRACT = 40;
+const ISOLATION = 75;
 // Only the densest cells become metaballs (keeps marching-cubes' per-ball
 // voxel-touching cost bounded regardless of how many sparse cells the API
 // returns); every cell still contributes its own overlaid point regardless.

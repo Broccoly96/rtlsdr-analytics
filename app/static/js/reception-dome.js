@@ -568,11 +568,19 @@ class ReceptionDomeChart {
       // Custom geometry (four explicit corner vertices/UVs) instead of
       // PlaneGeometry+rotation.x: verified corner-by-corner (same
       // gl.readPixels technique as the mirroring check above) that this
-      // exact position/UV pairing puts each world compass corner's own
-      // matching source-image corner there -- north=+Z, east=+X, matching
-      // cellToKm()'s convention -- with nothing left to a rotation-matrix
-      // derivation that has proven easy to get backwards without an
-      // error of any kind.
+      // position/UV pairing puts each world compass corner's own matching
+      // source-image corner there -- BUT only for a viewer below the
+      // ground plane looking up: a flat double-sided texture necessarily
+      // shows its mirror image on the opposite face (the same reason
+      // handwriting reads backwards through the back of a translucent
+      // page), and that earlier verification's camera happened to be on
+      // the wrong side of this fact relative to how the real app is
+      // actually viewed (from above). Confirmed by the user directly,
+      // comparing against known real-world geography from directly
+      // overhead -- the one ground truth no isolated synthetic test can
+      // substitute for. U (east-west) is mirrored here relative to the
+      // previous version to correct it; V (north-south) is untouched, since
+      // that was already independently confirmed correct.
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute(
         "position",
@@ -590,10 +598,10 @@ class ReceptionDomeChart {
         "uv",
         new THREE.BufferAttribute(
           new Float32Array([
-            0, 1, // NW
-            1, 1, // NE
-            0, 0, // SW
-            1, 0, // SE
+            1, 1, // NW
+            0, 1, // NE
+            1, 0, // SW
+            0, 0, // SE
           ]),
           2
         )

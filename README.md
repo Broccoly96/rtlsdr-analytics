@@ -542,8 +542,23 @@ plain `<img>` element does not — fixed by switching to `<img>`-based
 loading (which needed `blob:` added to this page's `img-src`, since
 `createImageBitmap()` doesn't go through `img-src` at all but `<img
 src="blob:...">` does) and a custom `BufferGeometry` with explicit
-corner UVs instead of `PlaneGeometry` + a `rotation.x` guess. Separately,
-the vertical (altitude) axis was over-exaggerated because a former
+corner UVs instead of `PlaneGeometry` + a `rotation.x` guess.
+
+That fixed one mirroring bug but not a second, independent one: a flat
+`DoubleSide` plane with a single texture necessarily shows a mirror image
+on its opposite face — the same reason handwriting reads backwards through
+the back of a translucent page — and the `BufferGeometry`'s UV assignment
+above, while verified correct via `gl.readPixels`, turned out to be
+correct only for a viewer *below* the ground plane looking up, not for the
+actual camera above looking down. Caught by the user directly comparing
+the rendered map against known real-world geography from directly
+overhead — not something any isolated synthetic test could have
+substituted for, since a plane's front/back distinction depends on which
+side the camera is actually on. Fixed by mirroring the UV assignment's `u`
+(east-west) axis; `v` (north-south) was left untouched, since that had
+already been independently confirmed correct and this bug didn't affect it.
+
+Separately, the vertical (altitude) axis was over-exaggerated because a former
 `ALTITUDE_EXAGGERATION` constant multiplied every cell's Z position *and*
 the normalizing `maxYKm` it's divided by, canceling out to a complete
 no-op — the real, working lever turned out to be `Y_RANGE` (the

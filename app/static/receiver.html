@@ -91,9 +91,22 @@
   </section>
 
   <section class="main-area">
+    <div class="panel">
+      <div class="panel__header" data-i18n="receiver.dayNightHeading">昼夜別受信距離</div>
+      <div id="day-night-summary" class="daily-highlight">--</div>
+      <div id="metar-summary" class="daily-highlight" hidden></div>
+    </div>
+    <div class="panel panel--chart">
+      <div class="panel__header" id="weekly-trend-heading" data-i18n="receiver.weeklyTrendHeading">週次トレンド</div>
+      <div id="weekly-trend-chart" class="chart-container" role="img" aria-labelledby="weekly-trend-heading" style="height: 220px;"></div>
+      <div id="weekly-trend-chart-error" class="panel__error" hidden></div>
+    </div>
+  </section>
+
+  <section class="main-area">
     <div class="panel panel--chart panel--full">
       <div class="panel__header" id="reception-dome-heading" data-i18n="receiver.receptionDomeHeading">受信範囲 3D表示(方位・距離・高度)</div>
-      <div id="reception-dome-chart" class="chart-container" role="img" aria-labelledby="reception-dome-heading" style="height: 480px;"></div>
+      <div id="reception-dome-chart" class="chart-container" role="img" aria-labelledby="reception-dome-heading" style="height: 960px;"></div>
       <div id="reception-dome-chart-error" class="panel__error" hidden></div>
       <p class="panel__empty" data-i18n="receiver.receptionDomeCaption">
         方位・距離・高度(見やすさのため誇張表示)ごとの観測密度を、雲状の半透明な塊
@@ -112,19 +125,6 @@
         <span data-i18n="receiver.receptionDomeBasemapAttributionPrefix">地図データ:</span>
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
       </p>
-    </div>
-  </section>
-
-  <section class="main-area">
-    <div class="panel">
-      <div class="panel__header" data-i18n="receiver.dayNightHeading">昼夜別受信距離</div>
-      <div id="day-night-summary" class="daily-highlight">--</div>
-      <div id="metar-summary" class="daily-highlight" hidden></div>
-    </div>
-    <div class="panel panel--chart">
-      <div class="panel__header" id="weekly-trend-heading" data-i18n="receiver.weeklyTrendHeading">週次トレンド</div>
-      <div id="weekly-trend-chart" class="chart-container" role="img" aria-labelledby="weekly-trend-heading" style="height: 220px;"></div>
-      <div id="weekly-trend-chart-error" class="panel__error" hidden></div>
     </div>
   </section>
 

@@ -100,6 +100,20 @@ async def test_live_always_ok(client: AsyncClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/api/config", "/missing", "/api/traffic?hours=0"],
+)
+async def test_http_responses_include_security_headers(client: AsyncClient, path: str) -> None:
+    response = await client.get(path)
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["permissions-policy"] == (
+        "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+    )
+
+
 async def test_ready_fails_with_no_data(client: AsyncClient) -> None:
     response = await client.get("/health/ready")
     assert response.status_code == 503
@@ -890,9 +904,7 @@ async def test_receiver_rssi_by_distance_with_seeded_data(
     assert cell["rssi_bucket_db"] == -25.0  # floor(-22 / 5) * 5
 
 
-async def test_receiver_reception_dome_with_seeded_data(
-    postgres_url, client: AsyncClient
-) -> None:
+async def test_receiver_reception_dome_with_seeded_data(postgres_url, client: AsyncClient) -> None:
     store = await PostgresStore.connect(postgres_url)
     now = datetime.now(UTC)
     try:
@@ -1699,10 +1711,9 @@ async def test_on_this_day_empty(client: AsyncClient) -> None:
 
 
 async def test_on_this_day_finds_past_year_matches(postgres_url, client: AsyncClient) -> None:
-    from datetime import UTC as _UTC
-    from datetime import datetime as _datetime
-
-    today = _datetime.now(_UTC).date()
+    # Match the application's configured display timezone. Using the UTC date
+    # makes this test fail during the UTC/JST calendar-day boundary.
+    today = today_in_tz("Asia/Tokyo")
     last_year_same_day = today.replace(year=today.year - 1)
 
     conn = await asyncpg.connect(postgres_url)
@@ -1750,9 +1761,7 @@ async def test_favorite_invalid_icao_is_422(client: AsyncClient) -> None:
     assert (await client.delete("/api/favorites/not-hex")).status_code == 422
 
 
-async def test_favorite_add_list_remove_roundtrip(
-    postgres_url, client: AsyncClient
-) -> None:
+async def test_favorite_add_list_remove_roundtrip(postgres_url, client: AsyncClient) -> None:
     await _seed_fresh_success(postgres_url)
 
     post_response = await client.post("/api/favorites/aaaaaa")
@@ -1803,9 +1812,7 @@ async def test_badges_empty_db_none_earned(client: AsyncClient) -> None:
     assert all(not b["earned"] for b in badges)
 
 
-async def test_badges_first_contact_earned_after_seeding(
-    postgres_url, client: AsyncClient
-) -> None:
+async def test_badges_first_contact_earned_after_seeding(postgres_url, client: AsyncClient) -> None:
     await _seed_fresh_success(postgres_url)
     response = await client.get("/api/badges")
     badges = {b["key"]: b for b in response.json()["badges"]}
@@ -1909,3 +1916,34 @@ async def test_service_worker_served_at_root_with_correct_media_type(client: Asy
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/javascript")
     assert response.headers["cache-control"] == "no-store"
+
+
+# --- optional anonymous public surface ------------------------------------
+
+
+async def test_public_hostname_is_minimal_while_private_hostname_is_unchanged(
+    postgres_url, clean_db
+) -> None:
+    settings = _settings(postgres_url)
+    settings.public_hostname = "public.broccolynet.com"
+    app = create_app(settings=settings)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="https://public.broccolynet.com",
+        ) as public_client:
+            public_root = await public_client.get("/")
+            assert public_root.status_code == 200
+            assert "BroccoliNet ADS-B Status" in public_root.text
+            assert (await public_client.get("/api/status")).status_code == 200
+            assert (await public_client.get("/api/status")).headers["cache-control"] == "no-store"
+            assert (await public_client.get("/openapi.json")).status_code == 404
+            assert (await public_client.get("/static/index.html")).status_code == 404
+            assert (await public_client.post("/api/favorites/abc123")).status_code == 404
+
+            private_root = await public_client.get(
+                "/",
+                headers={"Host": "private.tailnet.example"},
+            )
+            assert private_root.status_code == 200
+            assert "BroccoliNet ADS-B Status" not in private_root.text

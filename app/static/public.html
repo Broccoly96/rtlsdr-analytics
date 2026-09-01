@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>BroccoliNet ADS-B Status</title>
+  <link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32">
+  <link rel="stylesheet" href="/static/css/public.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">BROCCOLINET / ADS-B</p>
+    <h1>Receiver status</h1>
+    <p class="lede">公開用の読み取り専用ステータスです。受信地点・飛行履歴・管理機能は公開していません。</p>
+    <section class="status" aria-live="polite">
+      <div><span>受信状態</span><strong id="state">確認中</strong></div>
+      <div><span>検出中の航空機</span><strong id="active">—</strong></div>
+      <div><span>位置取得中</span><strong id="position">—</strong></div>
+    </section>
+    <p id="updated" class="updated"></p>
+  </main>
+  <script type="module" src="/static/js/public.js"></script>
+</body>
+</html>

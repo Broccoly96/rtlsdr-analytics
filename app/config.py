@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     database_url: str
     app_bind_host: str = "127.0.0.1"
     app_port: int = 8088
+    # Optional anonymous, read-only publication boundary. Empty/unset keeps
+    # the current private application unchanged.
+    public_hostname: str | None = None
     # OpenFreeMap's "positron" style: free, no API key, no attribution
     # sign-up required (PLAN.md D-2's "quick MVP" option). Overridable via
     # MAP_STYLE_URL -- e.g. to a MapTiler style, or a self-hosted PMTiles
@@ -124,6 +127,22 @@ class Settings(BaseSettings):
         # "leave unset" convention) means "derive it", same as the env var
         # being absent entirely -- see _default_readsb_beast_host below.
         return None if value == "" else value
+
+    @field_validator("public_hostname", mode="before")
+    @classmethod
+    def _validate_public_hostname(cls, value: str | None) -> str | None:
+        if value in (None, ""):
+            return None
+        value = value.strip().lower().rstrip(".")
+        if "://" in value or "/" in value or ":" in value:
+            raise ValueError("PUBLIC_HOSTNAME must be a hostname without scheme, path, or port")
+        if not re.fullmatch(
+            r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+            value,
+        ):
+            raise ValueError("PUBLIC_HOSTNAME must be a valid DNS hostname")
+        return value
 
     @field_validator("readsb_beast_port", mode="before")
     @classmethod

@@ -216,6 +216,27 @@ def test_settings_accepts_empty_string_beast_port_as_default(monkeypatch):
     assert settings.readsb_beast_port == 30005
 
 
+def test_settings_public_hostname_is_optional_and_normalized(monkeypatch):
+    _set_env(monkeypatch, {"PUBLIC_HOSTNAME": "Public.BroccoliNet.com."})
+    assert Settings().public_hostname == "public.broccolinet.com"
+
+
+@pytest.mark.parametrize(
+    "hostname",
+    [
+        "https://public.broccolynet.com",
+        "public.broccolynet.com/path",
+        "public.broccolynet.com:443",
+        "*.broccolynet.com",
+        "single-label",
+    ],
+)
+def test_settings_rejects_malformed_public_hostname(monkeypatch, hostname):
+    _set_env(monkeypatch, {"PUBLIC_HOSTNAME": hostname})
+    with pytest.raises(ValidationError):
+        Settings()
+
+
 def test_settings_missing_required_field_raises(monkeypatch):
     for key in BASE_ENV:
         monkeypatch.delenv(key, raising=False)

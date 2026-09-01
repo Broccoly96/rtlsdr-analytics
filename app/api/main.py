@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import register_exception_handlers
+from app.api.public_surface import PublicSurfaceMiddleware, is_public_scope
 from app.api.routers import (
     aircraft,
     aircraft_history,
@@ -40,6 +41,12 @@ from app.config import Settings
 from app.db.pool import close_pool, create_pool
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+}
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -85,8 +92,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", include_in_schema=False)
-    async def dashboard() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    async def dashboard(request: Request) -> FileResponse:
+        filename = (
+            "public.html"
+            if is_public_scope(request.scope, resolved_settings.public_hostname)
+            else "index.html"
+        )
+        return FileResponse(STATIC_DIR / filename)
 
     # Served at the root (not /static/manifest.json or /static/sw.js) so
     # the service worker's default scope covers the whole app (/), not
@@ -100,18 +112,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript")
 
     @app.middleware("http")
-    async def no_cache_for_dashboard_assets(request: Request, call_next):
+    async def response_policy(request: Request, call_next):
         # This dashboard is small, low-traffic, and actively iterated on --
         # a stale cached copy of index.html/JS/CSS silently showing an old
         # build (with no visible sign anything is wrong) is a worse outcome
         # than the browser re-fetching a few hundred KB on every load.
         response = await call_next(request)
+        response.headers.update(SECURITY_HEADERS)
         if (
             request.url.path == "/"
             or request.url.path.startswith("/static/")
-            or request.url.path in ("/manifest.json", "/sw.js")
+            or request.url.path in ("/manifest.json", "/sw.js", "/api/status")
         ):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    app.add_middleware(
+        PublicSurfaceMiddleware,
+        public_hostname=resolved_settings.public_hostname,
+    )
 
     return app

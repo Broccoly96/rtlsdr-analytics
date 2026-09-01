@@ -1,0 +1,12 @@
+:root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #07110d; color: #e8fff4; }
+main { width: min(46rem, calc(100% - 2rem)); padding: 3rem; border: 1px solid #265841; border-radius: 1rem; background: #0b1c14; box-shadow: 0 1rem 4rem #0008; }
+.eyebrow { color: #68f0aa; letter-spacing: .16em; }
+h1 { margin: .4rem 0 1rem; font-size: clamp(2rem, 8vw, 4rem); }
+.lede, .updated { color: #a6c8b7; line-height: 1.7; }
+.status { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; margin: 2rem 0; }
+.status div { padding: 1rem; border: 1px solid #214d38; border-radius: .6rem; background: #0d2519; }
+.status span { display: block; color: #8ab49f; font-size: .8rem; }
+.status strong { display: block; margin-top: .5rem; font-size: 1.5rem; color: #74ffb7; }
+@media (max-width: 34rem) { main { padding: 1.5rem; } }

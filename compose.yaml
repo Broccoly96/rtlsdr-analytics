@@ -130,6 +130,9 @@ services:
     env_file: .env
     ports:
       - "${APP_BIND_HOST}:${APP_PORT}:8088"
+      # Dedicated Cloudflare Tunnel origin. Keep this loopback-only so Docker
+      # cannot expose it on the LAN/WAN interfaces.
+      - "127.0.0.1:${CLOUDFLARE_ORIGIN_PORT:-18088}:8088"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

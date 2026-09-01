@@ -3,7 +3,7 @@
 Production hostname: `rtl.broccolynet.com`
 
 The origin is deliberately bound only to `127.0.0.1:18088`. The existing
-The existing Tailscale IP mapping remains independent at
+Tailscale IP mapping remains independent at
 `<TAILSCALE_IP>:8088`.
 
 ## Required Cloudflare dashboard order

@@ -129,6 +129,17 @@ cause analysis is deferred until the web-publication work is complete. Do not
 remove Access, weaken JWT validation, expose readsb ports, or add firewall
 rules as a workaround.
 
+Android Chrome does not offer a new PWA installation from the
+Access-protected `rtl.broccolynet.com` origin. The same deployed application
+is installable from its Tailscale origin, and an already-installed copy
+continues to launch. The manifest, icons, HTTPS, and service worker were
+validated. Two mitigations were tested without success: credentialed manifest
+fetches and a narrowly scoped anonymous `/pwa/*` asset path. The ineffective
+origin changes were rolled back. The temporary Cloudflare `/pwa/*` Published
+Application route and matching Access Bypass application must also be removed
+during closing; after the origin rollback they expose only `404` responses.
+Further Android/Access PWA investigation is deferred.
+
 ## 8. Ongoing operating constraints
 
 1. Keep `rtl.broccolynet.com` Access-protected.

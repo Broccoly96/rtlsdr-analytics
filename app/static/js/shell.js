@@ -28,6 +28,7 @@ const navItems = [
   { page: "flags", href: "/static/flags.html", key: "nav.flags", icon: "flag" },
   { page: "badges", href: "/static/badges.html", key: "nav.badges", icon: "badge" },
   { page: "archive", href: "/static/archive.html", key: "nav.archive", icon: "archive" },
+  { page: "changelog", href: "/static/changelog.html", key: "nav.changelog", icon: "changelog" },
   { page: "settings", href: "/static/settings.html", key: "nav.settings", icon: "settings" },
 ];
 
@@ -42,6 +43,7 @@ const iconPaths = {
   flag: ["M5 3v18", "M5 4h13l-2.5 3.5L18 11H5"],
   badge: ["M12 3l2.2 4.6 5 .7-3.6 3.6.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.6 5-.7Z"],
   archive: ["M4 4h16v4H4z", "M5 8h14v12H5z", "M9.5 12h5"],
+  changelog: ["M5 4h14v16H5z", "M8 8h8M8 12h8M8 16h5"],
   settings: ["M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z", "M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.56V20h-3v-.08a1.7 1.7 0 0 0-1-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.08 15a1.7 1.7 0 0 0-1.56-1H5v-3h.52a1.7 1.7 0 0 0 1.56-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06L8.8 5.94l.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1-1.56V4h3v.78a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.56 1H21v3h-.04a1.7 1.7 0 0 0-1.56 1Z"],
   more: ["M5 12h.01M12 12h.01M19 12h.01"],
   close: ["m6 6 12 12M18 6 6 18"],

@@ -1,6 +1,19 @@
 from __future__ import annotations
 
-from app.version import get_git_revision
+import re
+from pathlib import Path
+
+from app.version import get_git_revision, get_version
+
+
+def test_latest_changelog_entry_matches_application_version():
+    changelog_js = (
+        Path(__file__).resolve().parents[2] / "app" / "static" / "js" / "changelog.js"
+    ).read_text()
+    latest = re.search(r'const ENTRIES = \[\s*\{ version: "([^"]+)"', changelog_js)
+
+    assert latest is not None
+    assert latest.group(1) == get_version()
 
 
 def test_git_revision_prefers_env_var(monkeypatch):

@@ -46,6 +46,7 @@ UI_PATHS = (
     "/static/history.html",
     "/static/rawdata.html",
     "/static/settings.html",
+    "/static/changelog.html",
 )
 RESPONSIVE_VIEWPORTS = (
     (360, 800),
@@ -152,6 +153,52 @@ async def static_ui_server():
     finally:
         server.should_exit = True
         await task
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
+async def test_rawdata_server_error_survives_websocket_close(static_ui_server):
+    """An actionable Beast error must not be replaced by the generic close label."""
+    try:
+        async with async_playwright() as p:
+            try:
+                browser = await p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"Chromium is not available in this environment: {exc}")
+
+            page = await browser.new_page()
+            expected = "Beast source timed out; check the Docker firewall rule"
+
+            async def rawdata_socket(websocket):
+                websocket.send(f'{{"error":"{expected}"}}')
+                await asyncio.sleep(0.05)
+                await websocket.close(code=1011, reason="source unavailable")
+
+            async def stub_config(route):
+                await route.fulfill(
+                    json={
+                        "display_timezone": "Asia/Tokyo",
+                        "altitude_bands": [],
+                        "version": "test",
+                        "git_revision": "test",
+                    }
+                )
+
+            await page.route_web_socket("**/ws/rawdata", rawdata_socket)
+            await page.route("**/api/config", stub_config)
+            await page.goto(
+                f"{static_ui_server}/static/rawdata.html",
+                wait_until="load",
+                timeout=20000,
+            )
+            status = page.locator("#connection-badge .status-text")
+            await expect(status).to_have_text(expected, timeout=5000)
+            await page.wait_for_timeout(500)
+            await expect(status).to_have_text(expected)
+            await browser.close()
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc):
+            pytest.skip(f"Chromium browser binary is not installed: {exc}")
+        raise
 
 
 @pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
@@ -568,9 +615,9 @@ async def test_globe_height_stays_stable_after_init_resize_and_interaction(
 
             for key in ("workspace", "container", "canvas", "document"):
                 values = [sample[key] for sample in before + after]
-                assert max(values) - min(values) <= 2, (
-                    f"{key} height drifted at {width}x{height}: {values}"
-                )
+                assert (
+                    max(values) - min(values) <= 2
+                ), f"{key} height drifted at {width}x{height}: {values}"
             assert after[-1]["container"] >= after[-1]["workspace"] - 4
             assert after[-1]["canvas"] >= after[-1]["container"] - 4
 

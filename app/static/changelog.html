@@ -4,19 +4,15 @@
 <meta charset="utf-8">
 <script src="/static/js/theme-init.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title data-i18n="flags.pageTitle">フラッグコレクション - ADS-B Analytics</title>
-<meta
-  http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;"
->
+<title data-i18n="changelog.pageTitle">変更履歴 - ADS-B Analytics</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https: data:; worker-src 'self' blob:;">
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
-<meta name="theme-color" content="#08111f">
+<meta name="theme-color" content="#080B10">
 </head>
-<body data-page="flags">
+<body data-page="changelog">
 <div class="app app-shell">
-
   <nav class="app-nav" data-i18n-aria-label="nav.aria">
     <a href="/" data-i18n="nav.dashboard">ダッシュボード</a>
     <a href="/static/daily.html" data-i18n="nav.daily">今日の空</a>
@@ -25,51 +21,35 @@
     <a href="/static/globe.html" data-i18n="nav.globe">3D航跡</a>
     <a href="/static/history.html" data-i18n="nav.history">機体履歴</a>
     <a href="/static/rawdata.html" data-i18n="nav.rawdata">生データ</a>
-    <a href="/static/flags.html" aria-current="page" data-i18n="nav.flags">フラッグコレクション</a>
+    <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
     <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
     <a href="/static/archive.html" data-i18n="nav.archive">機体アーカイブ</a>
-    <a href="/static/changelog.html" data-i18n="nav.changelog">変更履歴</a>
+    <a href="/static/changelog.html" aria-current="page" data-i18n="nav.changelog">変更履歴</a>
     <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
     <form class="nav-search" action="/static/archive.html" method="get" role="search">
       <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
     </form>
   </nav>
-
   <main class="page-content">
-
   <header class="app-header">
     <div class="app-header__intro">
-      <span class="app-header__eyebrow" data-i18n="flags.eyebrow">Flag collection</span>
+      <span class="app-header__eyebrow" data-i18n="changelog.eyebrow">Release notes</span>
       <div class="app-header__title">
-        <h1 data-i18n="flags.heading">フラッグコレクション</h1>
+        <h1 data-i18n="changelog.heading">変更履歴</h1>
         <span class="app-header__version" id="app-version"></span>
       </div>
     </div>
   </header>
-
-  <p class="page-note" data-i18n="flags.description">
-    これまでに観測した全機体を、ICAO24bitアドレスから推定した国籍別に集計したものです
-    (推定は主要な航空国を中心とした簡易的なブロック表によるもので、全ての国をカバーしている
-    わけではありません)。
-  </p>
-
   <section class="main-area layout--single">
-    <div class="panel">
-      <div id="flags-grid" class="flags-grid"></div>
-      <p class="panel__empty" id="flags-empty" data-i18n="flags.empty" hidden>まだ国籍を推定できた機体がありません。</p>
-      <div id="flags-error" class="panel__error" hidden></div>
+    <div class="panel changelog-panel">
+      <p class="page-note" data-i18n="changelog.description">ADS-B Analyticsの主な変更を新しい順に掲載しています。</p>
+      <ol class="changelog-list" id="changelog-list" aria-live="polite"></ol>
     </div>
   </section>
-
-  <footer class="app-footer">
-    <span>ADS-B Analytics</span>
-  </footer>
-
+  <footer class="app-footer"><span>ADS-B Analytics</span></footer>
   </main>
-
 </div>
-
 <script type="module" src="/static/js/shell.js"></script>
-<script type="module" src="/static/js/flags.js"></script>
+<script type="module" src="/static/js/changelog.js"></script>
 </body>
 </html>

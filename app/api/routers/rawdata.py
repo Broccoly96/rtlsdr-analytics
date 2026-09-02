@@ -41,6 +41,24 @@ READ_CHUNK_BYTES = 4096
 MAX_LEFTOVER_BYTES = 256
 
 
+def _connect_error_message(host: str, port: int, exc: Exception) -> str:
+    """Return an actionable browser-safe error for the upstream TCP hop.
+
+    ``TimeoutError`` has an empty string representation, which previously
+    left both the browser and logs with no useful cause. A timeout is also
+    materially different from a refused connection on Linux hosts: when the
+    port is listening on the host but a container connection times out, a
+    host firewall (commonly UFW) is the usual boundary to inspect.
+    """
+    target = f"{host}:{port}"
+    if isinstance(exc, TimeoutError):
+        return (
+            f"Beastストリーム({target})への接続がタイムアウトしました。"
+            "DockerからホストのBeastポートへのファイアウォール許可を確認してください"
+        )
+    return f"Beastストリーム({target})への接続に失敗しました ({type(exc).__name__})"
+
+
 def _frame_to_message(frame: BeastFrame) -> dict:
     payload: dict = {
         "frame_type": frame.frame_type,
@@ -65,11 +83,16 @@ async def rawdata_stream(websocket: WebSocket) -> None:
             asyncio.open_connection(host, port), timeout=CONNECT_TIMEOUT_SECONDS
         )
     except Exception as exc:
-        logger.warning("rawdata: failed to connect to Beast stream %s:%s: %s", host, port, exc)
+        error_message = _connect_error_message(host, port, exc)
+        logger.warning(
+            "rawdata: failed to connect to Beast stream %s:%s (%s): %s",
+            host,
+            port,
+            type(exc).__name__,
+            exc,
+        )
         with contextlib.suppress(Exception):
-            await websocket.send_json(
-                {"error": f"Beastストリーム({host}:{port})への接続に失敗しました"}
-            )
+            await websocket.send_json({"error": error_message})
         await websocket.close()
         return
 

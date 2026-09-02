@@ -233,6 +233,17 @@ if [[ "$ready_ok" -ne 1 ]]; then
   exit 1
 fi
 
+echo "checking the raw Beast stream from inside adsb-api ..."
+if ! docker compose exec -T adsb-api python3 -c \
+  "import socket; from app.config import Settings; c=Settings(); s=socket.create_connection((c.readsb_beast_host, c.readsb_beast_port), 5); s.settimeout(5); assert s.recv(1)"; then
+  cat >&2 <<'EOF'
+WARNING: the dashboard is ready, but the raw-data page cannot reach readsb.
+The HTTP aircraft feed and Beast TCP feed use separate host ports, so one can
+work while a host firewall drops the other. Allow the configured Beast port only from this
+Compose network's subnet to its host gateway; see README.md Troubleshooting.
+EOF
+fi
+
 cat <<EOF
 
 rtlsdr-analytics is up.

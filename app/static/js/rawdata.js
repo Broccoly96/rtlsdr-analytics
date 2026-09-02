@@ -187,6 +187,7 @@ function connect() {
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${window.location.host}/ws/rawdata`);
+  let serverError = false;
 
   setConnectionState("connecting", t("rawdata.connecting"));
 
@@ -195,7 +196,6 @@ function connect() {
   });
 
   ws.addEventListener("message", (event) => {
-    if (paused) return;
     let frame;
     try {
       frame = JSON.parse(event.data);
@@ -204,9 +204,11 @@ function connect() {
       return;
     }
     if (frame.error) {
+      serverError = true;
       setConnectionState("error", frame.error);
       return;
     }
+    if (paused) return;
     if (!tbody) return;
     addRow(tbody, frame);
     rowCount = Math.min(rowCount + 1, MAX_ROWS);
@@ -215,7 +217,9 @@ function connect() {
   });
 
   ws.addEventListener("close", () => {
-    setConnectionState("stale", t("rawdata.disconnected", { seconds: RECONNECT_DELAY_MS / 1000 }));
+    if (!serverError) {
+      setConnectionState("stale", t("rawdata.disconnected", { seconds: RECONNECT_DELAY_MS / 1000 }));
+    }
     setTimeout(connect, RECONNECT_DELAY_MS);
   });
 

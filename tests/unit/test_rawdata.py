@@ -11,7 +11,7 @@ proportionate to what it'd actually catch.
 
 from __future__ import annotations
 
-from app.api.routers.rawdata import _frame_to_message
+from app.api.routers.rawdata import _connect_error_message, _frame_to_message
 from app.domain.beast import BeastFrame
 
 
@@ -52,3 +52,19 @@ def test_empty_message_omits_decoded_field():
     frame = BeastFrame("mode_s_short", signal=0, message=b"")
     payload = _frame_to_message(frame)
     assert "decoded" not in payload
+
+
+def test_connect_timeout_explains_container_firewall_boundary():
+    message = _connect_error_message("host.docker.internal", 30005, TimeoutError())
+
+    assert "タイムアウト" in message
+    assert "ファイアウォール" in message
+    assert "host.docker.internal:30005" in message
+
+
+def test_connect_refused_includes_exception_type():
+    message = _connect_error_message(
+        "host.docker.internal", 30005, ConnectionRefusedError("refused")
+    )
+
+    assert "ConnectionRefusedError" in message

@@ -998,6 +998,31 @@ you), since the container itself has neither a `.git` directory nor a
   from `READSB_AIRCRAFT_URL` (HTTP, for `aircraft.json`) — confirm it's
   actually listening on the host (`ss -ltn | grep 30005`) before assuming
   it's a container-networking issue.
+
+  Test the actual API-container path separately from the host listener:
+
+  The commands below use the default Beast port (`30005`) and default Compose
+  network name; substitute your configured `READSB_BEAST_PORT` and project name.
+
+  ```bash
+  docker compose exec -T adsb-api python3 -c "import socket; socket.create_connection(('host.docker.internal', 30005), 5); print('connected')"
+  ```
+
+  If the host is listening but this command times out, a host firewall is
+  dropping the Docker-bridge connection. Do not expose 30005 on the WAN.
+  Inspect both the Compose source subnet and the actual `host-gateway` target first:
+
+  ```bash
+  docker network inspect rtlsdr-analytics_default --format '{{(index .IPAM.Config 0).Subnet}} {{(index .IPAM.Config 0).Gateway}}'
+  docker compose exec -T adsb-api getent hosts host.docker.internal
+  ```
+
+  Then allow only that source subnet to the resolved `host.docker.internal`
+  address/port. For example, if the outputs are `172.18.0.0/16` and
+  `172.17.0.1`: `sudo ufw allow proto tcp from 172.18.0.0/16 to 172.17.0.1
+  port 30005 comment 'adsb-api to readsb Beast'`.
+  Verify the container command again. This grants access only to the private
+  Compose subnet; it does not add a WAN-facing listener.
 - **After a host reboot, `adsb-api` exits immediately**: if `APP_BIND_HOST`
   is bound to an interface that isn't up yet at boot (e.g. a VPN/Tailscale
   address assigned after Docker starts), the container can fail to bind

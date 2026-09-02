@@ -23,7 +23,7 @@
   content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: ws: wss:; font-src 'self' https: data:; worker-src 'self' blob:;"
 >
 <link rel="stylesheet" href="/static/css/style.css">
-<link rel="manifest" href="/manifest.json">
+<link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
 <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
 <meta name="theme-color" content="#080B10">
 <link rel="stylesheet" href="/static/js/vendor/cesium/Widgets/widgets.css">
@@ -42,6 +42,7 @@
     <a href="/static/flags.html" data-i18n="nav.flags">フラッグコレクション</a>
     <a href="/static/badges.html" data-i18n="nav.badges">実績バッジ</a>
     <a href="/static/archive.html" data-i18n="nav.archive">機体アーカイブ</a>
+    <a href="/static/changelog.html" data-i18n="nav.changelog">変更履歴</a>
     <a href="/static/settings.html" data-i18n="nav.settings">設定</a>
     <form class="nav-search" action="/static/archive.html" method="get" role="search">
       <input type="search" name="q" class="nav-search__input" data-i18n-placeholder="nav.searchPlaceholder" placeholder="ICAO / コールサイン検索">
